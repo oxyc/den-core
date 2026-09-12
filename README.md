@@ -23,8 +23,11 @@ bash scripts/build-bindings.sh
 ```
 
 The Swift package contains a generated UniFFI wrapper and an XCFramework for ARM64 macOS, Apple TV and
-iOS (device and simulators). Intel hosts/simulators are not packaged. The web module embeds its WASM so
-initialization needs no network request; production CSP must allow `'wasm-unsafe-eval'`, not general JS eval.
+iOS (device and simulators). Intel hosts/simulators are not packaged. The web module loads its separate WASM
+asynchronously with `initialize()`, which concurrent callers share and can retry after failure. Call it before
+the synchronous `evaluate()` API. Browsers can preload on idle and await readiness before actions or merges.
+Production CSP must allow `'wasm-unsafe-eval'`, not general JS eval. Offline use requires the binary to be
+available in the browser cache or already initialized; there is no embedded fallback.
 
 With `den`, `den-edge`, and `den-core` sibling workspaces, `bash scripts/build-bindings.sh --vendor`
 mechanically copies packages into `den/Vendor/DenCore` and `den-edge/web/src/vendor/den-core`.

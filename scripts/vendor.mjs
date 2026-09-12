@@ -1,6 +1,6 @@
 // Mechanical packaging only. Clients consume immutable generated artifacts, never a sibling at runtime/build.
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -11,7 +11,7 @@ function files(dir) {
 }
 const inputs = ['Cargo.toml', 'Cargo.lock', ...files(join(root, 'crates')).map((f) => relative(root, f)),
   ...files(join(root, 'bindings')).map((f) => relative(root, f)),
-  'scripts/build-bindings.sh', 'scripts/embed-wasm.mjs', 'scripts/vendor.mjs',
+  'scripts/build-bindings.sh', 'scripts/vendor.mjs',
   'Swift/Package.swift', 'web/index.js', 'web/index.d.ts'];
 inputs.push('LICENSE');
 const sources = Object.fromEntries(inputs.sort().map((file) => [file, sha(readFileSync(join(root, file)))]));
@@ -31,7 +31,12 @@ for (const name of ['Package.swift', 'Sources', 'Artifacts']) copy(`Swift/${name
 copy('LICENSE', join(native, 'LICENSE'));
 manifest(native);
 const web = join(root, '../den-edge/web/src/vendor/den-core');
-for (const name of ['index.js', 'index.d.ts', 'generated']) copy(`web/${name}`, join(web, name));
+for (const name of ['index.js', 'index.d.ts']) copy(`web/${name}`, join(web, name));
+for (const name of ['den_core.js', 'den_core.d.ts', 'den_core_bg.wasm', 'den_core_bg.wasm.d.ts']) {
+  copy(`web/generated/${name}`, join(web, 'generated', name));
+}
+// Remove only the obsolete generated inline copy when updating a previously vendored package.
+rmSync(join(web, 'generated/wasm-data.js'), { force: true });
 copy('LICENSE', join(web, 'LICENSE'));
 copy('crates/den-sync/tests/fixtures/policy-v1.json', join(web, 'policy-v1.json'));
 manifest(web);

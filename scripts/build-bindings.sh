@@ -51,5 +51,4 @@ bindgen="$root/.tools/bin/wasm-bindgen"
 if [[ ! -x "$bindgen" ]]; then bindgen=wasm-bindgen; fi
 "$bindgen" --target web --out-dir web/generated --out-name den_core \
     target/wasm32-unknown-unknown/release/den_core_web.wasm
-node scripts/embed-wasm.mjs
 if [[ " $* " == *" --vendor "* ]]; then node scripts/vendor.mjs; fi
