@@ -1,0 +1,21 @@
+name: Shared sync policy
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  bindings:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+          targets: aarch64-apple-tvos,aarch64-apple-tvos-sim,aarch64-apple-ios,aarch64-apple-ios-sim,wasm32-unknown-unknown
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
+      - run: bash scripts/build-bindings.sh
+      - run: swift build --package-path Swift
+      - run: node scripts/test-wasm.mjs

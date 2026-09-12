@@ -1,0 +1,1237 @@
+{
+  "about": "Canonical hand-authored den-sync policy boundary cases. Run unchanged through Rust, UniFFI and WASM.",
+  "cases": [
+    {
+      "name": "capture seen",
+      "request": {
+        "op": "capture",
+        "before": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "none",
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        },
+        "after": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "watched",
+            "at": [
+              2000,
+              0,
+              "device"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        },
+        "at": [
+          2000,
+          0,
+          "device"
+        ],
+        "id": "seen"
+      },
+      "ok": {
+        "schema": 1,
+        "id": "seen",
+        "at": [
+          2000,
+          0,
+          "device"
+        ],
+        "before": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "none",
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        },
+        "after": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "watched",
+            "at": [
+              2000,
+              0,
+              "device"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        },
+        "changes": {
+          "status": {
+            "before": {
+              "value": "none",
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "after": {
+              "value": "watched",
+              "at": [
+                2000,
+                0,
+                "device"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "derive seen command",
+      "request": {
+        "op": "commands",
+        "event": {
+          "schema": 1,
+          "id": "seen",
+          "at": [
+            2000,
+            0,
+            "device"
+          ],
+          "before": {
+            "kind": "rec",
+            "schema": 2,
+            "title": {
+              "type": "movie",
+              "id": 550
+            },
+            "status": {
+              "value": "none",
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "resume": {
+              "value": 0,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ],
+              "viewing": 0
+            },
+            "reaction": {
+              "value": null,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "deleted": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "dismissed": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "episodesReset": null,
+            "addedAt": 1000,
+            "watchedAt": null
+          },
+          "after": {
+            "kind": "rec",
+            "schema": 2,
+            "title": {
+              "type": "movie",
+              "id": 550
+            },
+            "status": {
+              "value": "watched",
+              "at": [
+                2000,
+                0,
+                "device"
+              ]
+            },
+            "resume": {
+              "value": 0,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ],
+              "viewing": 0
+            },
+            "reaction": {
+              "value": null,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "deleted": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "dismissed": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "episodesReset": null,
+            "addedAt": 1000,
+            "watchedAt": null
+          },
+          "changes": {
+            "status": {
+              "before": {
+                "value": "none",
+                "at": [
+                  1000,
+                  0,
+                  "aaaa"
+                ]
+              },
+              "after": {
+                "value": "watched",
+                "at": [
+                  2000,
+                  0,
+                  "device"
+                ]
+              }
+            }
+          }
+        },
+        "current": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "watched",
+            "at": [
+              2000,
+              0,
+              "device"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        }
+      },
+      "ok": [
+        {
+          "kind": "watched",
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "season": null,
+          "episode": null,
+          "added": true,
+          "rating": null,
+          "at": 2000,
+          "stamp": [
+            2000,
+            0,
+            "device"
+          ],
+          "eventID": "seen:status"
+        }
+      ]
+    },
+    {
+      "name": "superseded field",
+      "request": {
+        "op": "commands",
+        "event": {
+          "schema": 1,
+          "id": "seen",
+          "at": [
+            2000,
+            0,
+            "device"
+          ],
+          "before": {
+            "kind": "rec",
+            "schema": 2,
+            "title": {
+              "type": "movie",
+              "id": 550
+            },
+            "status": {
+              "value": "none",
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "resume": {
+              "value": 0,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ],
+              "viewing": 0
+            },
+            "reaction": {
+              "value": null,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "deleted": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "dismissed": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "episodesReset": null,
+            "addedAt": 1000,
+            "watchedAt": null
+          },
+          "after": {
+            "kind": "rec",
+            "schema": 2,
+            "title": {
+              "type": "movie",
+              "id": 550
+            },
+            "status": {
+              "value": "watched",
+              "at": [
+                2000,
+                0,
+                "device"
+              ]
+            },
+            "resume": {
+              "value": 0,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ],
+              "viewing": 0
+            },
+            "reaction": {
+              "value": null,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "deleted": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "dismissed": {
+              "value": false,
+              "at": [
+                1000,
+                0,
+                "aaaa"
+              ]
+            },
+            "episodesReset": null,
+            "addedAt": 1000,
+            "watchedAt": null
+          },
+          "changes": {
+            "status": {
+              "before": {
+                "value": "none",
+                "at": [
+                  1000,
+                  0,
+                  "aaaa"
+                ]
+              },
+              "after": {
+                "value": "watched",
+                "at": [
+                  2000,
+                  0,
+                  "device"
+                ]
+              }
+            }
+          }
+        },
+        "current": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "none",
+            "at": [
+              3000,
+              0,
+              "peer"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        }
+      },
+      "ok": []
+    },
+    {
+      "name": "no new action",
+      "request": {
+        "op": "capture",
+        "before": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "none",
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        },
+        "after": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "none",
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": 1000,
+          "watchedAt": null
+        },
+        "at": [
+          2000,
+          0,
+          "device"
+        ],
+        "id": "noop"
+      },
+      "ok": null
+    },
+    {
+      "name": "clock skew",
+      "request": {
+        "op": "issue",
+        "last": [
+          5000,
+          2,
+          "peer"
+        ],
+        "now": 2000,
+        "device": "device"
+      },
+      "ok": [
+        5000,
+        3,
+        "device"
+      ]
+    },
+    {
+      "name": "negative historical time",
+      "request": {
+        "op": "merge",
+        "a": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "none",
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": -62135769600000,
+          "watchedAt": -1
+        },
+        "b": {
+          "kind": "rec",
+          "schema": 2,
+          "title": {
+            "type": "movie",
+            "id": 550
+          },
+          "status": {
+            "value": "none",
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "resume": {
+            "value": 0,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ],
+            "viewing": 0
+          },
+          "reaction": {
+            "value": null,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "deleted": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "dismissed": {
+            "value": false,
+            "at": [
+              1000,
+              0,
+              "aaaa"
+            ]
+          },
+          "episodesReset": null,
+          "addedAt": -62135769600000,
+          "watchedAt": -1
+        }
+      },
+      "ok": {
+        "kind": "rec",
+        "schema": 2,
+        "title": {
+          "type": "movie",
+          "id": 550
+        },
+        "status": {
+          "value": "none",
+          "at": [
+            1000,
+            0,
+            "aaaa"
+          ]
+        },
+        "resume": {
+          "value": 0,
+          "at": [
+            1000,
+            0,
+            "aaaa"
+          ],
+          "viewing": 0
+        },
+        "reaction": {
+          "value": null,
+          "at": [
+            1000,
+            0,
+            "aaaa"
+          ]
+        },
+        "deleted": {
+          "value": false,
+          "at": [
+            1000,
+            0,
+            "aaaa"
+          ]
+        },
+        "dismissed": {
+          "value": false,
+          "at": [
+            1000,
+            0,
+            "aaaa"
+          ]
+        },
+        "episodesReset": null,
+        "addedAt": -62135769600000,
+        "watchedAt": -1
+      }
+    },
+    {
+      "name": "safe undo",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": false,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": true,
+          "account_matches": true,
+          "simkl": true,
+          "watched": {
+            "at": 1000
+          },
+          "listed": null,
+          "rated": null,
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": false
+        }
+      },
+      "ok": {
+        "action": "send",
+        "reason": "explicit_current_intent"
+      }
+    },
+    {
+      "name": "newer remote undo held",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": false,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": true,
+          "account_matches": true,
+          "simkl": true,
+          "watched": {
+            "at": 3000
+          },
+          "listed": null,
+          "rated": null,
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": false
+        }
+      },
+      "ok": {
+        "action": "hold",
+        "reason": "remote_order_unknown_or_newer"
+      }
+    },
+    {
+      "name": "unknown remote undo held",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": false,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": true,
+          "account_matches": true,
+          "simkl": true,
+          "watched": {
+            "at": null
+          },
+          "listed": null,
+          "rated": null,
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": false
+        }
+      },
+      "ok": {
+        "action": "hold",
+        "reason": "remote_order_unknown_or_newer"
+      }
+    },
+    {
+      "name": "independent rating protected",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": false,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": true,
+          "account_matches": true,
+          "simkl": true,
+          "watched": {
+            "at": 1000
+          },
+          "listed": null,
+          "rated": {
+            "at": 1000,
+            "value": 10
+          },
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": false
+        }
+      },
+      "ok": {
+        "action": "hold",
+        "reason": "would_remove_independent_state"
+      }
+    },
+    {
+      "name": "episode absence incomplete",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": true,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": true,
+          "account_matches": true,
+          "simkl": true,
+          "watched": null,
+          "listed": null,
+          "rated": null,
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": false
+        }
+      },
+      "ok": {
+        "action": "hold",
+        "reason": "incomplete_episode_coverage"
+      }
+    },
+    {
+      "name": "episode absence authoritative",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": true,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": true,
+          "account_matches": true,
+          "simkl": true,
+          "watched": null,
+          "listed": null,
+          "rated": null,
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": true
+        }
+      },
+      "ok": {
+        "action": "acknowledge",
+        "reason": "already_unseen"
+      }
+    },
+    {
+      "name": "outage holds",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": false,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": false,
+          "account_matches": true,
+          "simkl": true,
+          "watched": {
+            "at": 1000
+          },
+          "listed": null,
+          "rated": null,
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": false
+        }
+      },
+      "ok": {
+        "action": "hold",
+        "reason": "snapshot_unavailable"
+      }
+    },
+    {
+      "name": "account switch holds",
+      "request": {
+        "op": "decide",
+        "command": {
+          "kind": "unwatched",
+          "at": 2000,
+          "current": true,
+          "baseline": false,
+          "episode": false,
+          "added": false,
+          "rating": null
+        },
+        "remote": {
+          "authoritative": true,
+          "account_matches": false,
+          "simkl": true,
+          "watched": {
+            "at": 1000
+          },
+          "listed": null,
+          "rated": null,
+          "any_title_watch": true,
+          "unknown_or_newer_title_watch": false,
+          "episodes_complete": false
+        }
+      },
+      "ok": {
+        "action": "hold",
+        "reason": "account_changed"
+      }
+    },
+    {
+      "name": "capped retry",
+      "request": {
+        "op": "retry",
+        "attempts": 10,
+        "now": 1000
+      },
+      "ok": 1801000
+    },
+    {
+      "name": "retry after lower bound",
+      "request": {
+        "op": "retry",
+        "attempts": 1,
+        "now": 1000,
+        "retry_after": 50000
+      },
+      "ok": 50000
+    },
+    {
+      "name": "invalid row not empty state",
+      "request": {
+        "op": "merge",
+        "a": {},
+        "b": {}
+      },
+      "error": "invalid_integer"
+    }
+  ]
+}

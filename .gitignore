@@ -1,0 +1,10 @@
+/target/
+/dist/
+.DS_Store
+.tools/
+.build/
+Swift/.build/
+Swift/Artifacts/
+Swift/Headers/
+Swift/Sources/
+web/generated/

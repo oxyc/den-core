@@ -1,0 +1,87 @@
+{
+  "about": "wire/library-v2.md §4 and §5. A merge case gives two versions of one title row as overrides of `base`; `merged` is the result in either order. Stamps are [t, c, d].",
+  "base": {
+    "kind": "rec", "schema": 2,
+    "title": {"type": "movie", "id": 550},
+    "status": {"value": "none", "at": [1000, 0, "aaaa"]},
+    "resume": {"value": 0, "at": [1000, 0, "aaaa"], "viewing": 0},
+    "reaction": {"value": null, "at": [1000, 0, "aaaa"]},
+    "deleted": {"value": false, "at": [1000, 0, "aaaa"]},
+    "dismissed": {"value": false, "at": [1000, 0, "aaaa"]},
+    "episodesReset": null,
+    "addedAt": 1000,
+    "watchedAt": null
+  },
+  "merge": [
+    {
+      "case": "the later stamp wins a stamped value",
+      "a": {"status": {"value": "watchlist", "at": [2000, 0, "aaaa"]}},
+      "b": {"status": {"value": "watched", "at": [3000, 0, "bbbb"]}},
+      "merged": {"status": {"value": "watched", "at": [3000, 0, "bbbb"]}}
+    },
+    {
+      "case": "the counter orders stamps with the same time",
+      "a": {"reaction": {"value": "like", "at": [2000, 1, "aaaa"]}},
+      "b": {"reaction": {"value": "love", "at": [2000, 0, "bbbb"]}},
+      "merged": {"reaction": {"value": "like", "at": [2000, 1, "aaaa"]}}
+    },
+    {
+      "case": "the device id breaks a tie of time and counter",
+      "a": {"deleted": {"value": true, "at": [2000, 0, "aaaa"]}},
+      "b": {"deleted": {"value": false, "at": [2000, 0, "bbbb"]}},
+      "merged": {"deleted": {"value": false, "at": [2000, 0, "bbbb"]}}
+    },
+    {
+      "case": "a later viewing replaces a finished one, though its progress is lower",
+      "a": {"resume": {"value": 1, "at": [5000, 0, "aaaa"], "viewing": 0, "seconds": 7000}},
+      "b": {"resume": {"value": 0.1, "at": [4000, 0, "bbbb"], "viewing": 1, "seconds": 600}},
+      "merged": {"resume": {"value": 0.1, "at": [4000, 0, "bbbb"], "viewing": 1, "seconds": 600}}
+    },
+    {
+      "case": "within one viewing the furthest progress wins, though its stamp is older",
+      "a": {"resume": {"value": 0.8, "at": [2000, 0, "aaaa"], "viewing": 0}},
+      "b": {"resume": {"value": 0.2, "at": [3000, 0, "bbbb"], "viewing": 0}},
+      "merged": {"resume": {"value": 0.8, "at": [2000, 0, "aaaa"], "viewing": 0}}
+    },
+    {
+      "case": "equal progress: the later stamp, then the later position",
+      "a": {"resume": {"value": 0.5, "at": [2000, 0, "aaaa"], "viewing": 0, "seconds": 900}},
+      "b": {"resume": {"value": 0.5, "at": [2000, 0, "aaaa"], "viewing": 0}},
+      "merged": {"resume": {"value": 0.5, "at": [2000, 0, "aaaa"], "viewing": 0, "seconds": 900}}
+    },
+    {
+      "case": "the earliest add, the first watch, the latest series reset",
+      "a": {"addedAt": 900, "watchedAt": null, "episodesReset": [2000, 0, "aaaa"]},
+      "b": {"addedAt": 1100, "watchedAt": 1500, "episodesReset": null},
+      "merged": {"addedAt": 900, "watchedAt": 1500, "episodesReset": [2000, 0, "aaaa"]}
+    }
+  ],
+  "settings": [
+    {
+      "case": "each setting keeps its own latest value; one only a side has is kept; a clear is a value",
+      "a": {"kind": "set", "schema": 2, "name": "prefs", "values": {
+        "den.hideWatched": {"value": {"bool": true}, "at": [3000, 0, "aaaa"]},
+        "den.minReleaseYear": {"value": {"int": 1990}, "at": [2000, 0, "aaaa"]},
+        "den.excludedLanguages": {"value": {"strings": ["hi"]}, "at": [1000, 0, "aaaa"]}
+      }},
+      "b": {"kind": "set", "schema": 2, "name": "prefs", "values": {
+        "den.hideWatched": {"value": {"bool": false}, "at": [2500, 0, "bbbb"]},
+        "den.minReleaseYear": {"value": null, "at": [4000, 0, "bbbb"]},
+        "den.hideAnime": {"value": {"bool": true}, "at": [1500, 0, "bbbb"]}
+      }},
+      "merged": {"kind": "set", "schema": 2, "name": "prefs", "values": {
+        "den.hideWatched": {"value": {"bool": true}, "at": [3000, 0, "aaaa"]},
+        "den.minReleaseYear": {"value": null, "at": [4000, 0, "bbbb"]},
+        "den.excludedLanguages": {"value": {"strings": ["hi"]}, "at": [1000, 0, "aaaa"]},
+        "den.hideAnime": {"value": {"bool": true}, "at": [1500, 0, "bbbb"]}
+      }}
+    }
+  ],
+  "clock": [
+    {"case": "a clock ahead of the last stamp issues its own time", "last": [1000, 3, "dddd"], "now": 2000, "issued": [2000, 0, "dddd"]},
+    {"case": "a clock at the last stamp counts up", "last": [2000, 3, "dddd"], "now": 2000, "issued": [2000, 4, "dddd"]},
+    {"case": "a clock behind the last stamp keeps its time and counts up", "last": [5000, 0, "dddd"], "now": 2000, "issued": [5000, 1, "dddd"]},
+    {"case": "after seeing a later stamp, the next edit is later still", "last": [1000, 0, "dddd"], "seen": [9000, 2, "eeee"], "now": 2000, "issued": [9000, 3, "dddd"]}
+  ]
+}
+
