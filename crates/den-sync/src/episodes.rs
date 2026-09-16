@@ -23,7 +23,11 @@ const WATCHED: f64 = 0.95;
 /// - `replace` — take the row's `fraction`, `at`, and `seconds` when present.
 ///
 /// `mark` is what the client holds now — `{"fraction", "at"}`, or null when it holds nothing.
-pub fn episode_mark(row: &Value, mark: &Value) -> Result<Value, String> {
+///
+/// `authoritative` marks a row read back from the log's own canonical store rather than reconstructed from
+/// local state: it *is* the record, not a claim about it, so it wins on stamp order. It does not override the
+/// zero stamp, which says only that the time is unknown.
+pub fn episode_mark(row: &Value, mark: &Value, authoritative: bool) -> Result<Value, String> {
     if !name(row)?.starts_with("ep:") {
         return Err("invalid_kind".into());
     }
@@ -59,10 +63,13 @@ pub fn episode_mark(row: &Value, mark: &Value) -> Result<Value, String> {
         return Ok(json!({"action": "flag"}));
     }
 
-    // Otherwise the newer stamp wins; a held mark with no stamp of its own loses to anything.
-    if let Some(held) = held {
-        if held["at"].as_i64().unwrap_or(0) > at.0 {
-            return Ok(json!({"action": "keep"}));
+    // Otherwise the newer stamp wins; a held mark with no stamp of its own loses to anything. An
+    // authoritative row skips the comparison: it is the record itself, so there is nothing to outrank.
+    if !authoritative {
+        if let Some(held) = held {
+            if held["at"].as_i64().unwrap_or(0) > at.0 {
+                return Ok(json!({"action": "keep"}));
+            }
         }
     }
     let mut result = json!({"action": "replace", "fraction": value, "at": at.0});

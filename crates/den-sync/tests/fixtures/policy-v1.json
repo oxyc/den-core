@@ -1312,6 +1312,40 @@
         "mark": { "fraction": 0.9, "at": 2000 }
       },
       "ok": { "action": "keep" }
+    },
+    {
+      "name": "an authoritative row wins even when its stamp is older",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 0.5, "at": [1000, 0, "aaaa"], "viewing": 0 }
+        },
+        "mark": { "fraction": 0.9, "at": 2000 },
+        "authoritative": true
+      },
+      "ok": { "action": "replace", "fraction": 0.5, "at": 1000 }
+    },
+    {
+      "name": "an authoritative row does not override an unknown time",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 1, "at": [0, 0, ""], "viewing": 0 }
+        },
+        "mark": { "fraction": 1, "at": 1700000000000 },
+        "authoritative": true
+      },
+      "ok": { "action": "keep" }
     }
   ]
 }

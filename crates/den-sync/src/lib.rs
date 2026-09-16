@@ -34,6 +34,9 @@ enum Request {
     EpisodeMark {
         row: Value,
         mark: Value,
+        /// Absent means "reconstructed", which is the conservative reading.
+        #[serde(default)]
+        authoritative: bool,
     },
     Issue {
         last: Stamp,
@@ -68,7 +71,11 @@ pub fn evaluate(input: &str) -> String {
                 id,
             } => capture(&before, &after, &at, &id),
             Request::Commands { event, current } => commands(&event, &current),
-            Request::EpisodeMark { row, mark } => episode_mark(&row, &mark),
+            Request::EpisodeMark {
+                row,
+                mark,
+                authoritative,
+            } => episode_mark(&row, &mark, authoritative),
             Request::Issue {
                 last,
                 seen,
