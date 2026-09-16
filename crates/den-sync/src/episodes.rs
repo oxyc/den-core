@@ -39,9 +39,15 @@ pub fn episode_mark(row: &Value, mark: &Value, authoritative: bool) -> Result<Va
         return Err("invalid_progress".into());
     }
 
-    // Value 0 is an un-watch, written in a new viewing (§3). It clears whatever is held regardless of its own
-    // stamp: the viewing counter, not the clock, is what stops the old progress outvoting it.
+    // Value 0 is an un-watch, written in a new viewing (§3). An authoritative row IS the record, and an
+    // un-watch with no time of its own has nothing to compare, so both clear outright. A reconstructed row
+    // carrying a real stamp is only a claim about the record, and the rule that governs `replace` governs it
+    // here too: an un-watch must not undo progress written after it, or a stale local row replayed on a pull
+    // silently discards the newer viewing it never saw.
     if value == 0.0 {
+        if !authoritative && at.0 != 0 && holds_newer(mark, at.0) {
+            return Ok(json!({"action": "keep"}));
+        }
         return Ok(json!({"action": "clear"}));
     }
 
@@ -65,20 +71,23 @@ pub fn episode_mark(row: &Value, mark: &Value, authoritative: bool) -> Result<Va
 
     // Otherwise the newer stamp wins; a held mark with no stamp of its own loses to anything. An
     // authoritative row skips the comparison: it is the record itself, so there is nothing to outrank.
-    // Ties go to what is held: a row has to be strictly newer to displace it, or two writes in the same
-    // millisecond would flip the answer on whichever happened to be asked last.
-    // Asked for, not indexed: indexing a map panics on a missing key, and a client is free to hand over a
-    // mark it holds without a time. A mark with no time of its own loses to anything, as it should.
-    if !authoritative {
-        if let Some(held) = held {
-            if held.get("at").and_then(Value::as_i64).unwrap_or(0) >= at.0 {
-                return Ok(json!({"action": "keep"}));
-            }
-        }
+    if !authoritative && holds_newer(mark, at.0) {
+        return Ok(json!({"action": "keep"}));
     }
     let mut result = json!({"action": "replace", "fraction": value, "at": at.0});
     if let Some(seconds) = row["progress"]["seconds"].as_f64() {
         result["seconds"] = json!(seconds);
     }
     Ok(result)
+}
+
+/// Whether what the client holds is at least as new as `at`.
+///
+/// Ties go to what is held: a row has to be strictly newer to displace it, or two writes in the same
+/// millisecond would flip the answer on whichever happened to be asked last. Asked for, not indexed: indexing
+/// a map panics on a missing key, and a client is free to hand over a mark it holds without a time. A mark
+/// with no time of its own — or one that is not an object at all — loses to anything, as it should.
+fn holds_newer(mark: &Value, at: i64) -> bool {
+    mark.as_object()
+        .is_some_and(|held| held.get("at").and_then(Value::as_i64).unwrap_or(0) >= at)
 }

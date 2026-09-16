@@ -1282,6 +1282,73 @@
       "ok": { "action": "clear" }
     },
     {
+      "name": "a reconstructed un-watch cannot undo progress written after it",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 0, "at": [1600000000000, 0, "aaaa"], "viewing": 1 }
+        },
+        "mark": { "fraction": 0.5, "at": 1700000000000 },
+        "authoritative": false
+      },
+      "ok": { "action": "keep" }
+    },
+    {
+      "name": "an authoritative un-watch is the record and clears whatever is held",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 0, "at": [1600000000000, 0, "aaaa"], "viewing": 1 }
+        },
+        "mark": { "fraction": 0.5, "at": 1700000000000 },
+        "authoritative": true
+      },
+      "ok": { "action": "clear" }
+    },
+    {
+      "name": "a reconstructed row loses a tie to what is already held",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 1, "at": [1700000000000, 0, "aaaa"], "viewing": 1 }
+        },
+        "mark": { "fraction": 0.5, "at": 1700000000000 },
+        "authoritative": false
+      },
+      "ok": { "action": "keep" }
+    },
+    {
+      "name": "a mark that is not an object is nothing held",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 1, "at": [0, 0, ""], "viewing": 0 }
+        },
+        "mark": 42
+      },
+      "ok": { "action": "flag" }
+    },
+    {
       "name": "a newer stamp wins and carries its seconds",
       "request": {
         "op": "episode_mark",
