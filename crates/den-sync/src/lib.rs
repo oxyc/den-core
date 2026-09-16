@@ -4,6 +4,7 @@
 mod delivery;
 mod episodes;
 mod events;
+mod series;
 mod wire;
 
 use serde::Deserialize;
@@ -12,6 +13,9 @@ use serde_json::{json, Value};
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
 pub use episodes::episode_mark;
 pub use events::commands;
+pub use series::{
+    continue_target, episode_after, is_aired, series_state, Coord, LastPlayed, SeasonCount,
+};
 pub use wire::{capture, merge, Stamp};
 
 #[derive(Deserialize)]
@@ -37,6 +41,21 @@ enum Request {
         /// Absent means "reconstructed", which is the conservative reading.
         #[serde(default)]
         authoritative: bool,
+    },
+    SeriesState {
+        seasons: Vec<SeasonCount>,
+        last_aired: Option<Coord>,
+        watched: Vec<Coord>,
+    },
+    EpisodeAfter {
+        seasons: Vec<SeasonCount>,
+        last_aired: Option<Coord>,
+        at: Coord,
+    },
+    ContinueTarget {
+        seasons: Vec<SeasonCount>,
+        last_aired: Option<Coord>,
+        last_played: Option<LastPlayed>,
     },
     Issue {
         last: Stamp,
@@ -76,6 +95,21 @@ pub fn evaluate(input: &str) -> String {
                 mark,
                 authoritative,
             } => episode_mark(&row, &mark, authoritative),
+            Request::SeriesState {
+                seasons,
+                last_aired,
+                watched,
+            } => Ok(series_state(&seasons, last_aired, &watched)),
+            Request::EpisodeAfter {
+                seasons,
+                last_aired,
+                at,
+            } => Ok(episode_after(at, &seasons, last_aired)),
+            Request::ContinueTarget {
+                seasons,
+                last_aired,
+                last_played,
+            } => Ok(continue_target(&seasons, last_aired, last_played)),
             Request::Issue {
                 last,
                 seen,

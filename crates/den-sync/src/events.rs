@@ -1,3 +1,4 @@
+use crate::series::WATCHED;
 use crate::wire::{capture, name, Stamp};
 use serde_json::{json, Value};
 
@@ -66,8 +67,8 @@ pub fn commands(event: &Value, current: &Value) -> Result<Value, String> {
                 let progress = current["progress"]["value"]
                     .as_f64()
                     .ok_or("invalid_progress")?;
-                // den-spec / LibraryRecord.watchedThreshold. Completion is not inferred from a series row.
-                if progress >= 0.95 {
+                // Completion is not inferred from a series row.
+                if progress >= WATCHED {
                     kind = Some("watched");
                 } else if progress == 0.0 {
                     kind = Some("unwatched");

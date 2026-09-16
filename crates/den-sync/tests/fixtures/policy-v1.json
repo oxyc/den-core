@@ -1394,6 +1394,101 @@
         "mark": null
       },
       "ok": { "action": "flag" }
+    },
+    {
+      "name": "a Specials season counts towards nothing",
+      "request": {
+        "op": "series_state",
+        "seasons": [
+          { "season": 0, "episodes": 3 },
+          { "season": 1, "episodes": 6 }
+        ],
+        "last_aired": null,
+        "watched": [
+          { "season": 1, "episode": 1 },
+          { "season": 1, "episode": 2 }
+        ]
+      },
+      "ok": { "watched": 2, "total": 6, "nextUp": { "season": 1, "episode": 3 }, "complete": false }
+    },
+    {
+      "name": "a series watched to its last aired episode is complete",
+      "request": {
+        "op": "series_state",
+        "seasons": [{ "season": 1, "episodes": 8 }],
+        "last_aired": { "season": 1, "episode": 2 },
+        "watched": [
+          { "season": 1, "episode": 1 },
+          { "season": 1, "episode": 2 }
+        ]
+      },
+      "ok": { "watched": 2, "total": 2, "nextUp": null, "complete": true }
+    },
+    {
+      "name": "the episode after a finale is never a Special",
+      "request": {
+        "op": "episode_after",
+        "seasons": [
+          { "season": 0, "episodes": 3 },
+          { "season": 1, "episodes": 6 }
+        ],
+        "last_aired": null,
+        "at": { "season": 1, "episode": 6 }
+      },
+      "ok": { "next": null, "aired": false }
+    },
+    {
+      "name": "a listed episode that has not aired is reported as listed but unaired",
+      "request": {
+        "op": "episode_after",
+        "seasons": [{ "season": 1, "episodes": 8 }],
+        "last_aired": { "season": 1, "episode": 5 },
+        "at": { "season": 1, "episode": 5 }
+      },
+      "ok": { "next": { "season": 1, "episode": 6 }, "aired": false }
+    },
+    {
+      "name": "an unfinished episode resumes where it was left",
+      "request": {
+        "op": "continue_target",
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "last_played": { "season": 1, "episode": 3, "fraction": 0.4 }
+      },
+      "ok": { "episode": { "season": 1, "episode": 3 }, "fraction": 0.4, "kind": "resume" }
+    },
+    {
+      "name": "a finished episode offers the next one",
+      "request": {
+        "op": "continue_target",
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "last_played": { "season": 1, "episode": 3, "fraction": 1.0 }
+      },
+      "ok": { "episode": { "season": 1, "episode": 4 }, "fraction": 0.0, "kind": "next" }
+    },
+    {
+      "name": "a finished finale starts the series again rather than dead-ending",
+      "request": {
+        "op": "continue_target",
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "last_played": { "season": 1, "episode": 6, "fraction": 1.0 }
+      },
+      "ok": { "episode": { "season": 1, "episode": 1 }, "fraction": 0.0, "kind": "start" }
+    },
+    {
+      "name": "nothing played yet starts at the first aired episode",
+      "request": {
+        "op": "continue_target",
+        "seasons": [
+          { "season": 0, "episodes": 2 },
+          { "season": 1, "episodes": 6 }
+        ],
+        "last_aired": null,
+        "last_played": null
+      },
+      "ok": { "episode": { "season": 1, "episode": 1 }, "fraction": 0.0, "kind": "start" }
     }
   ]
 }

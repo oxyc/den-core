@@ -1,8 +1,6 @@
+use crate::series::WATCHED;
 use crate::wire::{name, Stamp};
 use serde_json::{json, Value};
-
-/// den-spec / LibraryRecord.watchedThreshold.
-const WATCHED: f64 = 0.95;
 
 /// What one episode row means for the watch state a client already holds.
 ///
