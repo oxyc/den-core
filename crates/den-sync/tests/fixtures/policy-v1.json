@@ -1396,6 +1396,38 @@
       "ok": { "action": "flag" }
     },
     {
+      "name": "a bit with no time and no completion is left alone rather than refused",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 0.4, "at": [0, 0, ""], "viewing": 0 }
+        },
+        "mark": null
+      },
+      "ok": { "action": "keep" }
+    },
+    {
+      "name": "a held mark with no time of its own loses to a real stamp",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 0.5, "at": [2000, 0, "aaaa"], "viewing": 0 }
+        },
+        "mark": { "fraction": 0.9 }
+      },
+      "ok": { "action": "replace", "fraction": 0.5, "at": 2000 }
+    },
+    {
       "name": "a Specials season counts towards nothing",
       "request": {
         "op": "series_state",

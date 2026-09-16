@@ -49,14 +49,15 @@ pub fn episode_mark(row: &Value, mark: &Value, authoritative: bool) -> Result<Va
     if at.0 == 0 {
         // A bit with no time says only "this was watched". Against anything already watched it adds nothing,
         // and restamping to the epoch would make every later comparison read real progress as the older side.
-        if value < WATCHED {
-            return Err("invalid_progress".into());
-        }
         // Anything already held wins, whatever its fraction. A mark below the threshold is real progress with
         // a real time behind it, and a timeless import must neither overwrite it nor declare it watched: doing
         // so leaves the episode reading "watched" while its resume position still says otherwise, and the
         // fabricated bit then propagates to every other device and never gets cleaned up.
-        if held.is_some() {
+        //
+        // A bit that is itself below the threshold says nothing at all — no completion, no time. The rule this
+        // replaced did nothing with it, and refusing it instead would never converge: the row stays in the
+        // client's canonical store and is offered again on every pull, failing identically forever.
+        if value < WATCHED || held.is_some() {
             return Ok(json!({"action": "keep"}));
         }
         return Ok(json!({"action": "flag"}));
@@ -66,9 +67,11 @@ pub fn episode_mark(row: &Value, mark: &Value, authoritative: bool) -> Result<Va
     // authoritative row skips the comparison: it is the record itself, so there is nothing to outrank.
     // Ties go to what is held: a row has to be strictly newer to displace it, or two writes in the same
     // millisecond would flip the answer on whichever happened to be asked last.
+    // Asked for, not indexed: indexing a map panics on a missing key, and a client is free to hand over a
+    // mark it holds without a time. A mark with no time of its own loses to anything, as it should.
     if !authoritative {
         if let Some(held) = held {
-            if held["at"].as_i64().unwrap_or(0) >= at.0 {
+            if held.get("at").and_then(Value::as_i64).unwrap_or(0) >= at.0 {
                 return Ok(json!({"action": "keep"}));
             }
         }
