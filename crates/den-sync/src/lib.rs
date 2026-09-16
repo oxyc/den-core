@@ -2,6 +2,7 @@
 //! All time and provider facts arrive as inputs; bindings return the same versioned JSON envelope.
 
 mod delivery;
+mod episodes;
 mod events;
 mod wire;
 
@@ -9,6 +10,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
+pub use episodes::episode_mark;
 pub use events::commands;
 pub use wire::{capture, merge, Stamp};
 
@@ -28,6 +30,10 @@ enum Request {
     Commands {
         event: Value,
         current: Value,
+    },
+    EpisodeMark {
+        row: Value,
+        mark: Value,
     },
     Issue {
         last: Stamp,
@@ -62,6 +68,7 @@ pub fn evaluate(input: &str) -> String {
                 id,
             } => capture(&before, &after, &at, &id),
             Request::Commands { event, current } => commands(&event, &current),
+            Request::EpisodeMark { row, mark } => episode_mark(&row, &mark),
             Request::Issue {
                 last,
                 seen,
