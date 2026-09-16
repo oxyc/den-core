@@ -29,6 +29,9 @@ function manifest(target) {
 const native = join(root, '../den/Vendor/DenCore');
 for (const name of ['Package.swift', 'Sources', 'Artifacts']) copy(`Swift/${name}`, join(native, name));
 copy('LICENSE', join(native, 'LICENSE'));
+// The golden cases travel with the binary, as they already do for the web. Kept beside it rather than copied
+// into the client's own tests, so the manifest covers them and the two cannot drift apart unnoticed.
+copy('crates/den-sync/tests/fixtures/policy-v1.json', join(native, 'policy-v1.json'));
 manifest(native);
 const web = join(root, '../den-edge/web/src/vendor/den-core');
 for (const name of ['index.js', 'index.d.ts']) copy(`web/${name}`, join(web, name));
