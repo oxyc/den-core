@@ -14,7 +14,8 @@ pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating
 pub use episodes::episode_mark;
 pub use events::commands;
 pub use series::{
-    continue_target, episode_after, is_aired, series_state, Coord, LastPlayed, SeasonCount,
+    aired_episodes, continue_target, episode_after, is_aired, series_state, Coord, LastPlayed,
+    SeasonCount,
 };
 pub use wire::{capture, merge, Stamp};
 
@@ -41,6 +42,10 @@ enum Request {
         /// Absent means "reconstructed", which is the conservative reading.
         #[serde(default)]
         authoritative: bool,
+    },
+    AiredEpisodes {
+        seasons: Vec<SeasonCount>,
+        last_aired: Option<Coord>,
     },
     SeriesState {
         seasons: Vec<SeasonCount>,
@@ -95,6 +100,10 @@ pub fn evaluate(input: &str) -> String {
                 mark,
                 authoritative,
             } => episode_mark(&row, &mark, authoritative),
+            Request::AiredEpisodes {
+                seasons,
+                last_aired,
+            } => Ok(aired_episodes(&seasons, last_aired)),
             Request::SeriesState {
                 seasons,
                 last_aired,

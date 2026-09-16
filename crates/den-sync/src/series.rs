@@ -68,6 +68,17 @@ fn aired(seasons: &[SeasonCount], last_aired: Option<Coord>) -> Vec<Coord> {
         .collect()
 }
 
+/// The episodes that make up "the series so far", in order: regular seasons, nothing after `last_aired`.
+///
+/// Exposed because the clients need the list itself, not only counts drawn from it — marking a season watched
+/// acts on exactly these, and asking for them is what keeps that set from being derived a second way.
+pub fn aired_episodes(seasons: &[SeasonCount], last_aired: Option<Coord>) -> Value {
+    json!(aired(seasons, last_aired)
+        .into_iter()
+        .map(coord)
+        .collect::<Vec<_>>())
+}
+
 /// How much of a series has been watched, and what to offer next.
 ///
 /// `watched` is the set of episodes the client holds as watched — passed as data because the clients keep it

@@ -1412,6 +1412,23 @@
       "ok": { "watched": 2, "total": 6, "nextUp": { "season": 1, "episode": 3 }, "complete": false }
     },
     {
+      "name": "the aired episodes are the regular seasons in order, up to the last aired",
+      "request": {
+        "op": "aired_episodes",
+        "seasons": [
+          { "season": 0, "episodes": 2 },
+          { "season": 2, "episodes": 2 },
+          { "season": 1, "episodes": 2 }
+        ],
+        "last_aired": { "season": 2, "episode": 1 }
+      },
+      "ok": [
+        { "season": 1, "episode": 1 },
+        { "season": 1, "episode": 2 },
+        { "season": 2, "episode": 1 }
+      ]
+    },
+    {
       "name": "a series watched to its last aired episode is complete",
       "request": {
         "op": "series_state",
