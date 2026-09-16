@@ -14,8 +14,8 @@ pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating
 pub use episodes::episode_mark;
 pub use events::commands;
 pub use series::{
-    aired_episodes, continue_target, episode_after, is_aired, series_state, Coord, LastPlayed,
-    SeasonCount,
+    aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
+    ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
 };
 pub use wire::{capture, merge, Stamp};
 
@@ -61,6 +61,10 @@ enum Request {
         seasons: Vec<SeasonCount>,
         last_aired: Option<Coord>,
         last_played: Option<LastPlayed>,
+    },
+    ContinueEntry {
+        #[serde(flatten)]
+        input: ContinueInput,
     },
     Issue {
         last: Stamp,
@@ -119,6 +123,7 @@ pub fn evaluate(input: &str) -> String {
                 last_aired,
                 last_played,
             } => Ok(continue_target(&seasons, last_aired, last_played)),
+            Request::ContinueEntry { input } => Ok(continue_entry(&input)),
             Request::Issue {
                 last,
                 seen,

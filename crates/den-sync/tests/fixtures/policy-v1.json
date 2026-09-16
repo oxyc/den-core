@@ -1538,6 +1538,165 @@
         "last_played": null
       },
       "ok": { "episode": { "season": 1, "episode": 1 }, "fraction": 0.0, "kind": "start" }
+    },
+    {
+      "name": "a two-second look at a later episode does not hide a series finished to E4",
+      "request": {
+        "op": "continue_entry",
+        "mark": { "season": 1, "episode": 5, "fraction": 0.01, "at": 1000 },
+        "finished": { "season": 1, "episode": 4 },
+        "flag": null,
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "dismissed_at": null
+      },
+      "ok": {
+        "action": "next",
+        "episode": { "season": 1, "episode": 5 },
+        "fraction": 0.0,
+        "reason": "the next episode after the furthest finished"
+      }
+    },
+    {
+      "name": "a series known only through a bare watched flag still offers its next episode",
+      "request": {
+        "op": "continue_entry",
+        "mark": null,
+        "finished": null,
+        "flag": { "season": 1, "episode": 4 },
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "dismissed_at": null
+      },
+      "ok": {
+        "action": "next",
+        "episode": { "season": 1, "episode": 5 },
+        "fraction": 0.0,
+        "reason": "the next episode after the furthest finished"
+      }
+    },
+    {
+      "name": "a mark past the floor and ahead of the front resumes",
+      "request": {
+        "op": "continue_entry",
+        "mark": { "season": 1, "episode": 3, "fraction": 0.4, "at": 1000 },
+        "finished": null,
+        "flag": null,
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "dismissed_at": null
+      },
+      "ok": {
+        "action": "resume",
+        "episode": { "season": 1, "episode": 3 },
+        "fraction": 0.4,
+        "reason": "resuming where it was left"
+      }
+    },
+    {
+      "name": "a flag ahead of the newest mark overtakes it",
+      "request": {
+        "op": "continue_entry",
+        "mark": { "season": 1, "episode": 2, "fraction": 0.5, "at": 1000 },
+        "finished": null,
+        "flag": { "season": 1, "episode": 4 },
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "dismissed_at": null
+      },
+      "ok": {
+        "action": "next",
+        "episode": { "season": 1, "episode": 5 },
+        "fraction": 0.0,
+        "reason": "the next episode after the furthest finished"
+      }
+    },
+    {
+      "name": "a title marked watched is still offered when the layout is known",
+      "request": {
+        "op": "continue_entry",
+        "mark": null,
+        "finished": { "season": 1, "episode": 4 },
+        "flag": null,
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "dismissed_at": null,
+        "title_watched": true
+      },
+      "ok": {
+        "action": "next",
+        "episode": { "season": 1, "episode": 5 },
+        "fraction": 0.0,
+        "reason": "the next episode after the furthest finished"
+      }
+    },
+    {
+      "name": "a title marked watched with no layout has nothing better to go on",
+      "request": {
+        "op": "continue_entry",
+        "mark": { "season": 1, "episode": 2, "fraction": 0.5, "at": 1000 },
+        "finished": null,
+        "flag": null,
+        "seasons": [],
+        "last_aired": null,
+        "dismissed_at": null,
+        "title_watched": true
+      },
+      "ok": {
+        "action": "none",
+        "episode": null,
+        "fraction": 0.0,
+        "reason": "title watched, no layout to judge it by"
+      }
+    },
+    {
+      "name": "dismissed at or after the last activity stays off the row",
+      "request": {
+        "op": "continue_entry",
+        "mark": { "season": 1, "episode": 2, "fraction": 0.5, "at": 1000 },
+        "finished": null,
+        "flag": null,
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "dismissed_at": 2000
+      },
+      "ok": { "action": "none", "episode": null, "fraction": 0.0, "reason": "dismissed" }
+    },
+    {
+      "name": "a finished finale has nothing listed after it",
+      "request": {
+        "op": "continue_entry",
+        "mark": null,
+        "finished": { "season": 1, "episode": 6 },
+        "flag": null,
+        "seasons": [{ "season": 1, "episodes": 6 }],
+        "last_aired": null,
+        "dismissed_at": null
+      },
+      "ok": {
+        "action": "none",
+        "episode": null,
+        "fraction": 0.0,
+        "reason": "finished: nothing listed after it"
+      }
+    },
+    {
+      "name": "caught up to the last aired episode",
+      "request": {
+        "op": "continue_entry",
+        "mark": null,
+        "finished": { "season": 1, "episode": 5 },
+        "flag": null,
+        "seasons": [{ "season": 1, "episodes": 8 }],
+        "last_aired": { "season": 1, "episode": 5 },
+        "dismissed_at": null
+      },
+      "ok": {
+        "action": "none",
+        "episode": null,
+        "fraction": 0.0,
+        "reason": "caught up: the next episode has not aired"
+      }
     }
   ]
 }
