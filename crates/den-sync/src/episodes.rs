@@ -54,20 +54,23 @@ pub fn episode_mark(row: &Value, mark: &Value, authoritative: bool) -> Result<Va
         if value < WATCHED {
             return Err("invalid_progress".into());
         }
-        if let Some(held) = held {
-            let fraction = held["fraction"].as_f64().ok_or("invalid_mark")?;
-            if fraction >= WATCHED {
-                return Ok(json!({"action": "keep"}));
-            }
+        // Anything already held wins, whatever its fraction. A mark below the threshold is real progress with
+        // a real time behind it, and a timeless import must neither overwrite it nor declare it watched: doing
+        // so leaves the episode reading "watched" while its resume position still says otherwise, and the
+        // fabricated bit then propagates to every other device and never gets cleaned up.
+        if held.is_some() {
+            return Ok(json!({"action": "keep"}));
         }
         return Ok(json!({"action": "flag"}));
     }
 
     // Otherwise the newer stamp wins; a held mark with no stamp of its own loses to anything. An
     // authoritative row skips the comparison: it is the record itself, so there is nothing to outrank.
+    // Ties go to what is held: a row has to be strictly newer to displace it, or two writes in the same
+    // millisecond would flip the answer on whichever happened to be asked last.
     if !authoritative {
         if let Some(held) = held {
-            if held["at"].as_i64().unwrap_or(0) > at.0 {
+            if held["at"].as_i64().unwrap_or(0) >= at.0 {
                 return Ok(json!({"action": "keep"}));
             }
         }

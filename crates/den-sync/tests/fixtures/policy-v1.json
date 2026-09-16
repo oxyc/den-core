@@ -1346,6 +1346,54 @@
         "authoritative": true
       },
       "ok": { "action": "keep" }
+    },
+    {
+      "name": "a watched bit with no time does not overwrite partial progress",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 1, "at": [0, 0, ""], "viewing": 0 }
+        },
+        "mark": { "fraction": 0.3, "at": 1700000000000 }
+      },
+      "ok": { "action": "keep" }
+    },
+    {
+      "name": "equal stamps keep what is held",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 0.5, "at": [2000, 0, "aaaa"], "viewing": 0 }
+        },
+        "mark": { "fraction": 0.9, "at": 2000 }
+      },
+      "ok": { "action": "keep" }
+    },
+    {
+      "name": "a bit at exactly the threshold with nothing held is a flag",
+      "request": {
+        "op": "episode_mark",
+        "row": {
+          "kind": "ep",
+          "schema": 2,
+          "title": { "type": "tv", "id": 1399 },
+          "season": 1,
+          "episode": 2,
+          "progress": { "value": 0.95, "at": [0, 0, ""], "viewing": 0 }
+        },
+        "mark": null
+      },
+      "ok": { "action": "flag" }
     }
   ]
 }
