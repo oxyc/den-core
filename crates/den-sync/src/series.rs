@@ -184,14 +184,16 @@ pub struct ContinueMark {
 ///
 /// `reason` comes back with every answer so a client can say why a series is missing without a debugger.
 pub fn continue_entry(input: &ContinueInput) -> Value {
-    let none = |reason: &str| json!({"action": "none", "episode": null, "fraction": 0.0, "reason": reason});
+    // `code` is what a client may branch on; `reason` is for whoever reads the log. A client that has to match
+    // on prose to tell "dismissed" from "I have not fetched the layout yet" will get it wrong, and did.
+    let none = |code: &str, reason: &str| json!({"action": "none", "code": code, "episode": null, "fraction": 0.0, "reason": reason});
     let layout_known = !regular(&input.seasons).is_empty();
     if input.title_watched && !layout_known {
-        return none("title watched, no layout to judge it by");
+        return none("title_watched", "title watched, no layout to judge it by");
     }
     let activity = input.mark.as_ref().map(|m| m.at).unwrap_or(i64::MIN);
     if input.dismissed_at.is_some_and(|at| at >= activity) {
-        return none("dismissed");
+        return none("dismissed", "dismissed");
     }
     let front = [input.finished, input.flag]
         .into_iter()
@@ -207,25 +209,28 @@ pub fn continue_entry(input: &ContinueInput) -> Value {
             .unwrap_or(true);
         if mark.fraction > RESUME_FLOOR && mark.fraction < WATCHED && ahead {
             return json!({
-                "action": "resume", "episode": coord(at), "fraction": mark.fraction,
+                "action": "resume", "code": "resume", "episode": coord(at), "fraction": mark.fraction,
                 "reason": "resuming where it was left",
             });
         }
     }
     let Some(front) = front else {
-        return none("nothing finished, and no mark past the resume floor");
+        return none(
+            "nothing_finished",
+            "nothing finished, and no mark past the resume floor",
+        );
     };
     if !layout_known {
-        return none("no season layout known");
+        return none("no_layout", "no season layout known");
     }
     let Some(next) = next_after(front, &input.seasons) else {
-        return none("finished: nothing listed after it");
+        return none("finished", "finished: nothing listed after it");
     };
     if !is_aired(next, input.last_aired) {
-        return none("caught up: the next episode has not aired");
+        return none("not_aired", "caught up: the next episode has not aired");
     }
     json!({
-        "action": "next", "episode": coord(next), "fraction": 0.0,
+        "action": "next", "code": "next", "episode": coord(next), "fraction": 0.0,
         "reason": "the next episode after the furthest finished",
     })
 }
