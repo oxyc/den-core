@@ -119,13 +119,50 @@ fn rows_are_sorted_by_packed_key_and_findable() {
     );
 }
 
+/// `card_poster` is store-v1's one OPTIONAL section, and this pins both halves of that.
+///
+/// The producer stopped writing it: a poster path is licensed vendor content and the store is a public
+/// artifact (oxyc/den#118). So a reader must answer "no posters" rather than fail — and the failure that
+/// gates this is not hypothetical. den-atlas read the section alongside the title and the year with `?`,
+/// which meant a store without it produced no cards at all, and a caller that turned the error into an
+/// empty map: browse rows empty, search with no display titles, `/health` green.
+///
+/// The second half matters as much: the paths are not merely unreferenced, they are NOT IN THE FILE. The
+/// writer was handed `posterPath` for two of these three titles, and dropping the section while still
+/// interning the strings would have left both in the published bytes with nothing pointing at them.
+#[test]
+fn a_store_without_the_optional_poster_section_reads_as_having_no_posters() {
+    let (bytes, _) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.per_row::<u32>("card_poster").is_err(),
+        "the fixture still carries card_poster, so this contract is untested"
+    );
+    // Everything else about a card is unaffected by its absence.
+    assert_eq!(
+        store.per_row::<u32>("card_title").unwrap().len(),
+        store.rows()
+    );
+    assert_eq!(
+        store.per_row::<i16>("card_year").unwrap().len(),
+        store.rows()
+    );
+
+    let haystack = String::from_utf8_lossy(&bytes);
+    for path in ["/alpha.jpg", "/gamma.jpg"] {
+        assert!(
+            !haystack.contains(path),
+            "{path} survived in the published bytes"
+        );
+    }
+}
+
 #[test]
 fn cards_scores_and_genres_read_as_the_vectors_say() {
     let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
     let strings = store.strings().expect("string table");
     let titles = store.per_row::<u32>("card_title").unwrap();
-    let posters = store.per_row::<u32>("card_poster").unwrap();
     let years = store.per_row::<i16>("card_year").unwrap();
     let intensity = store.per_row::<u16>("score_intensity").unwrap();
     let votes = store.per_row::<u32>("votes").unwrap();
@@ -148,10 +185,9 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
             row["votes"].as_u64().unwrap(),
             "{key} votes"
         );
-        assert_eq!(
-            strings.get(posters[i]),
-            row["cardPoster"].as_str(),
-            "{key} poster — None must read as None, not as a string"
+        assert!(
+            row.get("cardPoster").is_none(),
+            "{key}: the vectors still describe a poster, so this reader is out of step with the spec"
         );
         if let Some(year) = row["cardYear"].as_i64() {
             assert_eq!(years[i] as i64, year, "{key} year");
