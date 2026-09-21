@@ -45,8 +45,10 @@ macro_rules! fixture_or_fail {
     () => {
         match fixture() {
             Some(pair) => pair,
-            None if std::env::var("DEN_SPEC_OPTIONAL").is_ok() => {
-                eprintln!("SKIP: den-spec absent and DEN_SPEC_OPTIONAL is set");
+            // `== "1"`, not `is_ok()`: `DEN_SPEC_OPTIONAL=0`, set to turn skipping OFF, would
+            // otherwise turn it on.
+            None if std::env::var("DEN_SPEC_OPTIONAL").as_deref() == Ok("1") => {
+                eprintln!("SKIP: den-spec absent and DEN_SPEC_OPTIONAL=1");
                 return;
             }
             None => panic!(
