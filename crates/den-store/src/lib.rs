@@ -252,6 +252,60 @@ impl fmt::Debug for Store<'_> {
     }
 }
 
+/// The section table, owned, so the bytes can be borrowed separately.
+///
+/// [`Store::open`] verifies the content hash, which costs about 1 ms per MB — fine once at load, far too
+/// much per query. A consumer that owns the mapping (den-atlas owns an `Mmap`) cannot hold a `Store`
+/// alongside it without a self-referential struct, so it holds one of these instead: built once, by
+/// verifying, and thereafter [`view`](Self::view) hands out a `Store` for free.
+///
+/// The only constructor verifies, so a `StoreTable` cannot exist for bytes that were never checked.
+pub struct StoreTable {
+    entries: Vec<RawEntry>,
+    rows: usize,
+    dataset_version: String,
+    len: usize,
+}
+
+impl StoreTable {
+    /// Verify the store and keep its table. Does not retain the bytes.
+    pub fn open(bytes: &[u8]) -> Result<Self, StoreError> {
+        let store = Store::open(bytes)?;
+        Ok(Self {
+            entries: store
+                .entries
+                .iter()
+                .map(|e| RawEntry { name: e.name, offset: e.offset, length: e.length, width: e.width })
+                .collect(),
+            rows: store.rows,
+            dataset_version: store.dataset_version.to_owned(),
+            len: bytes.len(),
+        })
+    }
+
+    /// A `Store` over bytes this table was built from. Cheap: no hash, no parse.
+    ///
+    /// Panics if handed a different-length slice — that would mean the caller swapped the file under the
+    /// table, and every section offset would then address the wrong thing quietly.
+    pub fn view<'a>(&'a self, bytes: &'a [u8]) -> Store<'a> {
+        assert_eq!(bytes.len(), self.len, "store bytes changed under its table");
+        Store {
+            bytes,
+            entries: &self.entries,
+            rows: self.rows,
+            dataset_version: &self.dataset_version,
+        }
+    }
+
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn dataset_version(&self) -> &str {
+        &self.dataset_version
+    }
+}
+
 /// A variable-length column.
 pub struct List<'a, T> {
     values: &'a [T],
