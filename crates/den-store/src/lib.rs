@@ -42,52 +42,101 @@ pub const NONE_I16: i16 = i16::MIN;
 
 /// The 12 facet axes, in the order `facet_v` and `facet_c` store them.
 pub const FACET_AXES: [&str; 12] = [
-    "era", "setting", "scope", "ending", "pacing", "chronology", "continuity", "conflict", "ensemble",
-    "tone", "timespan", "archetype",
+    "era",
+    "setting",
+    "scope",
+    "ending",
+    "pacing",
+    "chronology",
+    "continuity",
+    "conflict",
+    "ensemble",
+    "tone",
+    "timespan",
+    "archetype",
 ];
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum StoreError {
-    TooSmall { need: usize, got: usize },
+    TooSmall {
+        need: usize,
+        got: usize,
+    },
     BadMagic,
     /// A store written by a build that does not share this one's layout.
-    Version { found: u32, expected: u32 },
+    Version {
+        found: u32,
+        expected: u32,
+    },
     /// The writer's endianness marker did not survive the round trip.
-    Endianness { found: u32 },
+    Endianness {
+        found: u32,
+    },
     /// The content hash did not match. The file is corrupt or truncated; nothing was read from it.
-    Corrupt { found: u64, computed: u64 },
+    Corrupt {
+        found: u64,
+        computed: u64,
+    },
     SectionTable,
     /// A section's declared extent is not inside the file.
-    SectionBounds { name: [u8; NAME_BYTES] },
+    SectionBounds {
+        name: [u8; NAME_BYTES],
+    },
     MissingSection(&'static str),
     /// A section exists but is not a whole number of its own elements, or is misaligned for them.
-    BadSection { name: &'static str },
+    BadSection {
+        name: &'static str,
+    },
     /// A column was asked for at a different element width than the writer declared. A `u32` column
     /// read as `u16` is aligned and whole, so nothing else catches it.
-    WidthMismatch { name: &'static str, declared: u32, requested: u32 },
+    WidthMismatch {
+        name: &'static str,
+        declared: u32,
+        requested: u32,
+    },
     /// A row count that does not agree with a section's length.
-    RowMismatch { name: &'static str, rows: usize, found: usize },
+    RowMismatch {
+        name: &'static str,
+        rows: usize,
+        found: usize,
+    },
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TooSmall { need, got } => write!(f, "store is {got} bytes, needs at least {need}"),
+            Self::TooSmall { need, got } => {
+                write!(f, "store is {got} bytes, needs at least {need}")
+            }
             Self::BadMagic => write!(f, "not a den store (bad magic)"),
             Self::Version { found, expected } => {
-                write!(f, "store format version {found}, this build reads {expected}")
+                write!(
+                    f,
+                    "store format version {found}, this build reads {expected}"
+                )
             }
-            Self::Endianness { found } => write!(f, "endianness marker {found:#x} — foreign writer"),
+            Self::Endianness { found } => {
+                write!(f, "endianness marker {found:#x} — foreign writer")
+            }
             Self::Corrupt { found, computed } => {
-                write!(f, "content hash {found:#018x} but the bytes hash to {computed:#018x}")
+                write!(
+                    f,
+                    "content hash {found:#018x} but the bytes hash to {computed:#018x}"
+                )
             }
             Self::SectionTable => write!(f, "section table does not fit in the file"),
             Self::SectionBounds { name } => {
                 write!(f, "section {} extends past the end of the file", show(name))
             }
             Self::MissingSection(name) => write!(f, "store has no {name} section"),
-            Self::BadSection { name } => write!(f, "section {name} is misaligned or a partial element"),
-            Self::WidthMismatch { name, declared, requested } => write!(
+            Self::BadSection { name } => {
+                write!(f, "section {name} is misaligned or a partial element")
+            }
+            Self::WidthMismatch {
+                name,
+                declared,
+                requested,
+            } => write!(
                 f,
                 "section {name} holds {declared}-byte elements, read as {requested}-byte"
             ),
@@ -131,14 +180,20 @@ impl<'a> Store<'a> {
     /// that gets a `Store` back is holding bytes that have already been proven whole.
     pub fn open(bytes: &'a [u8]) -> Result<Self, StoreError> {
         if bytes.len() < HEADER_BYTES {
-            return Err(StoreError::TooSmall { need: HEADER_BYTES, got: bytes.len() });
+            return Err(StoreError::TooSmall {
+                need: HEADER_BYTES,
+                got: bytes.len(),
+            });
         }
         if &bytes[..8] != MAGIC {
             return Err(StoreError::BadMagic);
         }
         let version = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
         if version != FORMAT_VERSION {
-            return Err(StoreError::Version { found: version, expected: FORMAT_VERSION });
+            return Err(StoreError::Version {
+                found: version,
+                expected: FORMAT_VERSION,
+            });
         }
         let endian = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
         if endian != ENDIAN_CHECK {
@@ -150,11 +205,18 @@ impl<'a> Store<'a> {
 
         let computed = hash(&bytes[HEADER_BYTES..]);
         if computed != declared {
-            return Err(StoreError::Corrupt { found: declared, computed });
+            return Err(StoreError::Corrupt {
+                found: declared,
+                computed,
+            });
         }
 
         let table_end = HEADER_BYTES
-            .checked_add(count.checked_mul(ENTRY_BYTES).ok_or(StoreError::SectionTable)?)
+            .checked_add(
+                count
+                    .checked_mul(ENTRY_BYTES)
+                    .ok_or(StoreError::SectionTable)?,
+            )
             .ok_or(StoreError::SectionTable)?;
         if table_end > bytes.len() {
             return Err(StoreError::SectionTable);
@@ -170,10 +232,18 @@ impl<'a> Store<'a> {
         }
 
         let raw_version = &bytes[32..48];
-        let end = raw_version.iter().position(|&b| b == 0).unwrap_or(raw_version.len());
+        let end = raw_version
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(raw_version.len());
         let dataset_version = core::str::from_utf8(&raw_version[..end]).unwrap_or("");
 
-        Ok(Self { bytes, entries, rows, dataset_version })
+        Ok(Self {
+            bytes,
+            entries,
+            rows,
+            dataset_version,
+        })
     }
 
     /// Titles in the store.
@@ -198,7 +268,10 @@ impl<'a> Store<'a> {
             .find(|e| show(&e.name) == name)
             .ok_or(StoreError::MissingSection(name))?;
         let start = entry.offset as usize;
-        Ok((&self.bytes[start..start + entry.length as usize], entry.width))
+        Ok((
+            &self.bytes[start..start + entry.length as usize],
+            entry.width,
+        ))
     }
 
     /// A typed column, at the width the WRITER declared for it.
@@ -215,7 +288,11 @@ impl<'a> Store<'a> {
         let (bytes, width) = self.entry(name)?;
         let want = core::mem::size_of::<T>() as u32;
         if width != want {
-            return Err(StoreError::WidthMismatch { name, declared: width, requested: want });
+            return Err(StoreError::WidthMismatch {
+                name,
+                declared: width,
+                requested: want,
+            });
         }
         <[T]>::ref_from_bytes(bytes).map_err(|_| StoreError::BadSection { name })
     }
@@ -227,13 +304,21 @@ impl<'a> Store<'a> {
     {
         let column = self.column::<T>(name)?;
         if column.len() != self.rows {
-            return Err(StoreError::RowMismatch { name, rows: self.rows, found: column.len() });
+            return Err(StoreError::RowMismatch {
+                name,
+                rows: self.rows,
+                found: column.len(),
+            });
         }
         Ok(column)
     }
 
     /// A `values`/`offsets` pair. Row *i* owns `values[offsets[i]..offsets[i+1]]`.
-    pub fn list<T>(&self, values: &'static str, offsets: &'static str) -> Result<List<'a, T>, StoreError>
+    pub fn list<T>(
+        &self,
+        values: &'static str,
+        offsets: &'static str,
+    ) -> Result<List<'a, T>, StoreError>
     where
         T: FromBytes + Immutable + KnownLayout,
     {
@@ -245,14 +330,20 @@ impl<'a> Store<'a> {
                 found: offsets_col.len(),
             });
         }
-        Ok(List { values: self.column::<T>(values)?, offsets: offsets_col })
+        Ok(List {
+            values: self.column::<T>(values)?,
+            offsets: offsets_col,
+        })
     }
 
     /// The string dictionary. There is exactly one: every id in the store — a facet value, a genre, a
     /// country, a title, an entity name — indexes this table. A second id space would make a mismatched
     /// lookup return a wrong but valid string, silently.
     pub fn strings(&self) -> Result<Strings<'a>, StoreError> {
-        Ok(Strings { blob: self.section("strings")?, offsets: self.column::<u32>("str_off")? })
+        Ok(Strings {
+            blob: self.section("strings")?,
+            offsets: self.column::<u32>("str_off")?,
+        })
     }
 
     /// The row for a title, by binary search over `keys`. `media`: 0 = movie, 1 = tv.
@@ -297,7 +388,12 @@ impl StoreTable {
             entries: store
                 .entries
                 .iter()
-                .map(|e| RawEntry { name: e.name, offset: e.offset, length: e.length, width: e.width })
+                .map(|e| RawEntry {
+                    name: e.name,
+                    offset: e.offset,
+                    length: e.length,
+                    width: e.width,
+                })
                 .collect(),
             rows: store.rows,
             dataset_version: store.dataset_version.to_owned(),
@@ -339,7 +435,9 @@ impl<'a, T> List<'a, T> {
     pub fn get(&self, row: Row) -> &'a [T] {
         // checked_add: `row.0 + 1` overflows on `Row(usize::MAX)` and panics in a debug build, in a
         // crate that forbids unsafe and documents this as returning empty for a row it cannot describe.
-        let Some(next) = row.0.checked_add(1) else { return &[] };
+        let Some(next) = row.0.checked_add(1) else {
+            return &[];
+        };
         let (Some(&from), Some(&to)) = (self.offsets.get(row.0), self.offsets.get(next)) else {
             return &[];
         };
@@ -387,8 +485,14 @@ fn hash(body: &[u8]) -> u64 {
 // function keeps the dependency list at `zerocopy` alone for something that runs in a browser.
 fn blake2b64(input: &[u8]) -> u64 {
     const IV: [u64; 8] = [
-        0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
-        0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
+        0x6a09e667f3bcc908,
+        0xbb67ae8584caa73b,
+        0x3c6ef372fe94f82b,
+        0xa54ff53a5f1d36f1,
+        0x510e527fade682d1,
+        0x9b05688c2b3e6c1f,
+        0x1f83d9abfb41bd6b,
+        0x5be0cd19137e2179,
     ];
     const SIGMA: [[usize; 16]; 12] = [
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
@@ -474,24 +578,42 @@ mod tests {
     ///   python3 -c "import hashlib; print(list(hashlib.blake2b(b'', digest_size=8).digest()))"
     #[test]
     fn blake2b64_matches_the_writers_digest() {
-        assert_eq!(blake2b64(b"").to_le_bytes(), [228, 166, 160, 87, 116, 121, 178, 180]);
-        assert_eq!(blake2b64(b"abc").to_le_bytes(), [216, 187, 20, 216, 51, 213, 149, 89]);
+        assert_eq!(
+            blake2b64(b"").to_le_bytes(),
+            [228, 166, 160, 87, 116, 121, 178, 180]
+        );
+        assert_eq!(
+            blake2b64(b"abc").to_le_bytes(),
+            [216, 187, 20, 216, 51, 213, 149, 89]
+        );
         // A block boundary and one past it: the counter and the final-block flag are the easy things to
         // get wrong, and neither shows up on a short input.
-        assert_eq!(blake2b64(&[0x61; 128]).to_le_bytes(), [240, 102, 67, 254, 156, 126, 24, 218]);
-        assert_eq!(blake2b64(&[0x61; 129]).to_le_bytes(), [228, 98, 83, 91, 176, 197, 162, 153]);
+        assert_eq!(
+            blake2b64(&[0x61; 128]).to_le_bytes(),
+            [240, 102, 67, 254, 156, 126, 24, 218]
+        );
+        assert_eq!(
+            blake2b64(&[0x61; 129]).to_le_bytes(),
+            [228, 98, 83, 91, 176, 197, 162, 153]
+        );
     }
 
     #[test]
     fn refuses_a_store_that_is_not_one() {
-        assert_eq!(Store::open(b"short").unwrap_err(), StoreError::TooSmall { need: 64, got: 5 });
+        assert_eq!(
+            Store::open(b"short").unwrap_err(),
+            StoreError::TooSmall { need: 64, got: 5 }
+        );
         let mut bytes = vec![0u8; 64];
         assert_eq!(Store::open(&bytes).unwrap_err(), StoreError::BadMagic);
         bytes[..8].copy_from_slice(MAGIC);
         bytes[8..12].copy_from_slice(&99u32.to_le_bytes());
         assert_eq!(
             Store::open(&bytes).unwrap_err(),
-            StoreError::Version { found: 99, expected: FORMAT_VERSION }
+            StoreError::Version {
+                found: 99,
+                expected: FORMAT_VERSION
+            }
         );
     }
 }

@@ -67,7 +67,10 @@ fn header_matches_the_spec_vectors() {
     let header = &expected["header"];
 
     assert_eq!(store.rows() as u64, header["rowCount"].as_u64().unwrap());
-    assert_eq!(store.dataset_version(), header["datasetVersion"].as_str().unwrap());
+    assert_eq!(
+        store.dataset_version(),
+        header["datasetVersion"].as_str().unwrap()
+    );
     assert_eq!(bytes.len() as u64, header["bytes"].as_u64().unwrap());
     assert_eq!(
         den_store::FORMAT_VERSION as u64,
@@ -85,7 +88,10 @@ fn a_flipped_bit_is_refused() {
     let at = corrupt.len() / 2;
     corrupt[at] ^= 0x01;
     assert!(
-        matches!(Store::open(&corrupt), Err(den_store::StoreError::Corrupt { .. })),
+        matches!(
+            Store::open(&corrupt),
+            Err(den_store::StoreError::Corrupt { .. })
+        ),
         "a single flipped bit past the header must be refused, not read"
     );
 }
@@ -107,7 +113,10 @@ fn rows_are_sorted_by_packed_key_and_findable() {
     }
     // Movie rows precede tv rows because the media bit is the high half of the packed key.
     let keys = store.per_row::<u64>("keys").unwrap();
-    assert!(keys.windows(2).all(|w| w[0] < w[1]), "keys must be strictly ascending");
+    assert!(
+        keys.windows(2).all(|w| w[0] < w[1]),
+        "keys must be strictly ascending"
+    );
 }
 
 #[test]
@@ -126,11 +135,19 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
         let i = row["row"].as_u64().unwrap() as usize;
         let key = row["key"].as_str().unwrap();
 
-        assert_eq!(strings.get(titles[i]), row["cardTitle"].as_str(), "{key} card title");
+        assert_eq!(
+            strings.get(titles[i]),
+            row["cardTitle"].as_str(),
+            "{key} card title"
+        );
         // Votes ORDER every browse row, so a wrong one is a row in the wrong order rather than an error.
         // movie:1 pins batch-number ordering: batch-1 says 1234 and batch-10 says 4321, and `sorted()`
         // on the names would take the 1234.
-        assert_eq!(u64::from(votes[i]), row["votes"].as_u64().unwrap(), "{key} votes");
+        assert_eq!(
+            u64::from(votes[i]),
+            row["votes"].as_u64().unwrap(),
+            "{key} votes"
+        );
         assert_eq!(
             strings.get(posters[i]),
             row["cardPoster"].as_str(),
@@ -145,9 +162,16 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
             assert_eq!(intensity[i] as u64, want, "{key} intensity");
         }
         if let Some(want) = row.get("genres").and_then(|g| g.as_array()) {
-            let got: Vec<u64> = den_store::Row(i).pipe(|r| genres.get(r)).iter().map(|&g| g as u64).collect();
+            let got: Vec<u64> = den_store::Row(i)
+                .pipe(|r| genres.get(r))
+                .iter()
+                .map(|&g| g as u64)
+                .collect();
             let want: Vec<u64> = want.iter().map(|g| g.as_u64().unwrap()).collect();
-            assert_eq!(got, want, "{key} genres — one Q-id can map to several TMDB ids");
+            assert_eq!(
+                got, want,
+                "{key} genres — one Q-id can map to several TMDB ids"
+            );
         }
     }
 }
@@ -171,9 +195,17 @@ fn a_facts_only_row_reads_as_absent_not_as_zero() {
     let i = row["row"].as_u64().unwrap() as usize;
 
     assert_eq!(primary[i], NONE_U32, "no primary genre");
-    assert_eq!(strings.get(primary[i]), None, "and it resolves to nothing, not to a string");
+    assert_eq!(
+        strings.get(primary[i]),
+        None,
+        "and it resolves to nothing, not to a string"
+    );
     assert!(makers.get(den_store::Row(i)).is_empty(), "no makers");
-    assert_eq!(strings.get(NONE_U32), None, "the absent sentinel never resolves");
+    assert_eq!(
+        strings.get(NONE_U32),
+        None,
+        "the absent sentinel never resolves"
+    );
 }
 
 /// `released` is DAYS SINCE 1970-01-01, with its precision in a column of its own.
@@ -237,12 +269,23 @@ fn facets_keep_their_axis_order_and_declines_are_absent() {
                     pair[0].as_str(),
                     "{key} {name} — a wrong axis order shows up here and nowhere else"
                 );
-                assert_eq!(confs[at] as u64, pair[1].as_u64().unwrap(), "{key} {name} confidence");
+                assert_eq!(
+                    confs[at] as u64,
+                    pair[1].as_u64().unwrap(),
+                    "{key} {name} confidence"
+                );
             }
         }
-        for name in row.get("facetsAbsent").and_then(|a| a.as_array()).unwrap_or(&vec![]) {
+        for name in row
+            .get("facetsAbsent")
+            .and_then(|a| a.as_array())
+            .unwrap_or(&vec![])
+        {
             let name = name.as_str().unwrap();
-            let axis = den_store::FACET_AXES.iter().position(|a| a == &name).unwrap();
+            let axis = den_store::FACET_AXES
+                .iter()
+                .position(|a| a == &name)
+                .unwrap();
             assert_eq!(
                 values[i * axes + axis],
                 NONE_U32,
@@ -262,7 +305,9 @@ fn vectors_are_reordered_into_key_order() {
     let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
     let plot = store.column::<i8>("vec_plot").expect("vec_plot");
-    let has_premise = store.per_row::<u8>("vec_premise_has").expect("vec_premise_has");
+    let has_premise = store
+        .per_row::<u8>("vec_premise_has")
+        .expect("vec_premise_has");
     let premise = store.column::<i8>("vec_premise").expect("vec_premise");
     let dims = plot.len() / store.rows();
 
@@ -272,9 +317,15 @@ fn vectors_are_reordered_into_key_order() {
         let span = &plot[i * dims..(i + 1) * dims];
 
         if row["hasPlotVector"].as_bool() == Some(true) {
-            assert!(span.iter().any(|&b| b != 0), "{key} should carry a plot vector");
+            assert!(
+                span.iter().any(|&b| b != 0),
+                "{key} should carry a plot vector"
+            );
         } else {
-            assert!(span.iter().all(|&b| b == 0), "{key} has none, so its row must be zero-filled");
+            assert!(
+                span.iter().all(|&b| b == 0),
+                "{key} has none, so its row must be zero-filled"
+            );
         }
 
         let want = row["hasPremiseVector"].as_bool() == Some(true);
@@ -298,7 +349,10 @@ fn a_column_read_at_the_wrong_width_is_refused() {
     let (bytes, _) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
 
-    assert!(store.column::<u32>("card_title").is_ok(), "the declared width reads");
+    assert!(
+        store.column::<u32>("card_title").is_ok(),
+        "the declared width reads"
+    );
     assert!(
         matches!(
             store.column::<u16>("card_title"),
