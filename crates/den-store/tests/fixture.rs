@@ -176,6 +176,47 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
     }
 }
 
+/// The entity table, and the aliases people search reads as well as the name.
+///
+/// A reader that indexes only `ent_name` answers "Cyrus Actor" with nothing while "Cy Actor" works —
+/// which on the real corpus is 118,958 names across 64,075 of 162,812 entities. The aliases are STRINGS
+/// here, not hashes: folding is the reader's own `name_key`, and a writer producing those hashes would be
+/// a second copy of that algorithm.
+#[test]
+fn entity_aliases_resolve() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let qids = store.column::<u32>("ent_qid").expect("ent_qid");
+    let names = store.column::<u32>("ent_name").expect("ent_name");
+    let tmdb = store.column::<u32>("ent_tmdb").expect("ent_tmdb");
+    let aliases = store
+        .list_of::<u32>("ent_alias_v", "ent_alias_o", qids.len())
+        .expect("ent_alias");
+
+    for want in expected["entities"].as_array().unwrap() {
+        let qid = want["qid"].as_u64().unwrap() as u32;
+        let at = qids.iter().position(|&q| q == qid).expect("entity present");
+        assert_eq!(strings.get(names[at]), want["name"].as_str(), "Q{qid} name");
+        match want["tmdbPersonId"].as_u64() {
+            Some(id) => assert_eq!(u64::from(tmdb[at]), id, "Q{qid} tmdb person id"),
+            None => assert_eq!(tmdb[at], NONE_U32, "Q{qid} has no tmdb person id"),
+        }
+        let got: Vec<&str> = aliases
+            .get(den_store::Row(at))
+            .iter()
+            .filter_map(|&id| strings.get(id))
+            .collect();
+        let want: Vec<&str> = want["aliases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a.as_str().unwrap())
+            .collect();
+        assert_eq!(got, want, "Q{qid} aliases");
+    }
+}
+
 #[test]
 fn a_facts_only_row_reads_as_absent_not_as_zero() {
     let (bytes, expected) = fixture_or_fail!();

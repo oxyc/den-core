@@ -314,6 +314,35 @@ impl<'a> Store<'a> {
     }
 
     /// A `values`/`offsets` pair. Row *i* owns `values[offsets[i]..offsets[i+1]]`.
+    /// A `values`/`offsets` pair indexed by something OTHER than a title row.
+    ///
+    /// `list` requires `len(rows) + 1` offsets, which is right for a per-title list and wrong for a list
+    /// keyed by anything else — the entity table has its own length, and checking it against the title
+    /// count refuses a perfectly correct section. `n` is what the caller expects, so the length is still
+    /// checked rather than trusted.
+    pub fn list_of<T>(
+        &self,
+        values: &'static str,
+        offsets: &'static str,
+        n: usize,
+    ) -> Result<List<'a, T>, StoreError>
+    where
+        T: FromBytes + Immutable + KnownLayout,
+    {
+        let offsets_col = self.column::<u32>(offsets)?;
+        if offsets_col.len() != n + 1 {
+            return Err(StoreError::RowMismatch {
+                name: offsets,
+                rows: n + 1,
+                found: offsets_col.len(),
+            });
+        }
+        Ok(List {
+            values: self.column::<T>(values)?,
+            offsets: offsets_col,
+        })
+    }
+
     pub fn list<T>(
         &self,
         values: &'static str,
