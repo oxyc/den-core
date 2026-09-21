@@ -138,6 +138,12 @@ fn a_store_without_the_optional_poster_section_reads_as_having_no_posters() {
         store.per_row::<u32>("card_poster").is_err(),
         "the fixture still carries card_poster, so this contract is untested"
     );
+    // `votes` went the same way and for the same reason, but it is NOT optional — it is gone. A reader
+    // that ordered rows by it needs a source of its own; den-atlas joins IMDb's public dump on `imdb`.
+    assert!(
+        store.per_row::<u32>("votes").is_err(),
+        "the fixture still carries votes, so nothing here proves a reader can do without it"
+    );
     // Everything else about a card is unaffected by its absence.
     assert_eq!(
         store.per_row::<u32>("card_title").unwrap().len(),
@@ -165,7 +171,6 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
     let titles = store.per_row::<u32>("card_title").unwrap();
     let years = store.per_row::<i16>("card_year").unwrap();
     let intensity = store.per_row::<u16>("score_intensity").unwrap();
-    let votes = store.per_row::<u32>("votes").unwrap();
     let genres = store.list::<u32>("genres_v", "genres_o").unwrap();
 
     for row in expected["rows"].as_array().unwrap() {
@@ -176,14 +181,6 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
             strings.get(titles[i]),
             row["cardTitle"].as_str(),
             "{key} card title"
-        );
-        // Votes ORDER every browse row, so a wrong one is a row in the wrong order rather than an error.
-        // movie:1 pins batch-number ordering: batch-1 says 1234 and batch-10 says 4321, and `sorted()`
-        // on the names would take the 1234.
-        assert_eq!(
-            u64::from(votes[i]),
-            row["votes"].as_u64().unwrap(),
-            "{key} votes"
         );
         assert!(
             row.get("cardPoster").is_none(),
