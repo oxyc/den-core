@@ -5,8 +5,7 @@
 //! writer used blake2b-64, which would have made every store we ship unreadable by a reader that believed
 //! the document.
 //!
-//! The fixture lives in den-spec. When it is not checked out the test SKIPS rather than passes: a
-//! contract test that silently reports success when the contract is absent is worse than no test.
+//! The fixture lives in den-spec. When it is not checked out these tests FAIL — see `fixture_or_fail!`.
 
 use den_store::{Store, NONE_U32};
 use std::path::PathBuf;
@@ -14,7 +13,10 @@ use std::path::PathBuf;
 /// `den-spec/vectors/`, as a sibling checkout or via `DEN_SPEC_DIR`.
 fn spec_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("DEN_SPEC_DIR") {
-        return Some(PathBuf::from(dir).join("vectors"));
+        // Checked, not trusted: a DEN_SPEC_DIR pointing nowhere used to return Some and then fall out
+        // of the read below as a skip, so a mistyped path reported five passes.
+        let dir = PathBuf::from(dir).join("vectors");
+        return dir.is_dir().then_some(dir);
     }
     let sibling = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../den-spec/vectors")
@@ -30,21 +32,35 @@ fn fixture() -> Option<(Vec<u8>, serde_json::Value)> {
     Some((store, serde_json::from_str(&expected).ok()?))
 }
 
-macro_rules! fixture_or_skip {
+/// The fixture, or a FAILURE.
+///
+/// This used to `return` when den-spec was absent, on the reasoning that skipping beats a false pass.
+/// It was itself the false pass: `cargo test` swallows stderr without `--nocapture`, so
+/// `DEN_SPEC_DIR=/nonexistent cargo test` printed "5 passed" and enforced nothing. A contract test that
+/// cannot find its contract has not verified anything, and must say so the only way a test can.
+///
+/// `DEN_SPEC_OPTIONAL=1` is the deliberate escape, for a checkout that genuinely has no den-spec. It has
+/// to be set on purpose, which is the whole difference.
+macro_rules! fixture_or_fail {
     () => {
         match fixture() {
             Some(pair) => pair,
-            None => {
-                eprintln!("SKIP: den-spec/vectors/store-v1.* not found — set DEN_SPEC_DIR");
+            None if std::env::var("DEN_SPEC_OPTIONAL").is_ok() => {
+                eprintln!("SKIP: den-spec absent and DEN_SPEC_OPTIONAL is set");
                 return;
             }
+            None => panic!(
+                "den-spec/vectors/store-v1.* not found — this test verifies the format contract and \
+                 cannot do so without it. Check out den-spec beside this repo, set DEN_SPEC_DIR, or set \
+                 DEN_SPEC_OPTIONAL=1 to skip deliberately."
+            ),
         }
     };
 }
 
 #[test]
 fn header_matches_the_spec_vectors() {
-    let (bytes, expected) = fixture_or_skip!();
+    let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("the fixture opens");
     let header = &expected["header"];
 
@@ -60,7 +76,7 @@ fn header_matches_the_spec_vectors() {
 
 #[test]
 fn a_flipped_bit_is_refused() {
-    let (bytes, _) = fixture_or_skip!();
+    let (bytes, _) = fixture_or_fail!();
     let mut corrupt = bytes.clone();
     // Past the header, so the hash is the only thing that can catch it — which is the point: a
     // structural validator accepted 339 of 400 such flips and answered 77 of them wrongly.
@@ -74,7 +90,7 @@ fn a_flipped_bit_is_refused() {
 
 #[test]
 fn rows_are_sorted_by_packed_key_and_findable() {
-    let (bytes, expected) = fixture_or_skip!();
+    let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
     for row in expected["rows"].as_array().unwrap() {
         let media = row["media"].as_u64().unwrap() as u8;
@@ -94,7 +110,7 @@ fn rows_are_sorted_by_packed_key_and_findable() {
 
 #[test]
 fn cards_scores_and_genres_read_as_the_vectors_say() {
-    let (bytes, expected) = fixture_or_skip!();
+    let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
     let strings = store.strings().expect("string table");
     let titles = store.per_row::<u32>("card_title").unwrap();
@@ -131,7 +147,7 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
 
 #[test]
 fn a_facts_only_row_reads_as_absent_not_as_zero() {
-    let (bytes, expected) = fixture_or_skip!();
+    let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
     let strings = store.strings().unwrap();
     let primary = store.per_row::<u32>("primary_genre").unwrap();
@@ -151,6 +167,158 @@ fn a_facts_only_row_reads_as_absent_not_as_zero() {
     assert_eq!(strings.get(primary[i]), None, "and it resolves to nothing, not to a string");
     assert!(makers.get(den_store::Row(i)).is_empty(), "no makers");
     assert_eq!(strings.get(NONE_U32), None, "the absent sentinel never resolves");
+}
+
+/// `released` is DAYS SINCE 1970-01-01, with its precision in a column of its own.
+///
+/// This is the fix that started the rework — the column was 100% sentinel because the corpus value is
+/// `{date, precision}` and the writer read it as an int. The fixture pinned the right answer and nothing
+/// asserted it, which is how a headline fix goes unprotected. More than half of real dated rows are
+/// year-precision, so a reader that ignores the precision column dates them all to 1 January.
+#[test]
+fn released_is_days_since_epoch_with_its_precision() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let released = store.per_row::<i32>("released").expect("released");
+    let precision = store.per_row::<u8>("released_prec").expect("released_prec");
+
+    for row in expected["rows"].as_array().unwrap() {
+        let i = row["row"].as_u64().unwrap() as usize;
+        let key = row["key"].as_str().unwrap();
+        match row["released"].as_i64() {
+            Some(want) => {
+                assert_eq!(released[i] as i64, want, "{key} released");
+                if let Some(prec) = row["releasedPrecision"].as_u64() {
+                    assert_eq!(precision[i] as u64, prec, "{key} precision");
+                }
+            }
+            None if row.get("released").is_some_and(|v| v.is_null()) => {
+                assert_eq!(released[i], i32::MIN, "{key} has no date and must say so");
+            }
+            None => {}
+        }
+    }
+}
+
+/// The 12 facet axes, in order, and a declined one reading as ABSENT.
+///
+/// Swapping two axes, or treating `does-not-apply` as a value, are both invisible without this: the
+/// store would still be structurally perfect and every row would still have twelve entries.
+#[test]
+fn facets_keep_their_axis_order_and_declines_are_absent() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let values = store.column::<u32>("facet_v").expect("facet_v");
+    let confs = store.column::<u8>("facet_c").expect("facet_c");
+    let axes = den_store::FACET_AXES.len();
+
+    for row in expected["rows"].as_array().unwrap() {
+        let i = row["row"].as_u64().unwrap() as usize;
+        let key = row["key"].as_str().unwrap();
+
+        if let Some(want) = row.get("facets").and_then(|f| f.as_object()) {
+            for (name, pair) in want {
+                let axis = den_store::FACET_AXES
+                    .iter()
+                    .position(|a| a == name)
+                    .unwrap_or_else(|| panic!("{name} is not a facet axis"));
+                let at = i * axes + axis;
+                let pair = pair.as_array().expect("[value, confidence]");
+                assert_eq!(
+                    strings.get(values[at]),
+                    pair[0].as_str(),
+                    "{key} {name} — a wrong axis order shows up here and nowhere else"
+                );
+                assert_eq!(confs[at] as u64, pair[1].as_u64().unwrap(), "{key} {name} confidence");
+            }
+        }
+        for name in row.get("facetsAbsent").and_then(|a| a.as_array()).unwrap_or(&vec![]) {
+            let name = name.as_str().unwrap();
+            let axis = den_store::FACET_AXES.iter().position(|a| a == &name).unwrap();
+            assert_eq!(
+                values[i * axes + axis],
+                NONE_U32,
+                "{key} {name} was declined and must be absent, not a value"
+            );
+        }
+    }
+}
+
+/// The vectors, re-ordered from their own labels-file order into the store's sorted-key order.
+///
+/// The fixture generator's own comment says getting this wrong "is invisible in normal use": every row
+/// would still hold 1024 plausible bytes, just the wrong title's. The fixture builds each row from a
+/// known fill, so a shift of even one row is caught.
+#[test]
+fn vectors_are_reordered_into_key_order() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let plot = store.column::<i8>("vec_plot").expect("vec_plot");
+    let has_premise = store.per_row::<u8>("vec_premise_has").expect("vec_premise_has");
+    let premise = store.column::<i8>("vec_premise").expect("vec_premise");
+    let dims = plot.len() / store.rows();
+
+    for row in expected["rows"].as_array().unwrap() {
+        let i = row["row"].as_u64().unwrap() as usize;
+        let key = row["key"].as_str().unwrap();
+        let span = &plot[i * dims..(i + 1) * dims];
+
+        if row["hasPlotVector"].as_bool() == Some(true) {
+            assert!(span.iter().any(|&b| b != 0), "{key} should carry a plot vector");
+        } else {
+            assert!(span.iter().all(|&b| b == 0), "{key} has none, so its row must be zero-filled");
+        }
+
+        let want = row["hasPremiseVector"].as_bool() == Some(true);
+        assert_eq!(has_premise[i] == 1, want, "{key} premise flag");
+        let span = &premise[i * dims..(i + 1) * dims];
+        assert_eq!(
+            span.iter().any(|&b| b != 0),
+            want,
+            "{key} premise vector must agree with its own flag"
+        );
+    }
+}
+
+/// A column read at the wrong element width must be REFUSED, not silently reinterpreted.
+///
+/// This is the one the audit demonstrated on a real store: `column::<u16>("card_title")` returned
+/// 95,236 elements with `first = 64060` and no error, because half of a `u32` is a perfectly aligned,
+/// whole `u16`. Alignment and length checks cannot see it; only the width the writer declared can.
+#[test]
+fn a_column_read_at_the_wrong_width_is_refused() {
+    let (bytes, _) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+
+    assert!(store.column::<u32>("card_title").is_ok(), "the declared width reads");
+    assert!(
+        matches!(
+            store.column::<u16>("card_title"),
+            Err(den_store::StoreError::WidthMismatch { .. })
+        ),
+        "a u32 column read as u16 must be an error, not twice as many wrong numbers"
+    );
+    assert!(
+        matches!(
+            store.column::<u8>("keys"),
+            Err(den_store::StoreError::WidthMismatch { .. })
+        ),
+        "and the same for the key column, which addresses everything else"
+    );
+}
+
+/// A row number nothing can describe yields an empty span rather than panicking.
+#[test]
+fn an_impossible_row_is_empty_not_a_panic() {
+    let (bytes, _) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let makers = store.list::<u32>("makers_v", "makers_o").expect("makers");
+
+    // `row.0 + 1` overflowed here and panicked in a debug build, in a crate that forbids unsafe and
+    // documents this as returning empty for a row it cannot describe.
+    assert!(makers.get(den_store::Row(usize::MAX)).is_empty());
+    assert!(makers.get(den_store::Row(store.rows() + 10)).is_empty());
 }
 
 /// Tiny helper so the genre assert above reads in one line.

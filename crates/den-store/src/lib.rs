@@ -62,6 +62,9 @@ pub enum StoreError {
     MissingSection(&'static str),
     /// A section exists but is not a whole number of its own elements, or is misaligned for them.
     BadSection { name: &'static str },
+    /// A column was asked for at a different element width than the writer declared. A `u32` column
+    /// read as `u16` is aligned and whole, so nothing else catches it.
+    WidthMismatch { name: &'static str, declared: u32, requested: u32 },
     /// A row count that does not agree with a section's length.
     RowMismatch { name: &'static str, rows: usize, found: usize },
 }
@@ -84,6 +87,10 @@ impl fmt::Display for StoreError {
             }
             Self::MissingSection(name) => write!(f, "store has no {name} section"),
             Self::BadSection { name } => write!(f, "section {name} is misaligned or a partial element"),
+            Self::WidthMismatch { name, declared, requested } => write!(
+                f,
+                "section {name} holds {declared}-byte elements, read as {requested}-byte"
+            ),
             Self::RowMismatch { name, rows, found } => {
                 write!(f, "section {name} holds {found} elements for {rows} rows")
             }
@@ -180,22 +187,37 @@ impl<'a> Store<'a> {
     }
 
     pub fn section(&self, name: &'static str) -> Result<&'a [u8], StoreError> {
+        Ok(self.entry(name)?.0)
+    }
+
+    /// A section's bytes and the element width the writer declared for it.
+    fn entry(&self, name: &'static str) -> Result<(&'a [u8], u32), StoreError> {
         let entry = self
             .entries
             .iter()
             .find(|e| show(&e.name) == name)
             .ok_or(StoreError::MissingSection(name))?;
         let start = entry.offset as usize;
-        Ok(&self.bytes[start..start + entry.length as usize])
+        Ok((&self.bytes[start..start + entry.length as usize], entry.width))
     }
 
-    /// A typed column. `zerocopy` refuses a slice that is misaligned or not a whole number of elements,
-    /// which is the check a content hash cannot make.
+    /// A typed column, at the width the WRITER declared for it.
+    ///
+    /// `zerocopy` refuses a slice that is misaligned or not a whole number of elements — but a `u32`
+    /// column read as `u16` is both aligned and whole, so it succeeded and returned twice as many
+    /// wrong numbers. Measured on a real store: `column::<u16>("card_title")` returned 95,236 elements
+    /// with `first = 64060`, no error. The section table carries `width` for exactly this, and nothing
+    /// was reading it.
     pub fn column<T>(&self, name: &'static str) -> Result<&'a [T], StoreError>
     where
         T: FromBytes + Immutable + KnownLayout,
     {
-        <[T]>::ref_from_bytes(self.section(name)?).map_err(|_| StoreError::BadSection { name })
+        let (bytes, width) = self.entry(name)?;
+        let want = core::mem::size_of::<T>() as u32;
+        if width != want {
+            return Err(StoreError::WidthMismatch { name, declared: width, requested: want });
+        }
+        <[T]>::ref_from_bytes(bytes).map_err(|_| StoreError::BadSection { name })
     }
 
     /// A column with one element per title, refused if it does not have exactly that.
@@ -315,7 +337,10 @@ pub struct List<'a, T> {
 impl<'a, T> List<'a, T> {
     /// Row *i*'s span, or empty if the offsets do not describe one.
     pub fn get(&self, row: Row) -> &'a [T] {
-        let (Some(&from), Some(&to)) = (self.offsets.get(row.0), self.offsets.get(row.0 + 1)) else {
+        // checked_add: `row.0 + 1` overflows on `Row(usize::MAX)` and panics in a debug build, in a
+        // crate that forbids unsafe and documents this as returning empty for a row it cannot describe.
+        let Some(next) = row.0.checked_add(1) else { return &[] };
+        let (Some(&from), Some(&to)) = (self.offsets.get(row.0), self.offsets.get(next)) else {
             return &[];
         };
         let (from, to) = (from as usize, to as usize);

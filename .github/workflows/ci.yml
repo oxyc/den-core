@@ -7,6 +7,14 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # den-spec holds the store format's test vectors. Checked out beside this repo because
+      # `den-store`'s contract test reads them — and FAILS without them, deliberately: that test exists
+      # to catch a reader drifting from the Python writer in den-dataset, and it can only do that if it
+      # can find the fixture. It was previously enforced by nothing at all.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: oxyc/den-spec
+          path: den-spec-checkout
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.95.0
@@ -17,5 +25,10 @@ jobs:
           node-version: 24
       - run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
       - run: bash scripts/build-bindings.sh
+      # The whole workspace, not just den-sync: `default-members` is den-sync alone, so a bare
+      # `cargo test` silently skipped den-store entirely.
+      - run: cargo test --locked --workspace
+        env:
+          DEN_SPEC_DIR: ${{ github.workspace }}/den-spec-checkout
       - run: swift build --package-path Swift
       - run: node scripts/test-wasm.mjs
