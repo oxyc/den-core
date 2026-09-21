@@ -5,6 +5,7 @@ mod delivery;
 mod episodes;
 mod events;
 mod series;
+mod tilt;
 mod wire;
 
 use serde::Deserialize;
@@ -17,6 +18,7 @@ pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
 };
+pub use tilt::{boost, order, Era, Signals, Weights};
 pub use wire::{capture, merge, Stamp};
 
 #[derive(Deserialize)]
@@ -81,6 +83,27 @@ enum Request {
         now: u64,
         retry_after: Option<u64>,
     },
+    /// The taste tilt's order for one page. `signals` are the cosines den-atlas measured plus each
+    /// candidate's year; `weights` and `era` are the levers, defaulted so a caller that does not tune
+    /// gets what ships.
+    Tilt {
+        signals: Vec<Signals>,
+        #[serde(default)]
+        weights: Option<Weights>,
+        era: Era,
+        #[serde(default = "yes")]
+        include_era: bool,
+    },
+    /// The household's era curve from (year, weight) samples — the other half of the tilt's inputs, and
+    /// the only part that is derived rather than measured.
+    TiltEra {
+        samples: Vec<(i32, f64)>,
+        current_year: i32,
+    },
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Versioned, non-throwing FFI boundary. An error is never an empty snapshot or an acknowledgement.
@@ -134,6 +157,21 @@ pub fn evaluate(input: &str) -> String {
                 Ok(json!(last.issue(now, device)?))
             }
             Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
+            Request::Tilt {
+                signals,
+                weights,
+                era,
+                include_era,
+            } => Ok(json!(order(
+                &signals,
+                &weights.unwrap_or_default(),
+                &era,
+                include_era
+            ))),
+            Request::TiltEra {
+                samples,
+                current_year,
+            } => Ok(json!(Era::from_samples(&samples, current_year))),
             Request::Retry {
                 attempts,
                 now,
