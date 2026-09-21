@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/den-sync", "bindings/native", "bindings/web"]
+members = ["crates/den-sync", "crates/den-store", "bindings/native", "bindings/web"]
 default-members = ["crates/den-sync"]
 resolver = "2"
 
@@ -13,6 +13,7 @@ publish = false
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 den-sync = { path = "crates/den-sync" }
+den-store = { path = "crates/den-store" }
 
 [profile.release]
 lto = true

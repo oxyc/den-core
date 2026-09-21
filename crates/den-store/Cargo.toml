@@ -1,0 +1,16 @@
+[package]
+name = "den-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dev-dependencies]
+# Only the contract test needs JSON — it reads den-spec's expected-values file. The library itself
+# stays dependency-free but for zerocopy, because it runs in a browser.
+serde_json.workspace = true
+
+[dependencies]
+# No serde, no mmap, no IO. The decoder takes a byte slice and returns borrowed views of it;
+# `zerocopy` gives the alignment-checked casts that make that safe without `unsafe` here.
+zerocopy = { version = "0.8", features = ["derive"] }
