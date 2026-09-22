@@ -1,4 +1,5 @@
-//! The den-spec contract test: read `vectors/store-v1.store` and check it against `store-v1.json`.
+//! The den-spec contract test: read `vectors/store-v2.store` and check it against `store-v2.json` —
+//! and `store-v1.*`, the frozen last store-v1 output, which this reader still accepts.
 //!
 //! This is the mechanism that keeps a Python writer in den-dataset and this Rust reader in step. Without
 //! it the spec drifted from the writer unnoticed — it claimed the content hash was xxHash64 when the
@@ -25,10 +26,10 @@ fn spec_dir() -> Option<PathBuf> {
     sibling.is_dir().then_some(sibling)
 }
 
-fn fixture() -> Option<(Vec<u8>, serde_json::Value)> {
+fn fixture(stem: &str) -> Option<(Vec<u8>, serde_json::Value)> {
     let dir = spec_dir()?;
-    let store = std::fs::read(dir.join("store-v1.store")).ok()?;
-    let expected = std::fs::read_to_string(dir.join("store-v1.json")).ok()?;
+    let store = std::fs::read(dir.join(format!("{stem}.store"))).ok()?;
+    let expected = std::fs::read_to_string(dir.join(format!("{stem}.json"))).ok()?;
     Some((store, serde_json::from_str(&expected).ok()?))
 }
 
@@ -43,7 +44,10 @@ fn fixture() -> Option<(Vec<u8>, serde_json::Value)> {
 /// to be set on purpose, which is the whole difference.
 macro_rules! fixture_or_fail {
     () => {
-        match fixture() {
+        fixture_or_fail!("store-v2")
+    };
+    ($stem:literal) => {
+        match fixture($stem) {
             Some(pair) => pair,
             // `== "1"`, not `is_ok()`: `DEN_SPEC_OPTIONAL=0`, set to turn skipping OFF, would
             // otherwise turn it on.
@@ -52,9 +56,10 @@ macro_rules! fixture_or_fail {
                 return;
             }
             None => panic!(
-                "den-spec/vectors/store-v1.* not found — this test verifies the format contract and \
+                "den-spec/vectors/{}.* not found — this test verifies the format contract and \
                  cannot do so without it. Check out den-spec beside this repo, set DEN_SPEC_DIR, or set \
-                 DEN_SPEC_OPTIONAL=1 to skip deliberately."
+                 DEN_SPEC_OPTIONAL=1 to skip deliberately.",
+                $stem
             ),
         }
     };
@@ -76,6 +81,64 @@ fn header_matches_the_spec_vectors() {
         den_store::FORMAT_VERSION as u64,
         header["formatVersion"].as_u64().unwrap(),
         "this build reads a different format version than the fixture was written with"
+    );
+    assert_eq!(
+        store.format_version() as u64,
+        header["formatVersion"].as_u64().unwrap()
+    );
+}
+
+/// store-v2's one change: `franchise` is a list, every series in the facts' order, most specific first.
+///
+/// store-v1 kept the first alone, and 219 real titles are in more than one series — some meet their
+/// siblings only through the second (oxyc/den-atlas#43). The fixture's movie:1 is in two, written
+/// Q114 then Q105, so a reader that sorted them, or kept only one, fails here.
+#[test]
+fn franchise_is_every_series_in_order() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    assert_eq!(store.format_version(), 2);
+    let franchises = store.franchises().expect("franchise_v / franchise_o");
+    assert!(
+        store.per_row::<u32>("franchise").is_err(),
+        "store-v2 has no single-valued franchise column"
+    );
+    for row in expected["rows"].as_array().unwrap() {
+        let i = row["row"].as_u64().unwrap() as usize;
+        let want: Vec<u32> = row["franchise"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{} states its franchise list", row["key"]))
+            .iter()
+            .map(|q| q.as_u64().unwrap() as u32)
+            .collect();
+        assert_eq!(
+            franchises.get(den_store::Row(i)),
+            want.as_slice(),
+            "{} franchise",
+            row["key"]
+        );
+    }
+    assert!(franchises.get(den_store::Row(usize::MAX)).is_empty());
+}
+
+/// A store published before store-v2 still opens, and its single `franchise` column reads as a list
+/// of zero or one — so atlas can be deployed before the dataset that writes v2, and a rollback of the
+/// dataset does not take it down.
+#[test]
+fn a_store_v1_file_reads_its_franchise_as_a_list_of_one() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("a v1 store is still read");
+    assert_eq!(store.format_version(), 1);
+    let franchises = store.franchises().expect("v1's franchise column");
+    // movie:1 was written with Q105, and the other two with none.
+    let row = |media, id| store.row_of(media, id).unwrap().expect("in the fixture");
+    assert_eq!(franchises.get(row(0, 1)), &[105]);
+    assert!(franchises.get(row(0, 2)).is_empty(), "u32::MAX is none");
+    assert!(franchises.get(row(1, 10)).is_empty());
+    assert!(franchises.get(den_store::Row(store.rows())).is_empty());
+    assert!(
+        store.list::<u32>("franchise_v", "franchise_o").is_err(),
+        "a v1 store has no list"
     );
 }
 
