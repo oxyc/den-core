@@ -1,4 +1,5 @@
-//! Reads `den-<version>.store` — den-spec `wire/store-v1.md`.
+//! Reads `den-<version>.store` — den-spec `wire/store-v2.md`, and the `wire/store-v1.md` stores
+//! published before it.
 //!
 //! Pure, like the rest of this workspace: the decoder takes a byte slice and returns borrowed views of
 //! it. It never opens a file, maps memory, or allocates a copy of the data. The one impure step — mmap —
@@ -25,9 +26,17 @@
 use core::fmt;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
-/// The layout this decoder understands. A store declaring anything else is refused: a format change is a
-/// new version, never a reinterpretation of the same bytes.
-pub const FORMAT_VERSION: u32 = 1;
+/// The newest layout this decoder understands. A store declaring anything outside
+/// `OLDEST_FORMAT_VERSION..=FORMAT_VERSION` is refused: a format change is a new version, never a
+/// reinterpretation of the same bytes.
+///
+/// 2 made `franchise` a list (`franchise_v`/`franchise_o`). store-v1 differs in that column alone, so
+/// it is still read, and [`Store::franchises`] answers the same question for both.
+pub const FORMAT_VERSION: u32 = 2;
+/// The oldest layout still read. store-v1 files stay readable so a reader can ship before the writer
+/// does: the dataset is published separately, and a reader that refused v1 could not be deployed
+/// until a v2 store existed.
+pub const OLDEST_FORMAT_VERSION: u32 = 1;
 
 const MAGIC: &[u8; 8] = b"DENSTOR1";
 const ENDIAN_CHECK: u32 = 0x0102_0304;
@@ -112,7 +121,8 @@ impl fmt::Display for StoreError {
             Self::Version { found, expected } => {
                 write!(
                     f,
-                    "store format version {found}, this build reads {expected}"
+                    "store format version {found}, this build reads {OLDEST_FORMAT_VERSION} to \
+                     {expected}"
                 )
             }
             Self::Endianness { found } => {
@@ -173,6 +183,7 @@ pub struct Store<'a> {
     entries: &'a [RawEntry],
     rows: usize,
     dataset_version: &'a str,
+    format_version: u32,
 }
 
 impl<'a> Store<'a> {
@@ -189,7 +200,7 @@ impl<'a> Store<'a> {
             return Err(StoreError::BadMagic);
         }
         let version = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
-        if version != FORMAT_VERSION {
+        if !(OLDEST_FORMAT_VERSION..=FORMAT_VERSION).contains(&version) {
             return Err(StoreError::Version {
                 found: version,
                 expected: FORMAT_VERSION,
@@ -243,12 +254,18 @@ impl<'a> Store<'a> {
             entries,
             rows,
             dataset_version,
+            format_version: version,
         })
     }
 
     /// Titles in the store.
     pub fn rows(&self) -> usize {
         self.rows
+    }
+
+    /// The layout the writer declared: 1 or 2.
+    pub fn format_version(&self) -> u32 {
+        self.format_version
     }
 
     /// The `datasetVersion` the writer stamped, so a caller can check the store against a manifest.
@@ -381,12 +398,48 @@ impl<'a> Store<'a> {
         let want = (u64::from(media) << 32) | u64::from(tmdb_id);
         Ok(keys.binary_search(&want).ok().map(Row))
     }
+
+    /// Every series (Wikidata P179) each title is part of, most specific first, as raw Q-id numbers —
+    /// not entity indices: the entity table holds almost no franchises.
+    ///
+    /// The one column store-v1 and store-v2 lay out differently, so this is where the difference is
+    /// absorbed and nowhere else: v2's `franchise_v`/`franchise_o` list, or v1's single `franchise`
+    /// column read as a list of zero or one. Either way a row's answer is a borrowed slice.
+    pub fn franchises(&self) -> Result<Franchises<'a>, StoreError> {
+        if self.format_version >= 2 {
+            Ok(Franchises::List(self.list("franchise_v", "franchise_o")?))
+        } else {
+            Ok(Franchises::Single(self.per_row("franchise")?))
+        }
+    }
+}
+
+/// [`Store::franchises`]: a title's series, whichever layout the store has.
+pub enum Franchises<'a> {
+    /// store-v2 and later.
+    List(List<'a, u32>),
+    /// store-v1: one Q-id per row, [`NONE_U32`] for none.
+    Single(&'a [u32]),
+}
+
+impl<'a> Franchises<'a> {
+    /// Row *i*'s series, most specific first. Empty for a title in none, or a row out of range.
+    pub fn get(&self, row: Row) -> &'a [u32] {
+        match self {
+            Self::List(list) => list.get(row),
+            Self::Single(column) => match column.get(row.0..=row.0) {
+                Some(one) if one[0] != NONE_U32 => one,
+                _ => &[],
+            },
+        }
+    }
 }
 
 impl fmt::Debug for Store<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Store")
             .field("dataset_version", &self.dataset_version)
+            .field("format_version", &self.format_version)
             .field("rows", &self.rows)
             .field("sections", &self.entries.len())
             .field("bytes", &self.bytes.len())
@@ -406,6 +459,7 @@ pub struct StoreTable {
     entries: Vec<RawEntry>,
     rows: usize,
     dataset_version: String,
+    format_version: u32,
     len: usize,
 }
 
@@ -426,6 +480,7 @@ impl StoreTable {
                 .collect(),
             rows: store.rows,
             dataset_version: store.dataset_version.to_owned(),
+            format_version: store.format_version,
             len: bytes.len(),
         })
     }
@@ -441,6 +496,7 @@ impl StoreTable {
             entries: &self.entries,
             rows: self.rows,
             dataset_version: &self.dataset_version,
+            format_version: self.format_version,
         }
     }
 
@@ -644,5 +700,22 @@ mod tests {
                 expected: FORMAT_VERSION
             }
         );
+        // Both ends of the accepted range are exact: one past the newest and one before the oldest
+        // are refused by their version, before anything else about the file is looked at.
+        for found in [FORMAT_VERSION + 1, OLDEST_FORMAT_VERSION - 1] {
+            bytes[8..12].copy_from_slice(&found.to_le_bytes());
+            let err = Store::open(&bytes).unwrap_err();
+            assert_eq!(
+                err,
+                StoreError::Version {
+                    found,
+                    expected: FORMAT_VERSION
+                }
+            );
+            assert_eq!(
+                err.to_string(),
+                format!("store format version {found}, this build reads 1 to 2")
+            );
+        }
     }
 }
