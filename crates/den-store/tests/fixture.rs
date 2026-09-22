@@ -142,6 +142,86 @@ fn a_store_v1_file_reads_its_franchise_as_a_list_of_one() {
     );
 }
 
+/// A title's production companies, and which of them are iconic studios (oxyc/den#132).
+///
+/// tv:10 credits HBO Films alone, which the writer files under HBO's own item: a reader that looked a
+/// title's companies up by the studio's item rather than through `entities` would find no studio for it.
+#[test]
+fn production_companies_and_their_iconic_studios_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let ent_qid = store.column::<u32>("ent_qid").expect("ent_qid");
+    let ent_name = store.column::<u32>("ent_name").expect("ent_name");
+    let companies = store
+        .list::<u32>("companies_v", "companies_o")
+        .expect("companies");
+    let studios = store.iconic_studios().expect("studio sections");
+
+    let got: Vec<(u32, &str, Vec<u32>)> = studios
+        .iter()
+        .map(|s| {
+            let name = strings.get(s.name).expect("a studio name resolves");
+            let qids = s.entities.iter().map(|&e| ent_qid[e as usize]).collect();
+            (s.qid, name, qids)
+        })
+        .collect();
+    let want: Vec<(u32, &str, Vec<u32>)> = expected["iconicStudios"]
+        .as_array()
+        .expect("the vectors list the iconic studios")
+        .iter()
+        .map(|s| {
+            let qids = s["entities"].as_array().unwrap().iter();
+            (
+                s["qid"].as_u64().unwrap() as u32,
+                s["name"].as_str().unwrap(),
+                qids.map(|q| q.as_u64().unwrap() as u32).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(got, want, "iconic studios, sorted by their own item");
+
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        let credited = companies.get(i);
+        if let Some(want) = row.get("productionCompanies").and_then(|c| c.as_array()) {
+            let names: Vec<&str> = credited
+                .iter()
+                .filter_map(|&e| strings.get(ent_name[e as usize]))
+                .collect();
+            let want: Vec<&str> = want.iter().map(|n| n.as_str().unwrap()).collect();
+            assert_eq!(names, want, "{key} production companies");
+        }
+        let iconic: Vec<u32> = studios
+            .iter()
+            .filter(|s| s.entities.iter().any(|e| credited.contains(e)))
+            .map(|s| s.qid)
+            .collect();
+        let want: &[u32] = match key {
+            "movie:1" => &[127552],
+            "tv:10" => &[23633],
+            _ => &[],
+        };
+        assert_eq!(iconic, want, "{key} iconic studios");
+    }
+}
+
+/// The `studio_*` sections are optional: a store without them has no iconic studios, and says so with an
+/// empty answer rather than an error. store-v1 predates them.
+#[test]
+fn a_store_without_the_studio_sections_has_no_iconic_studios() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.column::<u32>("studio_qid").is_err(),
+        "the store-v1 fixture carries studio sections, so this contract is untested"
+    );
+    let studios = store.iconic_studios().expect("absence is not an error");
+    assert!(studios.is_empty());
+    assert_eq!(studios.get(0), None);
+}
+
 #[test]
 fn a_flipped_bit_is_refused() {
     let (bytes, _) = fixture_or_fail!();

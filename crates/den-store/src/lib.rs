@@ -412,6 +412,76 @@ impl<'a> Store<'a> {
             Ok(Franchises::Single(self.per_row("franchise")?))
         }
     }
+
+    /// The iconic studios: production companies a viewer browses by, each with the entity ids of every
+    /// credited Wikidata item that is the same studio. A title's studios are its `companies_v` entries
+    /// found here.
+    ///
+    /// The `studio_*` sections are OPTIONAL, like `card_poster`: a store without them — any store-v1, and
+    /// a store-v2 written before them — has no iconic studios, which is an empty answer and not an error.
+    /// Present but malformed is still an error.
+    pub fn iconic_studios(&self) -> Result<IconicStudios<'a>, StoreError> {
+        let qids = match self.column::<u32>("studio_qid") {
+            Ok(qids) => qids,
+            Err(StoreError::MissingSection(_)) => return Ok(IconicStudios::default()),
+            Err(e) => return Err(e),
+        };
+        let names = self.column::<u32>("studio_name")?;
+        if names.len() != qids.len() {
+            return Err(StoreError::RowMismatch {
+                name: "studio_name",
+                rows: qids.len(),
+                found: names.len(),
+            });
+        }
+        Ok(IconicStudios {
+            qids,
+            names,
+            entities: self.list_of("studio_ent_v", "studio_ent_o", qids.len())?,
+        })
+    }
+}
+
+/// [`Store::iconic_studios`], sorted by the studio's own Wikidata item.
+#[derive(Default)]
+pub struct IconicStudios<'a> {
+    qids: &'a [u32],
+    names: &'a [u32],
+    entities: List<'a, u32>,
+}
+
+/// One iconic studio.
+#[derive(Debug, PartialEq, Eq)]
+pub struct IconicStudio<'a> {
+    /// The studio's own Wikidata item as a raw Q-id number: the id a studio page is addressed by.
+    pub qid: u32,
+    /// String id of what a viewer calls it.
+    pub name: u32,
+    /// Entity ids of every credited item that is this studio.
+    pub entities: &'a [u32],
+}
+
+impl<'a> IconicStudios<'a> {
+    pub fn len(&self) -> usize {
+        self.qids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.qids.is_empty()
+    }
+
+    /// Studio *i*, or `None` past the end.
+    pub fn get(&self, i: usize) -> Option<IconicStudio<'a>> {
+        Some(IconicStudio {
+            qid: *self.qids.get(i)?,
+            name: *self.names.get(i)?,
+            entities: self.entities.get(Row(i)),
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = IconicStudio<'a>> + '_ {
+        (0..self.len()).filter_map(|i| self.get(i))
+    }
 }
 
 /// [`Store::franchises`]: a title's series, whichever layout the store has.
@@ -510,6 +580,7 @@ impl StoreTable {
 }
 
 /// A variable-length column.
+#[derive(Default)]
 pub struct List<'a, T> {
     values: &'a [T],
     offsets: &'a [u32],
