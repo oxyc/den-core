@@ -737,6 +737,70 @@ fn facets_keep_their_axis_order_and_declines_are_absent() {
     }
 }
 
+/// The tentative tier: per row and axis, the uncertain answer the gates kept out of `facet_v`, with its
+/// probability — and absent on every other axis.
+///
+/// The fixture's movie:1 has `ending` at 0.55 there. Its `tone` at 0.37 is under the tier's floor and its
+/// `pacing` is `does-not-apply`, so both read absent in both tiers.
+#[test]
+fn the_tentative_tier_reads_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let tier = store.tentative_facets().expect("facet_tv / facet_tp");
+    assert!(!tier.is_empty(), "the fixture carries the tier");
+    let values = store.column::<u32>("facet_v").expect("facet_v");
+    let axes = den_store::FACET_AXES.len();
+
+    let mut stated = 0;
+    for row in expected["rows"].as_array().unwrap() {
+        let i = row["row"].as_u64().unwrap() as usize;
+        let key = row["key"].as_str().unwrap();
+        let want = row["facetsTentative"]
+            .as_object()
+            .unwrap_or_else(|| panic!("{key} states its tentative facets"));
+        for (axis, name) in den_store::FACET_AXES.iter().enumerate() {
+            let got = tier.get(den_store::Row(i), axis);
+            match want.get(*name).and_then(|p| p.as_array()) {
+                Some(pair) => {
+                    let got = got.unwrap_or_else(|| panic!("{key} {name} is tentative"));
+                    assert_eq!(strings.get(got.value), pair[0].as_str(), "{key} {name}");
+                    assert_eq!(
+                        u64::from(got.probability),
+                        pair[1].as_u64().unwrap(),
+                        "{key} {name} probability"
+                    );
+                    assert_eq!(
+                        values[i * axes + axis],
+                        NONE_U32,
+                        "{key} {name} is tentative only where it is not published"
+                    );
+                    stated += 1;
+                }
+                None => assert_eq!(got, None, "{key} {name} has no tentative value"),
+            }
+        }
+    }
+    assert!(
+        stated >= 1,
+        "the vectors state no tentative value, so this reads nothing"
+    );
+}
+
+/// The tentative sections are optional: store-v1 predates them, and reads as no tentative values.
+#[test]
+fn a_store_without_the_tentative_sections_has_none() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("facet_tv").is_err(),
+        "the store-v1 fixture carries facet_tv, so this contract is untested"
+    );
+    let tier = store.tentative_facets().expect("absence is not an error");
+    assert!(tier.is_empty());
+    assert_eq!(tier.get(den_store::Row(0), 3), None);
+}
+
 /// The vectors, re-ordered from their own labels-file order into the store's sorted-key order.
 ///
 /// The fixture generator's own comment says getting this wrong "is invisible in normal use": every row
