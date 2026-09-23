@@ -534,6 +534,125 @@ impl<'a> Store<'a> {
             won,
         })
     }
+
+    /// Each entity's traits as Wikidata states them — gender, citizenship, occupation, birth, death —
+    /// indexed like `ent_qid`. A person Wikidata says nothing about has none; nothing is inferred.
+    ///
+    /// The ten `ent_gender_*`, `ent_citizen_*`, `ent_occupation_*`, `ent_born(_prec)` and
+    /// `ent_died(_prec)` sections are OPTIONAL and written together: a store with none of them has no
+    /// traits, which is an empty answer and not an error. Some of them, or any of the wrong length, is an
+    /// error.
+    pub fn person_traits(&self) -> Result<PersonTraits<'a>, StoreError> {
+        if PERSON_TRAIT_SECTIONS
+            .into_iter()
+            .all(|name| matches!(self.entry(name), Err(StoreError::MissingSection(_))))
+        {
+            return Ok(PersonTraits::default());
+        }
+        let entities = self.column::<u32>("ent_qid")?.len();
+        let per_entity = |name: &'static str, found: usize| {
+            if found == entities {
+                Ok(())
+            } else {
+                Err(StoreError::RowMismatch {
+                    name,
+                    rows: entities,
+                    found,
+                })
+            }
+        };
+        let born = self.column::<i32>("ent_born")?;
+        per_entity("ent_born", born.len())?;
+        let born_prec = self.column::<u8>("ent_born_prec")?;
+        per_entity("ent_born_prec", born_prec.len())?;
+        let died = self.column::<i32>("ent_died")?;
+        per_entity("ent_died", died.len())?;
+        let died_prec = self.column::<u8>("ent_died_prec")?;
+        per_entity("ent_died_prec", died_prec.len())?;
+        Ok(PersonTraits {
+            genders: self.list_of("ent_gender_v", "ent_gender_o", entities)?,
+            citizenships: self.list_of("ent_citizen_v", "ent_citizen_o", entities)?,
+            occupations: self.list_of("ent_occupation_v", "ent_occupation_o", entities)?,
+            born,
+            born_prec,
+            died,
+            died_prec,
+        })
+    }
+}
+
+/// The sections [`Store::person_traits`] reads, all or none of which a store has.
+const PERSON_TRAIT_SECTIONS: [&str; 10] = [
+    "ent_gender_v",
+    "ent_gender_o",
+    "ent_citizen_v",
+    "ent_citizen_o",
+    "ent_occupation_v",
+    "ent_occupation_o",
+    "ent_born",
+    "ent_born_prec",
+    "ent_died",
+    "ent_died_prec",
+];
+
+/// [`Store::person_traits`]: per entity, what Wikidata states about the person. Every accessor takes an
+/// entity id and answers empty (or `None`) for one with no such trait, or out of range.
+#[derive(Default)]
+pub struct PersonTraits<'a> {
+    genders: List<'a, u32>,
+    citizenships: List<'a, u32>,
+    occupations: List<'a, u32>,
+    born: &'a [i32],
+    born_prec: &'a [u8],
+    died: &'a [i32],
+    died_prec: &'a [u8],
+}
+
+/// A birth or death date, as `released` stores a date.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct PersonDate {
+    /// Days since 1970-01-01 in the proleptic Gregorian calendar; negative before it, reaching before
+    /// the common era (year 0 is 1 BCE).
+    pub days: i32,
+    /// 0 day · 1 month · 2 year · 3 decade · 4 century: how much of `days` Wikidata asserts. A
+    /// year-precision date is the 1st of January of that year and must not be shown as that day. A
+    /// century is ⌈year / 100⌉ and nothing finer: Wikidata writes "20th century" as any year from 1901
+    /// to 2000, so its year must not be bucketed into a decade.
+    pub precision: u8,
+}
+
+impl<'a> PersonTraits<'a> {
+    /// The entity's sex or gender (P21), as entity ids of the items Wikidata names — whatever values
+    /// it holds, not only male and female. Usually one.
+    pub fn genders(&self, entity: u32) -> &'a [u32] {
+        self.genders.get(Row(entity as usize))
+    }
+
+    /// Countries of citizenship (P27), as entity ids.
+    pub fn citizenships(&self, entity: u32) -> &'a [u32] {
+        self.citizenships.get(Row(entity as usize))
+    }
+
+    /// Occupations (P106), as entity ids: actor, film director, screenwriter, singer.
+    pub fn occupations(&self, entity: u32) -> &'a [u32] {
+        self.occupations.get(Row(entity as usize))
+    }
+
+    /// Date of birth (P569).
+    pub fn born(&self, entity: u32) -> Option<PersonDate> {
+        date(self.born, self.born_prec, entity)
+    }
+
+    /// Date of death (P570). `None` for the living, and for a death Wikidata does not date.
+    pub fn died(&self, entity: u32) -> Option<PersonDate> {
+        date(self.died, self.died_prec, entity)
+    }
+}
+
+fn date(days: &[i32], precision: &[u8], entity: u32) -> Option<PersonDate> {
+    let i = entity as usize;
+    let (&days, &precision) = (days.get(i)?, precision.get(i)?);
+    (days != i32::MIN).then_some(PersonDate { days, precision })
 }
 
 /// [`Store::awards`]: per title, the ceremonies it won or was nominated at, and the ceremony table.
@@ -987,6 +1106,62 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// The person-trait sections come as a set: some of them is an error, and so is a date column that
+    /// does not have one entry per entity.
+    #[test]
+    fn malformed_person_traits_are_an_error_not_empty() {
+        let offsets = u32s(&[0, 0, 0]);
+        let days: Vec<u8> = [i32::MIN, -900_689]
+            .iter()
+            .flat_map(|d| d.to_le_bytes())
+            .collect();
+        let whole = |born: Vec<u8>| -> Vec<(&'static str, u32, Vec<u8>)> {
+            vec![
+                ("ent_qid", 4, u32s(&[1, 2])),
+                ("ent_gender_v", 4, vec![]),
+                ("ent_gender_o", 4, offsets.clone()),
+                ("ent_citizen_v", 4, vec![]),
+                ("ent_citizen_o", 4, offsets.clone()),
+                ("ent_occupation_v", 4, vec![]),
+                ("ent_occupation_o", 4, offsets.clone()),
+                ("ent_born", 4, born),
+                ("ent_born_prec", 1, vec![0xFF, 2]),
+                ("ent_died", 4, days.clone()),
+                ("ent_died_prec", 1, vec![0xFF, 2]),
+            ]
+        };
+
+        let good = build(1, &whole(days.clone()));
+        let store = Store::open(&good).unwrap();
+        let traits = store.person_traits().expect("well formed");
+        assert_eq!(traits.born(0), None, "i32::MIN is no date");
+        assert_eq!(
+            traits.born(1),
+            Some(PersonDate {
+                days: -900_689,
+                precision: 2
+            })
+        );
+
+        let short = build(1, &whole(days[..4].to_vec()));
+        assert_eq!(
+            Store::open(&short).unwrap().person_traits().err(),
+            Some(StoreError::RowMismatch {
+                name: "ent_born",
+                rows: 2,
+                found: 1
+            })
+        );
+
+        let mut partial = whole(days.clone());
+        partial.retain(|(name, _, _)| *name != "ent_died_prec");
+        let partial = build(1, &partial);
+        assert_eq!(
+            Store::open(&partial).unwrap().person_traits().err(),
+            Some(StoreError::MissingSection("ent_died_prec"))
+        );
     }
 
     #[test]

@@ -368,6 +368,85 @@ fn a_store_without_the_search_sections_reads_them_as_empty() {
     assert!(store.entity_imdb_ids().expect("absent is empty").is_empty());
 }
 
+/// People's traits (oxyc/den#136): the fixture holds a gender beyond male and female, two citizenships,
+/// a birth known to the decade, a death to the month, and a writer born and dead before the common era.
+/// The trait values are entities, so they are compared by Q-id.
+#[test]
+fn person_traits_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let qids = store.column::<u32>("ent_qid").expect("ent_qid");
+    let traits = store.person_traits().expect("trait sections");
+    let as_qids =
+        |entities: &[u32]| -> Vec<u32> { entities.iter().map(|&e| qids[e as usize]).collect() };
+    let date = |want: &serde_json::Value, days: &str, precision: &str| {
+        want[days].as_i64().map(|d| den_store::PersonDate {
+            days: d as i32,
+            precision: want[precision].as_u64().unwrap() as u8,
+        })
+    };
+    let mut checked = 0;
+    for want in expected["entities"].as_array().unwrap() {
+        if want.get("gender").is_none() {
+            continue;
+        }
+        let qid = want["qid"].as_u64().unwrap() as u32;
+        let at = qids.iter().position(|&q| q == qid).expect("entity present") as u32;
+        let list = |name: &str| -> Vec<u32> {
+            want[name]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|q| q.as_u64().unwrap() as u32)
+                .collect()
+        };
+        assert_eq!(as_qids(traits.genders(at)), list("gender"), "Q{qid} gender");
+        assert_eq!(
+            as_qids(traits.citizenships(at)),
+            list("citizenship"),
+            "Q{qid} citizenship"
+        );
+        assert_eq!(
+            as_qids(traits.occupations(at)),
+            list("occupation"),
+            "Q{qid} occupation"
+        );
+        assert_eq!(
+            traits.born(at),
+            date(want, "born", "bornPrecision"),
+            "Q{qid} born"
+        );
+        assert_eq!(
+            traits.died(at),
+            date(want, "died", "diedPrecision"),
+            "Q{qid} died"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 3,
+        "the vectors state traits for only {checked} entities"
+    );
+    assert!(traits.genders(u32::MAX).is_empty());
+    assert_eq!(traits.born(u32::MAX), None);
+}
+
+/// The trait sections are optional: store-v1 predates them, and reads as no traits for anyone.
+#[test]
+fn a_store_without_the_trait_sections_has_no_traits() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("ent_gender_o").is_err(),
+        "the store-v1 fixture carries ent_gender, so this contract is untested"
+    );
+    let traits = store.person_traits().expect("absence is not an error");
+    assert!(traits.genders(0).is_empty());
+    assert!(traits.occupations(0).is_empty());
+    assert_eq!(traits.born(0), None);
+    assert_eq!(traits.died(0), None);
+}
+
 #[test]
 fn a_flipped_bit_is_refused() {
     let (bytes, _) = fixture_or_fail!();
