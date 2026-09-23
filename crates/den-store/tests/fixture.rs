@@ -222,6 +222,152 @@ fn a_store_without_the_studio_sections_has_no_iconic_studios() {
     assert_eq!(studios.get(0), None);
 }
 
+/// Directors, creators and writers, kept apart (oxyc/den#135): `makers` is their union and cannot say
+/// which is which. The fixture's movie:1 has a director and a writer, and tv:10 credits the same person
+/// as its creator, so a reader that swapped two role lists fails here.
+#[test]
+fn roles_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let ent_name = store.column::<u32>("ent_name").expect("ent_name");
+    let roles = [
+        ("directors", store.directors().expect("directors")),
+        ("creators", store.creators().expect("creators")),
+        ("writers", store.writers().expect("writers")),
+    ];
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        for (role, list) in &roles {
+            let want: Vec<&str> = row[*role]
+                .as_array()
+                .unwrap_or_else(|| panic!("{key} states its {role}"))
+                .iter()
+                .map(|n| n.as_str().unwrap())
+                .collect();
+            let got: Vec<&str> = list
+                .get(i)
+                .iter()
+                .filter_map(|&e| strings.get(ent_name[e as usize]))
+                .collect();
+            assert_eq!(got, want, "{key} {role}");
+        }
+    }
+}
+
+/// The awards each title won or was nominated for, by ceremony, and the ceremony table they index.
+#[test]
+fn awards_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let awards = store.awards().expect("award sections");
+
+    let got: Vec<(u32, &str)> = (0..awards.len() as u32)
+        .map(|i| {
+            let c = awards.ceremony(i).expect("in range");
+            (
+                c.qid,
+                strings.get(c.name).expect("a ceremony name resolves"),
+            )
+        })
+        .collect();
+    let want: Vec<(u32, &str)> = expected["ceremonies"]
+        .as_array()
+        .expect("the vectors list the ceremonies")
+        .iter()
+        .map(|c| {
+            (
+                c["qid"].as_u64().unwrap() as u32,
+                c["name"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(got, want, "ceremonies, sorted by their own item");
+    assert_eq!(awards.ceremony(awards.len() as u32), None);
+
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        let got: Vec<(u32, bool)> = awards
+            .get(i)
+            .map(|a| {
+                (
+                    awards.ceremony(a.ceremony).expect("indexes the table").qid,
+                    a.won,
+                )
+            })
+            .collect();
+        let want: Vec<(u32, bool)> = row["awards"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{key} states its awards"))
+            .iter()
+            .map(|a| {
+                let a = a.as_array().unwrap();
+                (a[0].as_u64().unwrap() as u32, a[1].as_bool().unwrap())
+            })
+            .collect();
+        assert_eq!(got, want, "{key} awards");
+    }
+    assert_eq!(awards.get(den_store::Row(usize::MAX)).count(), 0);
+}
+
+/// People's IMDb ids: a join key per entity, `u32::MAX` where Wikidata gives none — and none for an
+/// entity whose IMDb id is not a person's.
+#[test]
+fn entity_imdb_ids_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let qids = store.column::<u32>("ent_qid").expect("ent_qid");
+    let imdb = store.entity_imdb_ids().expect("ent_imdb");
+    assert_eq!(imdb.len(), qids.len());
+    for want in expected["entities"].as_array().unwrap() {
+        let qid = want["qid"].as_u64().unwrap() as u32;
+        let at = qids.iter().position(|&q| q == qid).expect("entity present");
+        assert_eq!(
+            strings.get(imdb[at]),
+            want["imdb"].as_str(),
+            "Q{qid} imdb person id"
+        );
+    }
+}
+
+/// Every section #135 added is optional: a store without them has no roles, awards or IMDb ids, and
+/// says so with empty answers rather than an error. store-v1 predates them all.
+#[test]
+fn a_store_without_the_search_sections_reads_them_as_empty() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    for name in ["directors_o", "award_o", "ceremony_qid", "ent_imdb"] {
+        assert!(
+            store.section(name).is_err(),
+            "the store-v1 fixture carries {name}, so this contract is untested"
+        );
+    }
+    let row = den_store::Row(0);
+    assert!(store
+        .directors()
+        .expect("absent is empty")
+        .get(row)
+        .is_empty());
+    assert!(store
+        .creators()
+        .expect("absent is empty")
+        .get(row)
+        .is_empty());
+    assert!(store
+        .writers()
+        .expect("absent is empty")
+        .get(row)
+        .is_empty());
+    let awards = store.awards().expect("absence is not an error");
+    assert!(awards.is_empty());
+    assert_eq!(awards.get(row).count(), 0);
+    assert!(store.entity_imdb_ids().expect("absent is empty").is_empty());
+}
+
 #[test]
 fn a_flipped_bit_is_refused() {
     let (bytes, _) = fixture_or_fail!();
