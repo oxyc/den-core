@@ -535,6 +535,44 @@ impl<'a> Store<'a> {
         })
     }
 
+    /// The tentative tier of the plot facets: per row and axis, an answer the writer's gates refused only
+    /// as uncertain, with its probability. A cell is tentative only where `facet_v` is absent.
+    ///
+    /// `facet_tv` and `facet_tp` are OPTIONAL and written together: a store with neither has no tentative
+    /// values, which is an empty answer and not an error. One without the other, or either not sized
+    /// `rows × FACET_AXES.len()`, is an error.
+    pub fn tentative_facets(&self) -> Result<TentativeFacets<'a>, StoreError> {
+        let values = match self.column::<u32>("facet_tv") {
+            Ok(values) => values,
+            Err(StoreError::MissingSection(_)) => {
+                return match self.entry("facet_tp") {
+                    Err(StoreError::MissingSection(_)) => Ok(TentativeFacets::default()),
+                    Err(e) => Err(e),
+                    Ok(_) => Err(StoreError::MissingSection("facet_tv")),
+                };
+            }
+            Err(e) => return Err(e),
+        };
+        let probabilities = self.column::<u8>("facet_tp")?;
+        let cells = self.rows * FACET_AXES.len();
+        for (name, found) in [
+            ("facet_tv", values.len()),
+            ("facet_tp", probabilities.len()),
+        ] {
+            if found != cells {
+                return Err(StoreError::RowMismatch {
+                    name,
+                    rows: cells,
+                    found,
+                });
+            }
+        }
+        Ok(TentativeFacets {
+            values,
+            probabilities,
+        })
+    }
+
     /// Each entity's traits as Wikidata states them — gender, citizenship, occupation, birth, death —
     /// indexed like `ent_qid`. A person Wikidata says nothing about has none; nothing is inferred.
     ///
@@ -594,6 +632,44 @@ const PERSON_TRAIT_SECTIONS: [&str; 10] = [
     "ent_died",
     "ent_died_prec",
 ];
+
+/// [`Store::tentative_facets`]: the tentative tier, dense `rows × FACET_AXES.len()` like `facet_v`.
+#[derive(Default)]
+pub struct TentativeFacets<'a> {
+    values: &'a [u32],
+    probabilities: &'a [u8],
+}
+
+/// One tentative answer.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Tentative {
+    /// String id of the value.
+    pub value: u32,
+    /// Its probability in hundredths: from the answer's distribution, not `facet_c`'s self-reported
+    /// confidence, and not comparable with it.
+    pub probability: u8,
+}
+
+impl TentativeFacets<'_> {
+    /// Whether the store carries the tier at all.
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    /// Row *i*'s tentative answer on axis *a* (an index into [`FACET_AXES`]), or `None` for none, an axis
+    /// out of range, or a row out of range.
+    pub fn get(&self, row: Row, axis: usize) -> Option<Tentative> {
+        if axis >= FACET_AXES.len() {
+            return None;
+        }
+        let at = row.0.checked_mul(FACET_AXES.len())?.checked_add(axis)?;
+        let value = *self.values.get(at)?;
+        (value != NONE_U32).then(|| Tentative {
+            value,
+            probability: self.probabilities.get(at).copied().unwrap_or(0),
+        })
+    }
+}
 
 /// [`Store::person_traits`]: per entity, what Wikidata states about the person. Every accessor takes an
 /// entity id and answers empty (or `None`) for one with no such trait, or out of range.
@@ -1161,6 +1237,63 @@ mod tests {
         assert_eq!(
             Store::open(&partial).unwrap().person_traits().err(),
             Some(StoreError::MissingSection("ent_died_prec"))
+        );
+    }
+
+    /// The tentative tier comes as a pair sized like `facet_v`: half of it, or the wrong size, is an error.
+    #[test]
+    fn malformed_tentative_facets_are_an_error_not_empty() {
+        let axes = FACET_AXES.len();
+        let mut values = vec![NONE_U32; axes];
+        values[3] = 7;
+        let mut probabilities = vec![0u8; axes];
+        probabilities[3] = 55;
+
+        let good = build(
+            1,
+            &[
+                ("facet_tv", 4, u32s(&values)),
+                ("facet_tp", 1, probabilities.clone()),
+            ],
+        );
+        let store = Store::open(&good).unwrap();
+        let tier = store.tentative_facets().expect("well formed");
+        assert_eq!(
+            tier.get(Row(0), 3),
+            Some(Tentative {
+                value: 7,
+                probability: 55
+            })
+        );
+        assert_eq!(tier.get(Row(0), 0), None, "u32::MAX is no tentative value");
+        assert_eq!(tier.get(Row(0), axes), None, "an axis out of range");
+        assert_eq!(tier.get(Row(1), 3), None, "a row out of range");
+
+        let half = build(1, &[("facet_tp", 1, probabilities.clone())]);
+        assert_eq!(
+            Store::open(&half).unwrap().tentative_facets().err(),
+            Some(StoreError::MissingSection("facet_tv"))
+        );
+        let half = build(1, &[("facet_tv", 4, u32s(&values))]);
+        assert_eq!(
+            Store::open(&half).unwrap().tentative_facets().err(),
+            Some(StoreError::MissingSection("facet_tp"))
+        );
+
+        let short = build(
+            1,
+            &[
+                ("facet_tv", 4, u32s(&values)),
+                ("facet_tp", 1, probabilities[..axes - 1].to_vec()),
+            ],
+        );
+        assert_eq!(
+            Store::open(&short).unwrap().tentative_facets().err(),
+            Some(StoreError::RowMismatch {
+                name: "facet_tp",
+                rows: axes,
+                found: axes - 1
+            })
         );
     }
 
