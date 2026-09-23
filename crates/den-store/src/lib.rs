@@ -440,6 +440,160 @@ impl<'a> Store<'a> {
             entities: self.list_of("studio_ent_v", "studio_ent_o", qids.len())?,
         })
     }
+
+    /// A per-title list that is OPTIONAL: empty for every row when the store has no such section, and
+    /// the usual checks when it does. Present in half (values without offsets) is malformed, not absent.
+    fn optional_list(
+        &self,
+        values: &'static str,
+        offsets: &'static str,
+    ) -> Result<List<'a, u32>, StoreError> {
+        match self.entry(offsets) {
+            Err(StoreError::MissingSection(_)) => match self.entry(values) {
+                Err(StoreError::MissingSection(_)) => Ok(List::default()),
+                Err(e) => Err(e),
+                Ok(_) => Err(StoreError::MissingSection(offsets)),
+            },
+            Err(e) => Err(e),
+            Ok(_) => self.list(values, offsets),
+        }
+    }
+
+    /// Each title's directors (Wikidata P57), as entity ids — one of the three credits `makers` is the
+    /// union of. OPTIONAL: a store written before the role sections reads as none for every row.
+    pub fn directors(&self) -> Result<List<'a, u32>, StoreError> {
+        self.optional_list("directors_v", "directors_o")
+    }
+
+    /// Each title's creators (P170), as entity ids — mostly a series credit. OPTIONAL, as
+    /// [`directors`](Self::directors).
+    pub fn creators(&self) -> Result<List<'a, u32>, StoreError> {
+        self.optional_list("creators_v", "creators_o")
+    }
+
+    /// Each title's screenwriters (P58), as entity ids. OPTIONAL, as [`directors`](Self::directors).
+    pub fn writers(&self) -> Result<List<'a, u32>, StoreError> {
+        self.optional_list("writers_v", "writers_o")
+    }
+
+    /// Each entity's IMDb person id (`nm…`, Wikidata P345) as a string id, [`NONE_U32`] for none,
+    /// indexed like `ent_qid`. A join key for IMDb's own principals, never an entity's public id — that
+    /// stays its Q-id.
+    ///
+    /// OPTIONAL: a store without `ent_imdb` answers an empty slice, so `get(entity)` is `None` for every
+    /// entity. Present, it must have one entry per entity.
+    pub fn entity_imdb_ids(&self) -> Result<&'a [u32], StoreError> {
+        let ids = match self.column::<u32>("ent_imdb") {
+            Ok(ids) => ids,
+            Err(StoreError::MissingSection(_)) => return Ok(&[]),
+            Err(e) => return Err(e),
+        };
+        let entities = self.column::<u32>("ent_qid")?.len();
+        if ids.len() != entities {
+            return Err(StoreError::RowMismatch {
+                name: "ent_imdb",
+                rows: entities,
+                found: ids.len(),
+            });
+        }
+        Ok(ids)
+    }
+
+    /// The awards each title won or was nominated for, grouped by ceremony (the Academy Awards, the
+    /// Cannes Film Festival), and the ceremony table they index.
+    ///
+    /// The `award_*` and `ceremony_*` sections are OPTIONAL: a store without them has no awards, which
+    /// is an empty answer and not an error. Present but malformed is still an error.
+    pub fn awards(&self) -> Result<Awards<'a>, StoreError> {
+        let qids = match self.column::<u32>("ceremony_qid") {
+            Ok(qids) => qids,
+            Err(StoreError::MissingSection(_)) => return Ok(Awards::default()),
+            Err(e) => return Err(e),
+        };
+        let names = self.column::<u32>("ceremony_name")?;
+        if names.len() != qids.len() {
+            return Err(StoreError::RowMismatch {
+                name: "ceremony_name",
+                rows: qids.len(),
+                found: names.len(),
+            });
+        }
+        let ceremonies = self.list::<u32>("award_v", "award_o")?;
+        let won = self.list::<u8>("award_w", "award_o")?;
+        if won.values.len() != ceremonies.values.len() {
+            return Err(StoreError::RowMismatch {
+                name: "award_w",
+                rows: ceremonies.values.len(),
+                found: won.values.len(),
+            });
+        }
+        Ok(Awards {
+            qids,
+            names,
+            ceremonies,
+            won,
+        })
+    }
+}
+
+/// [`Store::awards`]: per title, the ceremonies it won or was nominated at, and the ceremony table.
+#[derive(Default)]
+pub struct Awards<'a> {
+    qids: &'a [u32],
+    names: &'a [u32],
+    ceremonies: List<'a, u32>,
+    won: List<'a, u8>,
+}
+
+/// One ceremony a title was recognised at.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Award {
+    /// Index into the ceremony table: [`Awards::ceremony`].
+    pub ceremony: u32,
+    /// Won at least one award there; `false` is nominated only.
+    pub won: bool,
+}
+
+/// A ceremony or awarding body.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Ceremony {
+    /// Its Wikidata item as a raw Q-id number.
+    pub qid: u32,
+    /// String id of its name.
+    pub name: u32,
+}
+
+impl<'a> Awards<'a> {
+    /// Ceremonies in the table.
+    pub fn len(&self) -> usize {
+        self.qids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.qids.is_empty()
+    }
+
+    /// Ceremony *i*, or `None` past the end.
+    pub fn ceremony(&self, i: u32) -> Option<Ceremony> {
+        let i = i as usize;
+        Some(Ceremony {
+            qid: *self.qids.get(i)?,
+            name: *self.names.get(i)?,
+        })
+    }
+
+    /// Row *i*'s awards, one per ceremony. Empty for a title with none, or a row out of range.
+    pub fn get(&self, row: Row) -> impl Iterator<Item = Award> + 'a {
+        let won = self.won.get(row);
+        self.ceremonies
+            .get(row)
+            .iter()
+            .zip(won)
+            .map(|(&ceremony, &w)| Award {
+                ceremony,
+                won: w != 0,
+            })
+    }
 }
 
 /// [`Store::iconic_studios`], sorted by the studio's own Wikidata item.
@@ -752,6 +906,87 @@ mod tests {
             blake2b64(&[0x61; 129]).to_le_bytes(),
             [228, 98, 83, 91, 176, 197, 162, 153]
         );
+    }
+
+    /// A store holding just `sections` (name, element width, bytes), laid out and hashed as the writer
+    /// does, for shapes the den-spec fixture cannot carry because they are malformed.
+    fn build(rows: u32, sections: &[(&str, u32, Vec<u8>)]) -> Vec<u8> {
+        let mut at = HEADER_BYTES + ENTRY_BYTES * sections.len();
+        let (mut table, mut body) = (Vec::new(), Vec::new());
+        for (name, width, bytes) in sections {
+            let pad = (8 - at % 8) % 8;
+            body.extend(core::iter::repeat_n(0u8, pad));
+            at += pad;
+            let mut padded = [0u8; NAME_BYTES];
+            padded[..name.len()].copy_from_slice(name.as_bytes());
+            table.extend(padded);
+            table.extend((at as u64).to_le_bytes());
+            table.extend((bytes.len() as u32).to_le_bytes());
+            table.extend(width.to_le_bytes());
+            body.extend(bytes);
+            at += bytes.len();
+        }
+        let payload = [table, body].concat();
+        let mut out = Vec::from(&MAGIC[..]);
+        out.extend(FORMAT_VERSION.to_le_bytes());
+        out.extend(ENDIAN_CHECK.to_le_bytes());
+        out.extend(hash(&payload).to_le_bytes());
+        out.extend((sections.len() as u32).to_le_bytes());
+        out.extend(rows.to_le_bytes());
+        out.extend([0u8; 32]);
+        out.extend(payload);
+        out
+    }
+
+    fn u32s(values: &[u32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    /// The optional sections read as empty when absent (the den-spec fixture tests that half) and as an
+    /// error when present but malformed, which only a hand-built store can show.
+    #[test]
+    fn a_malformed_optional_section_is_an_error_not_empty() {
+        // Values without their offsets: half a role list.
+        let half = build(1, &[("directors_v", 4, u32s(&[0]))]);
+        let store = Store::open(&half).unwrap();
+        assert_eq!(
+            store.directors().err(),
+            Some(StoreError::MissingSection("directors_o"))
+        );
+        assert!(store.writers().unwrap().get(Row(0)).is_empty(), "absent");
+
+        // One IMDb id for two entities.
+        let short = build(
+            1,
+            &[("ent_qid", 4, u32s(&[1, 2])), ("ent_imdb", 4, u32s(&[0]))],
+        );
+        assert_eq!(
+            Store::open(&short).unwrap().entity_imdb_ids(),
+            Err(StoreError::RowMismatch {
+                name: "ent_imdb",
+                rows: 2,
+                found: 1
+            })
+        );
+
+        // A won flag missing for one of two awards.
+        let awards = build(
+            1,
+            &[
+                ("award_v", 4, u32s(&[0, 1])),
+                ("award_w", 1, vec![1]),
+                ("award_o", 4, u32s(&[0, 2])),
+                ("ceremony_qid", 4, u32s(&[19020, 1011547])),
+                ("ceremony_name", 4, u32s(&[0, 1])),
+            ],
+        );
+        assert!(matches!(
+            Store::open(&awards).unwrap().awards(),
+            Err(StoreError::RowMismatch {
+                name: "award_w",
+                ..
+            })
+        ));
     }
 
     #[test]
