@@ -447,6 +447,105 @@ fn a_store_without_the_trait_sections_has_no_traits() {
     assert_eq!(traits.died(0), None);
 }
 
+/// Where people were born (oxyc/den-dataset#114): one place with its country, two places in two
+/// countries, a place in no country, and a place and a country with no entity entry. The values are
+/// entities, compared by Q-id; a country's ISO code is a string.
+#[test]
+fn birthplaces_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let qids = store.column::<u32>("ent_qid").expect("ent_qid");
+    let strings = store.strings().expect("strings");
+    let births = store.birthplaces().expect("birthplace sections");
+    assert!(!births.is_empty());
+    let as_qids =
+        |entities: &[u32]| -> Vec<u32> { entities.iter().map(|&e| qids[e as usize]).collect() };
+    let mut checked = 0;
+    for want in expected["entities"].as_array().unwrap() {
+        if want.get("birthplace").is_none() {
+            continue;
+        }
+        let qid = want["qid"].as_u64().unwrap() as u32;
+        let at = qids.iter().position(|&q| q == qid).expect("entity present") as u32;
+        let list = |name: &str| -> Vec<u32> {
+            want[name]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|q| q.as_u64().unwrap() as u32)
+                .collect()
+        };
+        assert_eq!(
+            as_qids(births.places(at)),
+            list("birthplace"),
+            "Q{qid} birthplace"
+        );
+        assert_eq!(
+            as_qids(births.countries(at)),
+            list("birthcountry"),
+            "Q{qid} birthcountry"
+        );
+        assert_eq!(
+            births.iso(at).and_then(|id| strings.get(id)),
+            want["iso"].as_str(),
+            "Q{qid} iso"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 4,
+        "the vectors state birthplaces for only {checked} entities"
+    );
+    assert!(births.places(u32::MAX).is_empty());
+}
+
+/// The authors of the work each title is adapted from, by entity name, as the vectors list them.
+#[test]
+fn source_authors_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let ent_name = store.column::<u32>("ent_name").expect("ent_name");
+    let authors = store.source_authors().expect("src_authors");
+    let mut some = 0;
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        let want: Vec<&str> = row["sourceAuthors"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{key} states its sourceAuthors"))
+            .iter()
+            .map(|n| n.as_str().unwrap())
+            .collect();
+        let got: Vec<&str> = authors
+            .get(i)
+            .iter()
+            .filter_map(|&e| strings.get(ent_name[e as usize]))
+            .collect();
+        assert_eq!(got, want, "{key} sourceAuthors");
+        some += usize::from(!want.is_empty());
+    }
+    assert!(some > 0, "the vectors name no title's source author");
+}
+
+/// The birthplace and source-author sections are optional: store-v1 predates them, and reads as none.
+#[test]
+fn a_store_without_the_birthplace_sections_has_no_birthplaces() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("ent_iso").is_err(),
+        "the store-v1 fixture carries ent_iso, so this contract is untested"
+    );
+    let births = store.birthplaces().expect("absence is not an error");
+    assert!(births.is_empty());
+    assert!(births.places(0).is_empty());
+    assert!(births.countries(0).is_empty());
+    assert_eq!(births.iso(0), None);
+    let authors = store.source_authors().expect("absence is not an error");
+    assert!(authors.get(den_store::Row(0)).is_empty());
+}
+
 #[test]
 fn a_flipped_bit_is_refused() {
     let (bytes, _) = fixture_or_fail!();

@@ -476,6 +476,13 @@ impl<'a> Store<'a> {
         self.optional_list("writers_v", "writers_o")
     }
 
+    /// Each title's source authors: the authors (P50) of the works it is adapted from (P144), as entity
+    /// ids in Q-id order. OPTIONAL, as [`directors`](Self::directors): a store written before them names
+    /// no title's source author.
+    pub fn source_authors(&self) -> Result<List<'a, u32>, StoreError> {
+        self.optional_list("src_authors_v", "src_authors_o")
+    }
+
     /// Each entity's IMDb person id (`nm…`, Wikidata P345) as a string id, [`NONE_U32`] for none,
     /// indexed like `ent_qid`. A join key for IMDb's own principals, never an entity's public id — that
     /// stays its Q-id.
@@ -616,6 +623,82 @@ impl<'a> Store<'a> {
             died,
             died_prec,
         })
+    }
+}
+
+impl<'a> Store<'a> {
+    /// Where each person was born — the place (P19) and the country it is in (P17) — and each country's
+    /// ISO 3166-1 alpha-2 code (P297), indexed like `ent_qid`.
+    ///
+    /// The five `ent_bplace_*`, `ent_bcountry_*` and `ent_iso` sections are OPTIONAL and written together:
+    /// a store with none of them has no birthplaces and no codes, which is an empty answer and not an
+    /// error. Some of them, or any of the wrong length, is an error.
+    pub fn birthplaces(&self) -> Result<Birthplaces<'a>, StoreError> {
+        if BIRTHPLACE_SECTIONS
+            .into_iter()
+            .all(|name| matches!(self.entry(name), Err(StoreError::MissingSection(_))))
+        {
+            return Ok(Birthplaces::default());
+        }
+        let entities = self.column::<u32>("ent_qid")?.len();
+        let iso = self.column::<u32>("ent_iso")?;
+        if iso.len() != entities {
+            return Err(StoreError::RowMismatch {
+                name: "ent_iso",
+                rows: entities,
+                found: iso.len(),
+            });
+        }
+        Ok(Birthplaces {
+            places: self.list_of("ent_bplace_v", "ent_bplace_o", entities)?,
+            countries: self.list_of("ent_bcountry_v", "ent_bcountry_o", entities)?,
+            iso,
+        })
+    }
+}
+
+/// The sections [`Store::birthplaces`] reads, all or none of which a store has.
+const BIRTHPLACE_SECTIONS: [&str; 5] = [
+    "ent_bplace_v",
+    "ent_bplace_o",
+    "ent_bcountry_v",
+    "ent_bcountry_o",
+    "ent_iso",
+];
+
+/// [`Store::birthplaces`]: per entity, where Wikidata says the person was born, and a country's code.
+/// Every accessor takes an entity id and answers empty (or `None`) for one with none, or out of range.
+#[derive(Default)]
+pub struct Birthplaces<'a> {
+    places: List<'a, u32>,
+    countries: List<'a, u32>,
+    iso: &'a [u32],
+}
+
+impl<'a> Birthplaces<'a> {
+    /// Whether the store carries birthplaces at all.
+    pub fn is_empty(&self) -> bool {
+        self.iso.is_empty()
+    }
+
+    /// Places of birth (P19), as entity ids: a city, a village, now and then a country. Usually one.
+    pub fn places(&self, entity: u32) -> &'a [u32] {
+        self.places.get(Row(entity as usize))
+    }
+
+    /// The countries those places are in (P17 of each), as entity ids, deduplicated. Empty for a place
+    /// Wikidata puts in no country; never inferred from citizenship.
+    pub fn countries(&self, entity: u32) -> &'a [u32] {
+        self.countries.get(Row(entity as usize))
+    }
+
+    /// String id of the entity's ISO 3166-1 alpha-2 code (`SE`), for a country a person's citizenship
+    /// or birthplace names that has one. `None` for every other entity.
+    pub fn iso(&self, entity: u32) -> Option<u32> {
+        self.iso
+            .get(entity as usize)
+            .copied()
+            .filter(|&id| id != NONE_U32)
     }
 }
 
@@ -1148,6 +1231,10 @@ mod tests {
             store.directors().err(),
             Some(StoreError::MissingSection("directors_o"))
         );
+        assert!(
+            store.source_authors().unwrap().get(Row(0)).is_empty(),
+            "absent"
+        );
         assert!(store.writers().unwrap().get(Row(0)).is_empty(), "absent");
 
         // One IMDb id for two entities.
@@ -1237,6 +1324,52 @@ mod tests {
         assert_eq!(
             Store::open(&partial).unwrap().person_traits().err(),
             Some(StoreError::MissingSection("ent_died_prec"))
+        );
+    }
+
+    /// The birthplace sections come as a set: some of them is an error, and so is an `ent_iso` that does
+    /// not have one entry per entity.
+    #[test]
+    fn malformed_birthplaces_are_an_error_not_empty() {
+        let whole = |iso: Vec<u8>| -> Vec<(&'static str, u32, Vec<u8>)> {
+            vec![
+                ("ent_qid", 4, u32s(&[34, 1754])),
+                ("ent_bplace_v", 4, u32s(&[1])),
+                ("ent_bplace_o", 4, u32s(&[0, 0, 1])),
+                ("ent_bcountry_v", 4, u32s(&[0])),
+                ("ent_bcountry_o", 4, u32s(&[0, 0, 1])),
+                ("ent_iso", 4, iso),
+            ]
+        };
+
+        let good = build(1, &whole(u32s(&[7, NONE_U32])));
+        let store = Store::open(&good).unwrap();
+        let births = store.birthplaces().expect("well formed");
+        assert_eq!(
+            (births.places(1), births.countries(1)),
+            (&[1][..], &[0][..])
+        );
+        assert_eq!(
+            (births.iso(0), births.iso(1), births.iso(u32::MAX)),
+            (Some(7), None, None)
+        );
+
+        let short = build(1, &whole(u32s(&[7])));
+        assert_eq!(
+            Store::open(&short).unwrap().birthplaces().err(),
+            Some(StoreError::RowMismatch {
+                name: "ent_iso",
+                rows: 2,
+                found: 1
+            })
+        );
+
+        let mut partial = whole(u32s(&[7, NONE_U32]));
+        partial.retain(|(name, _, _)| *name != "ent_bcountry_o");
+        let partial = build(1, &partial);
+        assert_eq!(
+            Store::open(&partial).unwrap().birthplaces().err(),
+            Some(StoreError::MissingSection("ent_bcountry_o"))
         );
     }
 
