@@ -1,5 +1,5 @@
-//! The den-spec contract test: read `vectors/store-v2.store` and check it against `store-v2.json` —
-//! and `store-v1.*`, the frozen last store-v1 output, which this reader still accepts.
+//! The den-spec contract test: read `vectors/store-v3.store` and check it against `store-v3.json` —
+//! and the frozen v1/v2 outputs, which this reader still accepts.
 //!
 //! This is the mechanism that keeps a Python writer in den-dataset and this Rust reader in step. Without
 //! it the spec drifted from the writer unnoticed — it claimed the content hash was xxHash64 when the
@@ -44,7 +44,7 @@ fn fixture(stem: &str) -> Option<(Vec<u8>, serde_json::Value)> {
 /// to be set on purpose, which is the whole difference.
 macro_rules! fixture_or_fail {
     () => {
-        fixture_or_fail!("store-v2")
+        fixture_or_fail!("store-v3")
     };
     ($stem:literal) => {
         match fixture($stem) {
@@ -97,7 +97,7 @@ fn header_matches_the_spec_vectors() {
 fn franchise_is_every_series_in_order() {
     let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
-    assert_eq!(store.format_version(), 2);
+    assert_eq!(store.format_version(), 3);
     let franchises = store.franchises().expect("franchise_v / franchise_o");
     assert!(
         store.per_row::<u32>("franchise").is_err(),
@@ -119,6 +119,42 @@ fn franchise_is_every_series_in_order() {
         );
     }
     assert!(franchises.get(den_store::Row(usize::MAX)).is_empty());
+}
+
+/// Store-v3's addition: a fixed dense structural-affinity profile. The fixture carries all 18 axes,
+/// including real zeroes, and names two non-zero values explicitly.
+#[test]
+fn structural_affinity_is_dense_and_named() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let names = store.column::<u32>("structural_names").expect("structural names");
+    let values = store.column::<u8>("structural").expect("structural probabilities");
+    let coverage = store.per_row::<u8>("structural_has").expect("structural coverage");
+    let strings = store.strings().expect("strings");
+    assert_eq!(names.len(), 18);
+    assert_eq!(values.len(), store.rows() * names.len());
+    assert_eq!(coverage, &[1, 0, 1]);
+
+    for row in expected["rows"].as_array().unwrap() {
+        let Some(want) = row.get("structural").and_then(|v| v.as_object()) else { continue };
+        let at = row["row"].as_u64().unwrap() as usize;
+        for (name, value) in want {
+            let axis = names
+                .iter()
+                .position(|&id| strings.get(id) == Some(name.as_str()))
+                .unwrap_or_else(|| panic!("structural axis {name}"));
+            assert_eq!(values[at * names.len() + axis] as u64, value.as_u64().unwrap());
+        }
+    }
+}
+
+#[test]
+fn a_store_v2_file_still_opens_without_structural_sections() {
+    let (bytes, _) = fixture_or_fail!("store-v2");
+    let store = Store::open(&bytes).expect("a v2 store is still read");
+    assert_eq!(store.format_version(), 2);
+    assert!(store.column::<u8>("structural").is_err());
+    assert!(store.column::<u32>("structural_names").is_err());
 }
 
 /// A store published before store-v2 still opens, and its single `franchise` column reads as a list
@@ -317,7 +353,7 @@ fn awards_read_as_the_vectors_say() {
 /// entity whose IMDb id is not a person's.
 #[test]
 fn entity_imdb_ids_read_as_the_vectors_say() {
-    let (bytes, expected) = fixture_or_fail!();
+    let (bytes, expected) = fixture_or_fail!("store-v2");
     let store = Store::open(&bytes).expect("opens");
     let strings = store.strings().expect("strings");
     let qids = store.column::<u32>("ent_qid").expect("ent_qid");
@@ -373,7 +409,7 @@ fn a_store_without_the_search_sections_reads_them_as_empty() {
 /// The trait values are entities, so they are compared by Q-id.
 #[test]
 fn person_traits_read_as_the_vectors_say() {
-    let (bytes, expected) = fixture_or_fail!();
+    let (bytes, expected) = fixture_or_fail!("store-v2");
     let store = Store::open(&bytes).expect("opens");
     let qids = store.column::<u32>("ent_qid").expect("ent_qid");
     let traits = store.person_traits().expect("trait sections");
@@ -452,7 +488,7 @@ fn a_store_without_the_trait_sections_has_no_traits() {
 /// entities, compared by Q-id; a country's ISO code is a string.
 #[test]
 fn birthplaces_read_as_the_vectors_say() {
-    let (bytes, expected) = fixture_or_fail!();
+    let (bytes, expected) = fixture_or_fail!("store-v2");
     let store = Store::open(&bytes).expect("opens");
     let qids = store.column::<u32>("ent_qid").expect("ent_qid");
     let strings = store.strings().expect("strings");
@@ -502,7 +538,7 @@ fn birthplaces_read_as_the_vectors_say() {
 /// The authors of the work each title is adapted from, by entity name, as the vectors list them.
 #[test]
 fn source_authors_read_as_the_vectors_say() {
-    let (bytes, expected) = fixture_or_fail!();
+    let (bytes, expected) = fixture_or_fail!("store-v2");
     let store = Store::open(&bytes).expect("opens");
     let strings = store.strings().expect("strings");
     let ent_name = store.column::<u32>("ent_name").expect("ent_name");
@@ -684,7 +720,7 @@ fn cards_scores_and_genres_read_as_the_vectors_say() {
 /// a second copy of that algorithm.
 #[test]
 fn entity_aliases_resolve() {
-    let (bytes, expected) = fixture_or_fail!();
+    let (bytes, expected) = fixture_or_fail!("store-v2");
     let store = Store::open(&bytes).expect("opens");
     let strings = store.strings().expect("strings");
     let qids = store.column::<u32>("ent_qid").expect("ent_qid");
@@ -843,7 +879,7 @@ fn facets_keep_their_axis_order_and_declines_are_absent() {
 /// `pacing` is `does-not-apply`, so both read absent in both tiers.
 #[test]
 fn the_tentative_tier_reads_as_the_vectors_say() {
-    let (bytes, expected) = fixture_or_fail!();
+    let (bytes, expected) = fixture_or_fail!("store-v2");
     let store = Store::open(&bytes).expect("opens");
     let strings = store.strings().expect("strings");
     let tier = store.tentative_facets().expect("facet_tv / facet_tp");

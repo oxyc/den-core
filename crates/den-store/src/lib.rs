@@ -1,4 +1,4 @@
-//! Reads `den-<version>.store` — den-spec `wire/store-v2.md`, and the `wire/store-v1.md` stores
+//! Reads `den-<version>.store` — den-spec `wire/store-v3.md`, and the v1/v2 stores
 //! published before it.
 //!
 //! Pure, like the rest of this workspace: the decoder takes a byte slice and returns borrowed views of
@@ -30,9 +30,9 @@ use zerocopy::{FromBytes, Immutable, KnownLayout};
 /// `OLDEST_FORMAT_VERSION..=FORMAT_VERSION` is refused: a format change is a new version, never a
 /// reinterpretation of the same bytes.
 ///
-/// 2 made `franchise` a list (`franchise_v`/`franchise_o`). store-v1 differs in that column alone, so
-/// it is still read, and [`Store::franchises`] answers the same question for both.
-pub const FORMAT_VERSION: u32 = 2;
+/// 2 made `franchise` a list (`franchise_v`/`franchise_o`). 3 adds the `structural` affinity matrix and
+/// its names. Older stores remain readable; consumers treat the structural profile as absent there.
+pub const FORMAT_VERSION: u32 = 3;
 /// The oldest layout still read. store-v1 files stay readable so a reader can ship before the writer
 /// does: the dataset is published separately, and a reader that refused v1 could not be deployed
 /// until a v2 store existed.
@@ -1461,7 +1461,9 @@ mod tests {
             );
             assert_eq!(
                 err.to_string(),
-                format!("store format version {found}, this build reads 1 to 2")
+                format!(
+                    "store format version {found}, this build reads {OLDEST_FORMAT_VERSION} to {FORMAT_VERSION}"
+                )
             );
         }
     }
