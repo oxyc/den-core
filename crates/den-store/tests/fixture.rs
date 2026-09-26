@@ -127,23 +127,34 @@ fn franchise_is_every_series_in_order() {
 fn structural_affinity_is_dense_and_named() {
     let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
-    let names = store.column::<u32>("structural_names").expect("structural names");
-    let values = store.column::<u8>("structural").expect("structural probabilities");
-    let coverage = store.per_row::<u8>("structural_has").expect("structural coverage");
+    let names = store
+        .column::<u32>("structural_names")
+        .expect("structural names");
+    let values = store
+        .column::<u8>("structural")
+        .expect("structural probabilities");
+    let coverage = store
+        .per_row::<u8>("structural_has")
+        .expect("structural coverage");
     let strings = store.strings().expect("strings");
     assert_eq!(names.len(), 18);
     assert_eq!(values.len(), store.rows() * names.len());
     assert_eq!(coverage, &[1, 0, 1]);
 
     for row in expected["rows"].as_array().unwrap() {
-        let Some(want) = row.get("structural").and_then(|v| v.as_object()) else { continue };
+        let Some(want) = row.get("structural").and_then(|v| v.as_object()) else {
+            continue;
+        };
         let at = row["row"].as_u64().unwrap() as usize;
         for (name, value) in want {
             let axis = names
                 .iter()
                 .position(|&id| strings.get(id) == Some(name.as_str()))
                 .unwrap_or_else(|| panic!("structural axis {name}"));
-            assert_eq!(values[at * names.len() + axis] as u64, value.as_u64().unwrap());
+            assert_eq!(
+                values[at * names.len() + axis] as u64,
+                value.as_u64().unwrap()
+            );
         }
     }
 }
