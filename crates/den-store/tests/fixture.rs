@@ -121,6 +121,113 @@ fn franchise_is_every_series_in_order() {
     assert!(franchises.get(den_store::Row(usize::MAX)).is_empty());
 }
 
+#[test]
+fn curated_franchises_are_primary_with_stable_eras_and_mixed_release_order() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let keys = store.per_row::<u64>("keys").expect("keys");
+    let franchises = store.curated_franchises().expect("curated franchises");
+    let Some(want) = expected["curatedFranchises"].as_array() else {
+        assert!(
+            franchises.is_empty(),
+            "an older fixture has no curated sections"
+        );
+        return;
+    };
+    assert_eq!(franchises.len(), want.len());
+    for (index, wanted) in want.iter().enumerate() {
+        let got = franchises.get(index as u32).expect("franchise in range");
+        assert_eq!(strings.get(got.id), wanted["id"].as_str());
+        assert_eq!(strings.get(got.name), wanted["name"].as_str());
+        assert_eq!(
+            got.confidence as u64,
+            wanted["confidence"].as_u64().unwrap()
+        );
+        assert_eq!(strings.get(got.source), wanted["source"].as_str());
+        let eras: Vec<(&str, &str, u32)> = got
+            .eras()
+            .map(|era| {
+                (
+                    strings.get(era.id).unwrap(),
+                    strings.get(era.name).unwrap(),
+                    era.order,
+                )
+            })
+            .collect();
+        let wanted_eras: Vec<(&str, &str, u32)> = wanted["eras"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|era| {
+                (
+                    era["id"].as_str().unwrap(),
+                    era["name"].as_str().unwrap(),
+                    era["order"].as_u64().unwrap() as u32,
+                )
+            })
+            .collect();
+        assert_eq!(eras, wanted_eras);
+        let members: Vec<(String, u32, u32)> = got
+            .members()
+            .map(|member| {
+                let packed = keys[member.row.0];
+                let kind = if packed >> 32 == 0 { "movie" } else { "tv" };
+                (
+                    format!("{kind}:{}", packed as u32),
+                    member.era,
+                    member.order,
+                )
+            })
+            .collect();
+        let wanted_members: Vec<(String, u32, u32)> = wanted["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|member| {
+                (
+                    member["key"].as_str().unwrap().to_owned(),
+                    member["era"].as_u64().unwrap() as u32,
+                    member["order"].as_u64().unwrap() as u32,
+                )
+            })
+            .collect();
+        assert_eq!(members, wanted_members);
+        for member in got.members() {
+            assert_eq!(franchises.primary(member.row), Some(index as u32));
+            let packed = keys[member.row.0];
+            let kind = if packed >> 32 == 0 { "movie" } else { "tv" };
+            let key = format!("{kind}:{}", packed as u32);
+            let wanted = expected["curatedUmbrellas"].get(&key);
+            assert_eq!(
+                franchises
+                    .umbrella(member.row)
+                    .map(|u| strings.get(u.id).unwrap()),
+                wanted.and_then(|u| u["id"].as_str())
+            );
+            assert_eq!(
+                franchises
+                    .umbrella(member.row)
+                    .map(|u| strings.get(u.name).unwrap()),
+                wanted.and_then(|u| u["name"].as_str())
+            );
+        }
+    }
+    assert_eq!(
+        franchises.primary(store.row_of(0, 2).unwrap().unwrap()),
+        None
+    );
+}
+
+#[test]
+fn an_old_store_has_no_curated_franchises() {
+    let (bytes, _) = fixture_or_fail!("store-v2");
+    let store = Store::open(&bytes).expect("opens");
+    let franchises = store.curated_franchises().expect("absence is not an error");
+    assert!(franchises.is_empty());
+    assert_eq!(franchises.primary(den_store::Row(0)), None);
+}
+
 /// Store-v3's addition: a fixed dense structural-affinity profile. The fixture carries all 18 axes,
 /// including real zeroes, and names two non-zero values explicitly.
 #[test]
