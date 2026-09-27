@@ -542,6 +542,104 @@ impl<'a> Store<'a> {
         })
     }
 
+    /// Curated primary franchises, their eras and release-ordered mixed movie/TV members.
+    ///
+    /// These sections are OPTIONAL and deliberately separate from [`franchises`](Self::franchises),
+    /// which is raw Wikidata P179. A store written before them returns an empty table. If any one of the
+    /// fifteen sections is present, all must be present and internally consistent.
+    pub fn curated_franchises(&self) -> Result<CuratedFranchises<'a>, StoreError> {
+        if CURATED_FRANCHISE_SECTIONS
+            .into_iter()
+            .all(|name| matches!(self.entry(name), Err(StoreError::MissingSection(_))))
+        {
+            return Ok(CuratedFranchises::default());
+        }
+        let primary = self.per_row::<u32>("fr_primary")?;
+        let ids = self.column::<u32>("fr_id")?;
+        let n = ids.len();
+        let names = franchise_column(self, "fr_name", n)?;
+        let confidence = franchise_column(self, "fr_conf", n)?;
+        let sources = franchise_column(self, "fr_source", n)?;
+        let umbrella_ids = self.per_row::<u32>("fr_umb_id")?;
+        let umbrella_names = self.per_row::<u32>("fr_umb_name")?;
+        let era_ids = self.column::<u32>("fr_era_id")?;
+        let era_names = franchise_column(self, "fr_era_name", era_ids.len())?;
+        let era_orders = franchise_column(self, "fr_era_order", era_ids.len())?;
+        let eras = self.list_of::<u32>("fr_era_id", "fr_era_o", n)?;
+        let member_rows = self.column::<u32>("fr_mem_row")?;
+        let member_eras = franchise_column(self, "fr_mem_era", member_rows.len())?;
+        let member_orders = franchise_column(self, "fr_mem_order", member_rows.len())?;
+        let members = self.list_of::<u32>("fr_mem_row", "fr_mem_o", n)?;
+        check_offsets(&eras, "fr_era_o")?;
+        check_offsets(&members, "fr_mem_o")?;
+
+        let mut seen_rows = vec![false; self.rows];
+        for f in 0..n {
+            let era_from = eras.offsets[f] as usize;
+            let era_to = eras.offsets[f + 1] as usize;
+            if era_from == era_to {
+                return Err(StoreError::BadSection { name: "fr_era_o" });
+            }
+            for (order, &got) in era_orders[era_from..era_to].iter().enumerate() {
+                if got as usize != order {
+                    return Err(StoreError::BadSection {
+                        name: "fr_era_order",
+                    });
+                }
+            }
+            let member_from = members.offsets[f] as usize;
+            let member_to = members.offsets[f + 1] as usize;
+            if member_to - member_from < 2 {
+                return Err(StoreError::BadSection { name: "fr_mem_o" });
+            }
+            for at in member_from..member_to {
+                let row = member_rows[at] as usize;
+                if row >= self.rows || seen_rows[row] || primary[row] != f as u32 {
+                    return Err(StoreError::BadSection { name: "fr_mem_row" });
+                }
+                seen_rows[row] = true;
+                if member_orders[at] as usize != at - member_from {
+                    return Err(StoreError::BadSection {
+                        name: "fr_mem_order",
+                    });
+                }
+                let era = member_eras[at] as usize;
+                if !(era_from..era_to).contains(&era) {
+                    return Err(StoreError::BadSection { name: "fr_mem_era" });
+                }
+            }
+        }
+        for (row, &f) in primary.iter().enumerate() {
+            if (umbrella_ids[row] == NONE_U32) != (umbrella_names[row] == NONE_U32) {
+                return Err(StoreError::BadSection { name: "fr_umb_id" });
+            }
+            if f == NONE_U32 {
+                if seen_rows[row] {
+                    return Err(StoreError::BadSection { name: "fr_primary" });
+                }
+            } else if f as usize >= n || !seen_rows[row] {
+                return Err(StoreError::BadSection { name: "fr_primary" });
+            }
+        }
+        Ok(CuratedFranchises {
+            primary,
+            ids,
+            names,
+            confidence,
+            sources,
+            umbrella_ids,
+            umbrella_names,
+            era_ids,
+            era_names,
+            era_orders,
+            eras,
+            member_rows,
+            member_eras,
+            member_orders,
+            members,
+        })
+    }
+
     /// The tentative tier of the plot facets: per row and axis, an answer the writer's gates refused only
     /// as uncertain, with its probability. A cell is tentative only where `facet_v` is absent.
     ///
@@ -812,6 +910,178 @@ fn date(days: &[i32], precision: &[u8], entity: u32) -> Option<PersonDate> {
     let i = entity as usize;
     let (&days, &precision) = (days.get(i)?, precision.get(i)?);
     (days != i32::MIN).then_some(PersonDate { days, precision })
+}
+
+const CURATED_FRANCHISE_SECTIONS: [&str; 15] = [
+    "fr_primary",
+    "fr_id",
+    "fr_name",
+    "fr_conf",
+    "fr_source",
+    "fr_umb_id",
+    "fr_umb_name",
+    "fr_era_id",
+    "fr_era_name",
+    "fr_era_order",
+    "fr_era_o",
+    "fr_mem_row",
+    "fr_mem_era",
+    "fr_mem_order",
+    "fr_mem_o",
+];
+
+fn franchise_column<'a, T>(
+    store: &Store<'a>,
+    name: &'static str,
+    rows: usize,
+) -> Result<&'a [T], StoreError>
+where
+    T: FromBytes + Immutable + KnownLayout,
+{
+    let values = store.column::<T>(name)?;
+    if values.len() != rows {
+        return Err(StoreError::RowMismatch {
+            name,
+            rows,
+            found: values.len(),
+        });
+    }
+    Ok(values)
+}
+
+fn check_offsets<T>(list: &List<'_, T>, name: &'static str) -> Result<(), StoreError> {
+    if list.offsets.first() != Some(&0)
+        || list.offsets.last().copied() != Some(list.values.len() as u32)
+        || list.offsets.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return Err(StoreError::BadSection { name });
+    }
+    Ok(())
+}
+
+/// [`Store::curated_franchises`]: curated primary franchises, not raw P179 series.
+#[derive(Default)]
+pub struct CuratedFranchises<'a> {
+    primary: &'a [u32],
+    ids: &'a [u32],
+    names: &'a [u32],
+    confidence: &'a [u8],
+    sources: &'a [u32],
+    umbrella_ids: &'a [u32],
+    umbrella_names: &'a [u32],
+    era_ids: &'a [u32],
+    era_names: &'a [u32],
+    era_orders: &'a [u32],
+    eras: List<'a, u32>,
+    member_rows: &'a [u32],
+    member_eras: &'a [u32],
+    member_orders: &'a [u32],
+    members: List<'a, u32>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct CuratedFranchise<'a> {
+    pub id: u32,
+    pub name: u32,
+    pub confidence: u8,
+    pub source: u32,
+    era_base: u32,
+    era_ids: &'a [u32],
+    era_names: &'a [u32],
+    era_orders: &'a [u32],
+    member_rows: &'a [u32],
+    member_eras: &'a [u32],
+    member_orders: &'a [u32],
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct FranchiseUmbrella {
+    pub id: u32,
+    pub name: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct FranchiseEra {
+    pub id: u32,
+    pub name: u32,
+    pub order: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct FranchiseMember {
+    pub row: Row,
+    /// Era index within this franchise, not the store-global era-table index.
+    pub era: u32,
+    pub order: u32,
+}
+
+impl<'a> CuratedFranchises<'a> {
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    /// The curated primary franchise index of a title, or none.
+    pub fn primary(&self, row: Row) -> Option<u32> {
+        self.primary.get(row.0).copied().filter(|&f| f != NONE_U32)
+    }
+
+    /// This title's optional shared-universe label. Display metadata only, never primary membership.
+    pub fn umbrella(&self, row: Row) -> Option<FranchiseUmbrella> {
+        let id = *self.umbrella_ids.get(row.0)?;
+        let name = *self.umbrella_names.get(row.0)?;
+        (id != NONE_U32).then_some(FranchiseUmbrella { id, name })
+    }
+
+    pub fn get(&self, i: u32) -> Option<CuratedFranchise<'a>> {
+        let at = i as usize;
+        let era_from = *self.eras.offsets.get(at)? as usize;
+        let era_to = *self.eras.offsets.get(at + 1)? as usize;
+        let member_from = *self.members.offsets.get(at)? as usize;
+        let member_to = *self.members.offsets.get(at + 1)? as usize;
+        Some(CuratedFranchise {
+            id: *self.ids.get(at)?,
+            name: self.names[at],
+            confidence: self.confidence[at],
+            source: self.sources[at],
+            era_base: era_from as u32,
+            era_ids: self.era_ids.get(era_from..era_to)?,
+            era_names: self.era_names.get(era_from..era_to)?,
+            era_orders: self.era_orders.get(era_from..era_to)?,
+            member_rows: self.member_rows.get(member_from..member_to)?,
+            member_eras: self.member_eras.get(member_from..member_to)?,
+            member_orders: self.member_orders.get(member_from..member_to)?,
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = CuratedFranchise<'a>> + '_ {
+        (0..self.len() as u32).filter_map(|i| self.get(i))
+    }
+}
+
+impl<'a> CuratedFranchise<'a> {
+    pub fn eras(&self) -> impl Iterator<Item = FranchiseEra> + '_ {
+        self.era_ids
+            .iter()
+            .zip(self.era_names)
+            .zip(self.era_orders)
+            .map(|((&id, &name), &order)| FranchiseEra { id, name, order })
+    }
+
+    pub fn members(&self) -> impl Iterator<Item = FranchiseMember> + '_ {
+        self.member_rows
+            .iter()
+            .zip(self.member_eras)
+            .zip(self.member_orders)
+            .map(|((&row, &era), &order)| FranchiseMember {
+                row: Row(row as usize),
+                era: era - self.era_base,
+                order,
+            })
+    }
 }
 
 /// [`Store::awards`]: per title, the ceremonies it won or was nominated at, and the ceremony table.
@@ -1269,6 +1539,16 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn partial_curated_franchise_sections_are_malformed_not_absent() {
+        let half = build(1, &[("fr_primary", 4, u32s(&[NONE_U32]))]);
+        let store = Store::open(&half).unwrap();
+        assert_eq!(
+            store.curated_franchises().err(),
+            Some(StoreError::MissingSection("fr_id"))
+        );
     }
 
     /// The person-trait sections come as a set: some of them is an error, and so is a date column that
