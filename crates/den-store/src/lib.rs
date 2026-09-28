@@ -523,6 +523,39 @@ impl<'a> Store<'a> {
         Ok(OtherVersions { rows, kinds })
     }
 
+    /// Jev's More Like This scores: per anchor title, the candidates the cascade weighed (oxyc/den-dataset
+    /// #132), each with Jev's overall Noul as a probability. Sparse and not symmetric; an anchor with no
+    /// scores answers none.
+    ///
+    /// The `jev_like_*` sections are OPTIONAL and written together: a store with none of them has no
+    /// scores, which is an empty answer and not an error. Some of them, a score array that does not match
+    /// the rows, a row out of range or a score over 100 hundredths is an error.
+    pub fn jev_more_like(&self) -> Result<JevMoreLike<'a>, StoreError> {
+        if JEV_SECTIONS
+            .into_iter()
+            .all(|name| matches!(self.entry(name), Err(StoreError::MissingSection(_))))
+        {
+            return Ok(JevMoreLike::default());
+        }
+        let rows = self.list::<u32>("jev_like_v", "jev_like_o")?;
+        let scores = self.list::<u8>("jev_like_p", "jev_like_o")?;
+        if scores.values.len() != rows.values.len() {
+            return Err(StoreError::RowMismatch {
+                name: "jev_like_p",
+                rows: rows.values.len(),
+                found: scores.values.len(),
+            });
+        }
+        check_offsets(&rows, "jev_like_o")?;
+        if rows.values.iter().any(|&row| row as usize >= self.rows) {
+            return Err(StoreError::BadSection { name: "jev_like_v" });
+        }
+        if scores.values.iter().any(|&p| p > 100) {
+            return Err(StoreError::BadSection { name: "jev_like_p" });
+        }
+        Ok(JevMoreLike { rows, scores })
+    }
+
     /// Each entity's IMDb person id (`nm…`, Wikidata P345) as a string id, [`NONE_U32`] for none,
     /// indexed like `ent_qid`. A join key for IMDb's own principals, never an entity's public id — that
     /// stays its Q-id.
@@ -841,6 +874,33 @@ impl<'a> OtherVersions<'a> {
                     VersionKind::SharedSource
                 },
             })
+    }
+}
+
+/// The sections [`Store::jev_more_like`] reads, all or none of which a store has.
+const JEV_SECTIONS: [&str; 3] = ["jev_like_v", "jev_like_p", "jev_like_o"];
+
+/// [`Store::jev_more_like`]: per anchor title, Jev's score for each candidate it weighed.
+#[derive(Default)]
+pub struct JevMoreLike<'a> {
+    rows: List<'a, u32>,
+    scores: List<'a, u8>,
+}
+
+impl<'a> JevMoreLike<'a> {
+    /// Whether the store carries any score at all.
+    pub fn is_empty(&self) -> bool {
+        self.rows.values.is_empty()
+    }
+
+    /// Row *i*'s candidates with their overall Noul in 0..=1, in the store's order. Empty for an anchor
+    /// with none, or a row out of range.
+    pub fn get(&self, row: Row) -> impl Iterator<Item = (Row, f64)> + 'a {
+        self.rows
+            .get(row)
+            .iter()
+            .zip(self.scores.get(row))
+            .map(|(&other, &p)| (Row(other as usize), f64::from(p) / 100.0))
     }
 }
 
@@ -1692,6 +1752,55 @@ mod tests {
                 .other_versions()
                 .err(),
             Some(StoreError::MissingSection("versions_k"))
+        );
+    }
+
+    /// The Jev sections come as a set whose scores match its rows: some of them, a short score array, a
+    /// row past the store or a score over 100 hundredths is an error.
+    #[test]
+    fn malformed_jev_scores_are_an_error_not_empty() {
+        let whole = |rows: Vec<u8>, scores: Vec<u8>| -> Vec<(&'static str, u32, Vec<u8>)> {
+            vec![
+                ("jev_like_v", 4, rows),
+                ("jev_like_o", 4, u32s(&[0, 1, 1])),
+                ("jev_like_p", 1, scores),
+            ]
+        };
+
+        let good = build(2, &whole(u32s(&[1]), vec![57]));
+        let store = Store::open(&good).unwrap();
+        let jev = store.jev_more_like().expect("well formed");
+        assert_eq!(jev.get(Row(0)).collect::<Vec<_>>(), [(Row(1), 0.57)]);
+        assert_eq!(jev.get(Row(1)).count(), 0, "an anchor with no scores");
+        assert_eq!(jev.get(Row(2)).count(), 0, "a row out of range");
+
+        let short = build(2, &whole(u32s(&[1]), vec![]));
+        assert_eq!(
+            Store::open(&short).unwrap().jev_more_like().err(),
+            Some(StoreError::RowMismatch {
+                name: "jev_like_p",
+                rows: 1,
+                found: 0
+            })
+        );
+        let past = build(2, &whole(u32s(&[2]), vec![57]));
+        assert_eq!(
+            Store::open(&past).unwrap().jev_more_like().err(),
+            Some(StoreError::BadSection { name: "jev_like_v" })
+        );
+        let over = build(2, &whole(u32s(&[1]), vec![101]));
+        assert_eq!(
+            Store::open(&over).unwrap().jev_more_like().err(),
+            Some(StoreError::BadSection { name: "jev_like_p" })
+        );
+        let mut partial = whole(u32s(&[1]), vec![57]);
+        partial.retain(|(name, _, _)| *name != "jev_like_p");
+        assert_eq!(
+            Store::open(&build(2, &partial))
+                .unwrap()
+                .jev_more_like()
+                .err(),
+            Some(StoreError::MissingSection("jev_like_p"))
         );
     }
 
