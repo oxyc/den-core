@@ -706,6 +706,67 @@ fn premise_tags_read_as_the_vectors_say() {
     assert!(some > 1, "the vectors tag fewer than two titles");
 }
 
+/// Each title's other versions, as `[key, kind]` in the order the vectors list them: ascending by row, kind 0
+/// a shared source and 1 a remake. Every link is returned.
+#[test]
+fn other_versions_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let keys = store.per_row::<u64>("keys").expect("keys");
+    let versions = store.other_versions().expect("versions");
+    let key_of = |row: den_store::Row| {
+        let packed = keys[row.0];
+        let media = if packed >> 32 == 1 { "tv" } else { "movie" };
+        format!("{media}:{}", packed as u32)
+    };
+    let mut some = 0;
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        let want: Vec<(String, u64)> = row["otherVersions"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{key} states its otherVersions"))
+            .iter()
+            .map(|v| (v[0].as_str().unwrap().to_owned(), v[1].as_u64().unwrap()))
+            .collect();
+        let got: Vec<(String, u64)> = versions
+            .get(i)
+            .map(|v| {
+                let kind = match v.kind {
+                    den_store::VersionKind::SharedSource => 0,
+                    den_store::VersionKind::Remake => 1,
+                };
+                (key_of(v.row), kind)
+            })
+            .collect();
+        assert_eq!(got, want, "{key} otherVersions");
+        for version in versions.get(i) {
+            assert!(
+                versions
+                    .get(version.row)
+                    .any(|back| back.row == i && back.kind == version.kind),
+                "{key}: a link not returned"
+            );
+        }
+        some += usize::from(!want.is_empty());
+    }
+    assert!(some > 1, "the vectors give fewer than two titles a version");
+}
+
+/// The other-version sections are optional: store-v1 predates them, and reads as none.
+#[test]
+fn a_store_without_the_version_sections_has_no_versions() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("versions_o").is_err(),
+        "the store-v1 fixture carries versions_o, so this contract is untested"
+    );
+    let versions = store.other_versions().expect("absence is not an error");
+    assert!(versions.is_empty());
+    assert_eq!(versions.get(den_store::Row(0)).count(), 0);
+}
+
 /// The premise-tag sections are optional: store-v1 predates them, and reads as no tags.
 #[test]
 fn a_store_without_the_premise_tag_sections_has_no_tags() {

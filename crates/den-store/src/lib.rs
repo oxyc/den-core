@@ -490,6 +490,39 @@ impl<'a> Store<'a> {
         self.optional_list("premise_tag_v", "premise_tag_o")
     }
 
+    /// Each title's other versions — remakes and other adaptations of the same story — as rows,
+    /// ascending, each with its [`VersionKind`]. A title's own curated franchise members are NOT left out:
+    /// a reader serving them does that itself.
+    ///
+    /// The `versions_*` sections are OPTIONAL and written together: a store with none of them has no
+    /// other versions, which is an empty answer and not an error. Some of them, a kind array that does not
+    /// match the rows, a row out of range or an unknown kind is an error.
+    pub fn other_versions(&self) -> Result<OtherVersions<'a>, StoreError> {
+        if VERSION_SECTIONS
+            .into_iter()
+            .all(|name| matches!(self.entry(name), Err(StoreError::MissingSection(_))))
+        {
+            return Ok(OtherVersions::default());
+        }
+        let rows = self.list::<u32>("versions_v", "versions_o")?;
+        let kinds = self.list::<u8>("versions_k", "versions_o")?;
+        if kinds.values.len() != rows.values.len() {
+            return Err(StoreError::RowMismatch {
+                name: "versions_k",
+                rows: rows.values.len(),
+                found: kinds.values.len(),
+            });
+        }
+        check_offsets(&rows, "versions_o")?;
+        if rows.values.iter().any(|&row| row as usize >= self.rows) {
+            return Err(StoreError::BadSection { name: "versions_v" });
+        }
+        if kinds.values.iter().any(|&kind| kind > 1) {
+            return Err(StoreError::BadSection { name: "versions_k" });
+        }
+        Ok(OtherVersions { rows, kinds })
+    }
+
     /// Each entity's IMDb person id (`nm…`, Wikidata P345) as a string id, [`NONE_U32`] for none,
     /// indexed like `ent_qid`. A join key for IMDb's own principals, never an entity's public id — that
     /// stays its Q-id.
@@ -759,6 +792,55 @@ impl<'a> Store<'a> {
             countries: self.list_of("ent_bcountry_v", "ent_bcountry_o", entities)?,
             iso,
         })
+    }
+}
+
+/// The sections [`Store::other_versions`] reads, all or none of which a store has.
+const VERSION_SECTIONS: [&str; 3] = ["versions_v", "versions_k", "versions_o"];
+
+/// How another version relates to a title.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum VersionKind {
+    /// Both adapt the same source work: a novel, a play (`versions_k` 0).
+    SharedSource,
+    /// Linked through a film or series: one remakes the other, or both remake a third (`versions_k` 1).
+    Remake,
+}
+
+/// One other version of a title.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Version {
+    pub row: Row,
+    pub kind: VersionKind,
+}
+
+/// [`Store::other_versions`]: per title, the other versions of its story.
+#[derive(Default)]
+pub struct OtherVersions<'a> {
+    rows: List<'a, u32>,
+    kinds: List<'a, u8>,
+}
+
+impl<'a> OtherVersions<'a> {
+    /// Whether the store carries any other version at all.
+    pub fn is_empty(&self) -> bool {
+        self.rows.values.is_empty()
+    }
+
+    /// Row *i*'s other versions, ascending by row. Empty for a title with none, or a row out of range.
+    pub fn get(&self, row: Row) -> impl Iterator<Item = Version> + 'a {
+        self.rows
+            .get(row)
+            .iter()
+            .zip(self.kinds.get(row))
+            .map(|(&other, &kind)| Version {
+                row: Row(other as usize),
+                kind: if kind == 1 {
+                    VersionKind::Remake
+                } else {
+                    VersionKind::SharedSource
+                },
+            })
     }
 }
 
@@ -1557,6 +1639,60 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// The other-version sections come as a set whose kinds match its rows: some of them, a short kind
+    /// array, a row past the store or a kind the format does not define is an error.
+    #[test]
+    fn malformed_other_versions_are_an_error_not_empty() {
+        let whole = |rows: Vec<u8>, kinds: Vec<u8>| -> Vec<(&'static str, u32, Vec<u8>)> {
+            vec![
+                ("versions_v", 4, rows),
+                ("versions_o", 4, u32s(&[0, 1, 2])),
+                ("versions_k", 1, kinds),
+            ]
+        };
+
+        let good = build(2, &whole(u32s(&[1, 0]), vec![1, 1]));
+        let store = Store::open(&good).unwrap();
+        let versions = store.other_versions().expect("well formed");
+        assert_eq!(
+            versions.get(Row(0)).collect::<Vec<_>>(),
+            [Version {
+                row: Row(1),
+                kind: VersionKind::Remake
+            }]
+        );
+        assert_eq!(versions.get(Row(2)).count(), 0, "a row out of range");
+
+        let short = build(2, &whole(u32s(&[1, 0]), vec![1]));
+        assert_eq!(
+            Store::open(&short).unwrap().other_versions().err(),
+            Some(StoreError::RowMismatch {
+                name: "versions_k",
+                rows: 2,
+                found: 1
+            })
+        );
+        let past = build(2, &whole(u32s(&[2, 0]), vec![0, 0]));
+        assert_eq!(
+            Store::open(&past).unwrap().other_versions().err(),
+            Some(StoreError::BadSection { name: "versions_v" })
+        );
+        let unknown = build(2, &whole(u32s(&[1, 0]), vec![2, 2]));
+        assert_eq!(
+            Store::open(&unknown).unwrap().other_versions().err(),
+            Some(StoreError::BadSection { name: "versions_k" })
+        );
+        let mut partial = whole(u32s(&[1, 0]), vec![0, 0]);
+        partial.retain(|(name, _, _)| *name != "versions_k");
+        assert_eq!(
+            Store::open(&build(2, &partial))
+                .unwrap()
+                .other_versions()
+                .err(),
+            Some(StoreError::MissingSection("versions_k"))
+        );
     }
 
     #[test]
