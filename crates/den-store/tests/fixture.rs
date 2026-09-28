@@ -790,6 +790,60 @@ fn jev_more_like_reads_as_the_vectors_say() {
     );
 }
 
+/// Each title's fan picks as keys in the order the vectors list them, and whether it was asked: one asked
+/// with picks, one asked with none, one never asked.
+#[test]
+fn fan_picks_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let keys = store.per_row::<u64>("keys").expect("keys");
+    let fan = store.fan_picks().expect("fan picks");
+    let key_of = |row: den_store::Row| {
+        let packed = keys[row.0];
+        let media = if packed >> 32 == 1 { "tv" } else { "movie" };
+        format!("{media}:{}", packed as u32)
+    };
+    let mut shapes = std::collections::HashSet::new();
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        let want: Vec<String> = row["fanPicks"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{key} states its fanPicks"))
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect();
+        let asked = row["fanPicksAsked"].as_bool().unwrap();
+        assert_eq!(
+            fan.get(i).map(key_of).collect::<Vec<_>>(),
+            want,
+            "{key} fanPicks"
+        );
+        assert_eq!(fan.asked(i), asked, "{key} fanPicksAsked");
+        shapes.insert((asked, !want.is_empty()));
+    }
+    assert_eq!(
+        shapes.len(),
+        3,
+        "the vectors need a title asked with picks, one asked with none and one never asked"
+    );
+}
+
+/// The fan-pick sections are optional: store-v1 predates them, and reads as none.
+#[test]
+fn a_store_without_the_fan_pick_sections_has_none() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("fan_picks_o").is_err(),
+        "the store-v1 fixture carries fan_picks_o, so this contract is untested"
+    );
+    let fan = store.fan_picks().expect("absence is not an error");
+    assert!(fan.is_empty());
+    assert!(!fan.asked(den_store::Row(0)));
+    assert_eq!(fan.get(den_store::Row(0)).count(), 0);
+}
+
 /// The Jev sections are optional: store-v1 predates them, and reads as none.
 #[test]
 fn a_store_without_the_jev_sections_has_no_scores() {

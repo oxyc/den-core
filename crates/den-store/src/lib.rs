@@ -556,6 +556,43 @@ impl<'a> Store<'a> {
         Ok(JevMoreLike { rows, scores })
     }
 
+    /// Fan picks for You Might Also Like (oxyc/den-atlas#121): per title, the titles a fan of it would also
+    /// love, in rank order, and whether the title was asked at all. An asked title with no picks is an
+    /// answer; a title not asked has no fan picks.
+    ///
+    /// The `fan_picks_*` sections are OPTIONAL and written together: a store with none of them has no fan
+    /// picks, which is an empty answer and not an error. Some of them, an asked flag that is not 0 or 1,
+    /// picks on a title not asked, a pick out of range, or a title listing itself or one row twice is an
+    /// error.
+    pub fn fan_picks(&self) -> Result<FanPicks<'a>, StoreError> {
+        if FAN_PICK_SECTIONS
+            .into_iter()
+            .all(|name| matches!(self.entry(name), Err(StoreError::MissingSection(_))))
+        {
+            return Ok(FanPicks::default());
+        }
+        let picks = self.list::<u32>("fan_picks_v", "fan_picks_o")?;
+        check_offsets(&picks, "fan_picks_o")?;
+        let asked = self.per_row::<u8>("fan_picks_a")?;
+        for (row, &flag) in asked.iter().enumerate() {
+            let own = picks.get(Row(row));
+            if flag > 1 || (flag == 0 && !own.is_empty()) {
+                return Err(StoreError::BadSection {
+                    name: "fan_picks_a",
+                });
+            }
+            let bad = own.iter().enumerate().any(|(at, &pick)| {
+                pick as usize >= self.rows || pick as usize == row || own[..at].contains(&pick)
+            });
+            if bad {
+                return Err(StoreError::BadSection {
+                    name: "fan_picks_v",
+                });
+            }
+        }
+        Ok(FanPicks { picks, asked })
+    }
+
     /// Each entity's IMDb person id (`nm…`, Wikidata P345) as a string id, [`NONE_U32`] for none,
     /// indexed like `ent_qid`. A join key for IMDb's own principals, never an entity's public id — that
     /// stays its Q-id.
@@ -901,6 +938,34 @@ impl<'a> JevMoreLike<'a> {
             .iter()
             .zip(self.scores.get(row))
             .map(|(&other, &p)| (Row(other as usize), f64::from(p) / 100.0))
+    }
+}
+
+/// The sections [`Store::fan_picks`] reads, all or none of which a store has.
+const FAN_PICK_SECTIONS: [&str; 3] = ["fan_picks_v", "fan_picks_o", "fan_picks_a"];
+
+/// [`Store::fan_picks`]: per title, its fan picks in rank order, and whether it was asked.
+#[derive(Default)]
+pub struct FanPicks<'a> {
+    picks: List<'a, u32>,
+    asked: &'a [u8],
+}
+
+impl<'a> FanPicks<'a> {
+    /// Whether the store carries fan picks at all.
+    pub fn is_empty(&self) -> bool {
+        self.asked.is_empty()
+    }
+
+    /// Whether row *i* was asked: its picks, possibly none, are then its answer. False for a row out of
+    /// range, and for every row of a store without the sections.
+    pub fn asked(&self, row: Row) -> bool {
+        self.asked.get(row.0) == Some(&1)
+    }
+
+    /// Row *i*'s picks in rank order. Empty for a title with none, one not asked, or a row out of range.
+    pub fn get(&self, row: Row) -> impl Iterator<Item = Row> + 'a {
+        self.picks.get(row).iter().map(|&pick| Row(pick as usize))
     }
 }
 
@@ -1801,6 +1866,65 @@ mod tests {
                 .jev_more_like()
                 .err(),
             Some(StoreError::MissingSection("jev_like_p"))
+        );
+    }
+
+    /// The fan-pick sections come as a set: picks on a title not asked, a flag that is not 0 or 1, a pick past
+    /// the store, the title itself or a repeat, or some of the sections without the rest is an error.
+    #[test]
+    fn malformed_fan_picks_are_an_error_not_empty() {
+        let whole =
+            |picks: &[u32], offsets: &[u32], asked: Vec<u8>| -> Vec<(&'static str, u32, Vec<u8>)> {
+                vec![
+                    ("fan_picks_v", 4, u32s(picks)),
+                    ("fan_picks_o", 4, u32s(offsets)),
+                    ("fan_picks_a", 1, asked),
+                ]
+            };
+
+        let good = build(3, &whole(&[2, 1], &[0, 2, 2, 2], vec![1, 1, 0]));
+        let store = Store::open(&good).unwrap();
+        let fan = store.fan_picks().expect("well formed");
+        assert!(!fan.is_empty());
+        assert_eq!(
+            fan.get(Row(0)).collect::<Vec<_>>(),
+            [Row(2), Row(1)],
+            "rank order, not by row"
+        );
+        assert!(
+            fan.asked(Row(1)) && fan.get(Row(1)).next().is_none(),
+            "asked, with none kept"
+        );
+        assert!(!fan.asked(Row(2)), "never asked");
+        assert!(
+            !fan.asked(Row(3)) && fan.get(Row(3)).next().is_none(),
+            "a row out of range"
+        );
+
+        for (picks, offsets, asked, name) in [
+            (
+                &[1u32][..],
+                &[0u32, 1, 1, 1][..],
+                vec![0u8, 0, 0],
+                "fan_picks_a",
+            ),
+            (&[1], &[0, 1, 1, 1], vec![2, 0, 0], "fan_picks_a"),
+            (&[3], &[0, 1, 1, 1], vec![1, 0, 0], "fan_picks_v"),
+            (&[0], &[0, 1, 1, 1], vec![1, 0, 0], "fan_picks_v"),
+            (&[1, 1], &[0, 2, 2, 2], vec![1, 0, 0], "fan_picks_v"),
+        ] {
+            let bytes = build(3, &whole(picks, offsets, asked));
+            assert_eq!(
+                Store::open(&bytes).unwrap().fan_picks().err(),
+                Some(StoreError::BadSection { name }),
+                "{picks:?} {offsets:?}"
+            );
+        }
+        let mut partial = whole(&[2], &[0, 1, 1, 1], vec![1, 0, 0]);
+        partial.retain(|(name, _, _)| *name != "fan_picks_a");
+        assert_eq!(
+            Store::open(&build(3, &partial)).unwrap().fan_picks().err(),
+            Some(StoreError::MissingSection("fan_picks_a"))
         );
     }
 
