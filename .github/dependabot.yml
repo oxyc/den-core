@@ -1,0 +1,25 @@
+# Weekly dependency PRs, grouped so a refresh is one reviewable PR rather than several.
+#
+# One cargo entry covers every crate: the root Cargo.toml is the workspace (den-sync, den-store and both
+# bindings). The Swift package wraps the built xcframework and has no dependencies of its own to update.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Patch/minor together: they are the ones that should be boring to review.
+      rust-minor:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies]
