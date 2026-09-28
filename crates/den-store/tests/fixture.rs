@@ -753,6 +753,57 @@ fn other_versions_read_as_the_vectors_say() {
     assert!(some > 1, "the vectors give fewer than two titles a version");
 }
 
+/// Each anchor's Jev scores, as `[key, hundredths]` in the order the vectors list them. Not symmetric.
+#[test]
+fn jev_more_like_reads_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let keys = store.per_row::<u64>("keys").expect("keys");
+    let jev = store.jev_more_like().expect("jev scores");
+    let key_of = |row: den_store::Row| {
+        let packed = keys[row.0];
+        let media = if packed >> 32 == 1 { "tv" } else { "movie" };
+        format!("{media}:{}", packed as u32)
+    };
+    let mut some = 0;
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        let want: Vec<(String, f64)> = row["jevMoreLike"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{key} states its jevMoreLike"))
+            .iter()
+            .map(|v| {
+                (
+                    v[0].as_str().unwrap().to_owned(),
+                    v[1].as_u64().unwrap() as f64 / 100.0,
+                )
+            })
+            .collect();
+        let got: Vec<(String, f64)> = jev.get(i).map(|(r, p)| (key_of(r), p)).collect();
+        assert_eq!(got, want, "{key} jevMoreLike");
+        some += usize::from(!want.is_empty());
+    }
+    assert!(
+        some > 1,
+        "the vectors give fewer than two titles Jev scores"
+    );
+}
+
+/// The Jev sections are optional: store-v1 predates them, and reads as none.
+#[test]
+fn a_store_without_the_jev_sections_has_no_scores() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("jev_like_o").is_err(),
+        "the store-v1 fixture carries jev_like_o, so this contract is untested"
+    );
+    let jev = store.jev_more_like().expect("absence is not an error");
+    assert!(jev.is_empty());
+    assert_eq!(jev.get(den_store::Row(0)).count(), 0);
+}
+
 /// The other-version sections are optional: store-v1 predates them, and reads as none.
 #[test]
 fn a_store_without_the_version_sections_has_no_versions() {
