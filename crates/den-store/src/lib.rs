@@ -483,6 +483,13 @@ impl<'a> Store<'a> {
         self.optional_list("src_authors_v", "src_authors_o")
     }
 
+    /// Each title's premise tags — short hyphenated structural phrases a model wrote from its plot — as
+    /// string ids, most defining first. OPTIONAL, as [`directors`](Self::directors): a store written
+    /// before them has no tags for any row.
+    pub fn premise_tags(&self) -> Result<List<'a, u32>, StoreError> {
+        self.optional_list("premise_tag_v", "premise_tag_o")
+    }
+
     /// Each entity's IMDb person id (`nm…`, Wikidata P345) as a string id, [`NONE_U32`] for none,
     /// indexed like `ent_qid`. A join key for IMDb's own principals, never an entity's public id — that
     /// stays its Q-id.
@@ -1506,6 +1513,17 @@ mod tests {
             "absent"
         );
         assert!(store.writers().unwrap().get(Row(0)).is_empty(), "absent");
+        assert!(
+            store.premise_tags().unwrap().get(Row(0)).is_empty(),
+            "absent"
+        );
+
+        // Premise tags without their offsets.
+        let half = build(1, &[("premise_tag_v", 4, u32s(&[0]))]);
+        assert_eq!(
+            Store::open(&half).unwrap().premise_tags().err(),
+            Some(StoreError::MissingSection("premise_tag_o"))
+        );
 
         // One IMDb id for two entities.
         let short = build(

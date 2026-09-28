@@ -682,6 +682,43 @@ fn source_authors_read_as_the_vectors_say() {
     assert!(some > 0, "the vectors name no title's source author");
 }
 
+/// Each title's premise tags, as strings in the order the vectors list them. A facts-only row has none.
+#[test]
+fn premise_tags_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let tags = store.premise_tags().expect("premise_tag");
+    let mut some = 0;
+    for row in expected["rows"].as_array().unwrap() {
+        let i = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let key = row["key"].as_str().unwrap();
+        let want: Vec<&str> = row["premiseTags"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{key} states its premiseTags"))
+            .iter()
+            .map(|t| t.as_str().unwrap())
+            .collect();
+        let got: Vec<&str> = tags.get(i).iter().filter_map(|&s| strings.get(s)).collect();
+        assert_eq!(got, want, "{key} premiseTags");
+        some += usize::from(!want.is_empty());
+    }
+    assert!(some > 1, "the vectors tag fewer than two titles");
+}
+
+/// The premise-tag sections are optional: store-v1 predates them, and reads as no tags.
+#[test]
+fn a_store_without_the_premise_tag_sections_has_no_tags() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("premise_tag_o").is_err(),
+        "the store-v1 fixture carries premise_tag_o, so this contract is untested"
+    );
+    let tags = store.premise_tags().expect("absence is not an error");
+    assert!(tags.get(den_store::Row(0)).is_empty());
+}
+
 /// The birthplace and source-author sections are optional: store-v1 predates them, and reads as none.
 #[test]
 fn a_store_without_the_birthplace_sections_has_no_birthplaces() {
