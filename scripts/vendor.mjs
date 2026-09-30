@@ -31,7 +31,9 @@ for (const name of ['Package.swift', 'Sources', 'Artifacts']) copy(`Swift/${name
 copy('LICENSE', join(native, 'LICENSE'));
 // The golden cases travel with the binary, as they already do for the web. Kept beside it rather than copied
 // into the client's own tests, so the manifest covers them and the two cannot drift apart unnoticed.
-copy('crates/den-sync/tests/fixtures/policy-v1.json', join(native, 'policy-v1.json'));
+for (const fixture of ['policy-v1.json', 'policy-v3.json']) {
+  copy(`crates/den-sync/tests/fixtures/${fixture}`, join(native, fixture));
+}
 manifest(native);
 const web = join(root, '../den-edge/web/src/vendor/den-core');
 for (const name of ['index.js', 'index.d.ts']) copy(`web/${name}`, join(web, name));
@@ -41,5 +43,7 @@ for (const name of ['den_core.js', 'den_core.d.ts', 'den_core_bg.wasm', 'den_cor
 // Remove only the obsolete generated inline copy when updating a previously vendored package.
 rmSync(join(web, 'generated/wasm-data.js'), { force: true });
 copy('LICENSE', join(web, 'LICENSE'));
-copy('crates/den-sync/tests/fixtures/policy-v1.json', join(web, 'policy-v1.json'));
+for (const fixture of ['policy-v1.json', 'policy-v3.json']) {
+  copy(`crates/den-sync/tests/fixtures/${fixture}`, join(web, fixture));
+}
 manifest(web);
