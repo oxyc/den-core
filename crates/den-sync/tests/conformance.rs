@@ -24,18 +24,147 @@ fn signed_zero_progress_keeps_the_newer_stamp() {
 
 #[test]
 fn shared_binding_contract() {
-    let fixture: Value = serde_json::from_str(include_str!("fixtures/policy-v1.json")).unwrap();
-    for case in fixture["cases"].as_array().unwrap() {
-        let result = request(case["request"].clone());
-        assert_eq!(result["version"], 1);
-        if case.get("error").is_some() {
-            assert_eq!(result["error"], case["error"], "{}", case["name"]);
-            assert!(result.get("ok").is_none());
-        } else {
-            assert_eq!(result["ok"], case["ok"], "{}", case["name"]);
-            assert!(result.get("error").is_none());
+    for fixture in [
+        include_str!("fixtures/policy-v1.json"),
+        include_str!("fixtures/policy-v3.json"),
+    ] {
+        let fixture: Value = serde_json::from_str(fixture).unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let result = request(case["request"].clone());
+            assert_eq!(result["version"], 1);
+            if case.get("error").is_some() {
+                assert_eq!(result["error"], case["error"], "{}", case["name"]);
+                assert!(result.get("ok").is_none());
+            } else {
+                assert_eq!(result["ok"], case["ok"], "{}", case["name"]);
+                assert!(result.get("error").is_none());
+            }
         }
     }
+}
+
+fn wat(entries: Value) -> Value {
+    json!({"kind":"wat","schema":3,"title":{"type":"tv","id":1399},"season":1,"block":0,"seasonReset":null,"entries":entries})
+}
+
+#[test]
+fn v3_names_keys_and_writer_devices() {
+    assert_eq!(
+        request(json!({"op":"watch_name","media":"tv","id":1399,"season":1,"episode":31}))["ok"],
+        "wat:tv:1399:1:0"
+    );
+    assert_eq!(
+        request(json!({"op":"watch_name","media":"tv","id":1399,"season":1,"episode":32}))["ok"],
+        "wat:tv:1399:1:1"
+    );
+    assert_eq!(
+        request(json!({"op":"watch_name","media":"movie","id":550,"season":0,"episode":0}))["ok"],
+        "wat:movie:550:0:0"
+    );
+    assert_eq!(
+        request(
+            json!({"op":"receipt_name","provider":"simkl","account":"42","target":"rec:movie:550"})
+        )["ok"],
+        "snt:simkl:42:t3e0"
+    );
+    let invalid = request(
+        json!({"op":"register_write","action":{"kind":"progress","value":0.5,"at":[1000,0,"NO"]},"current":null,"now":1000}),
+    );
+    assert_eq!(invalid["error"], "invalid_device");
+}
+
+#[test]
+fn v3_merge_laws_and_bounded_plays() {
+    let a = wat(
+        json!({"01":{"imported":true,"plays":{},"cleared":null},"2":{"imported":false,"plays":{"0":1000,"1":2000,"2":3000,"3":4000,"4":5000},"cleared":null}}),
+    );
+    let b = wat(
+        json!({"-1":{"imported":true,"plays":{},"cleared":null},"2":{"imported":true,"plays":{"0":900,"5":6000,"6":7000,"7":8000,"8":9000,"9":10000},"cleared":[2,[11000,0,"a1b2c3d4e5f60718"]]},"100000":{"imported":false,"plays":{},"cleared":null}}),
+    );
+    let ab = merge(&a, &b).unwrap();
+    assert_eq!(ab, merge(&b, &a).unwrap());
+    assert_eq!(ab, merge(&ab, &a).unwrap());
+    assert!(
+        ab["entries"].get("01").is_some()
+            && ab["entries"].get("-1").is_some()
+            && ab["entries"].get("100000").is_some()
+    );
+    assert_eq!(ab["entries"]["2"]["plays"].as_object().unwrap().len(), 8);
+    assert_eq!(ab["entries"]["2"]["plays"]["0"], 900);
+    let c = wat(json!({"2":{"imported":false,"plays":{"10":11000},"cleared":null}}));
+    assert_eq!(
+        merge(&merge(&a, &b).unwrap(), &c).unwrap(),
+        merge(&a, &merge(&b, &c).unwrap()).unwrap()
+    );
+}
+
+#[test]
+fn v3_derivation_resets_future_and_imports() {
+    let register = json!({"progress":{"value":1.0,"viewing":2,"at":[2000,0,"a1b2c3d4e5f60718"]},"imported":true,"plays":{"-9007199254739992":1000,"2":2000,"3":200000000},"cleared":null});
+    let state = request(
+        json!({"op":"episode_state","register":register,"resets":[[1500,0,"local"]],"now":3000}),
+    )["ok"]
+        .clone();
+    assert_eq!(state["watched"], true);
+    assert_eq!(state["viewing"], 2);
+    assert_eq!(state["plays"], json!([[2, 2000]]));
+    assert_eq!(state["first_play"], 2000);
+    let hidden = request(
+        json!({"op":"episode_state","register":register,"resets":[[2500,0,"local"]],"now":3000}),
+    )["ok"]
+        .clone();
+    assert_eq!(hidden["watched"], false);
+    assert_eq!(hidden["viewing"], 2);
+}
+
+#[test]
+fn v3_receipt_settle_order_beats_clock() {
+    let a = json!({"kind":"snt","schema":3,"provider":"simkl","account":"42","target":"wat:tv:1399:1:0","entries":{"2":["w",1,9000,[9_999_999_999_999i64,0,"a"],[2,1,"aaaaaaaaaaaaaaaa"]]} });
+    let b = json!({"kind":"snt","schema":3,"provider":"simkl","account":"42","target":"wat:tv:1399:1:0","entries":{"2":["u",2,null,[1,0,"b"],[3,0,"bbbbbbbbbbbbbbbb"]]} });
+    assert_eq!(merge(&a, &b).unwrap()["entries"]["2"][0], "u");
+    assert_eq!(merge(&b, &a).unwrap(), merge(&a, &b).unwrap());
+}
+
+#[test]
+fn v3_delivery_rating_rewatch_removals_and_lease() {
+    let base_command = json!({"kind":"rating","at":2000,"current":true,"baseline":false,"episode":false,"added":false,"rating":7});
+    let remote = json!({"authoritative":true,"account_matches":true,"simkl":true,"watched":null,"listed":null,"rated":{"at":1000,"value":6},"any_title_watch":false,"unknown_or_newer_title_watch":false,"episodes_complete":true});
+    assert_eq!(
+        request(json!({"op":"decide","command":base_command,"remote":remote}))["ok"]["action"],
+        "acknowledge"
+    );
+    let valueless = json!({"authoritative":true,"account_matches":true,"simkl":true,"watched":null,"listed":null,"rated":{"at":null,"value":null},"any_title_watch":false,"unknown_or_newer_title_watch":false,"episodes_complete":true});
+    let baseline = json!({"kind":"rating","at":0,"current":true,"baseline":true,"episode":false,"added":false,"rating":10});
+    assert_eq!(
+        request(json!({"op":"decide","command":baseline,"remote":valueless}))["ok"]["action"],
+        "acknowledge"
+    );
+    assert_eq!(
+        request(
+            json!({"op":"lease","input":{"device":"aaaaaaaaaaaaaaaa","holder":"","epoch":2,"greatest_epoch":4,"elapsed":0,"observed":0,"fresh_generation":false}})
+        )["ok"],
+        json!({"action":"take","epoch":5})
+    );
+    assert_eq!(
+        request(
+            json!({"op":"lease","input":{"device":"aaaaaaaaaaaaaaaa","holder":"aaaaaaaaaaaaaaaa","epoch":5,"elapsed":120000}})
+        )["ok"]["action"],
+        "stop"
+    );
+}
+
+#[test]
+fn v3_fold_and_write_back_never_emit_v2_episode_or_event() {
+    let ep = json!({"kind":"ep","schema":2,"title":{"type":"tv","id":1399},"season":1,"episode":2,"progress":{"value":1.0,"viewing":1,"at":[5000,0,"aaaaaaaaaaaaaaaa"]}});
+    let form = request(json!({"op":"v3_form","rows":[ep],"now":5000}))["ok"].clone();
+    assert_eq!(form[0]["kind"], "wat");
+    assert_eq!(form[0]["entries"]["2"]["plays"]["1"], 5000);
+    let back = request(json!({"op":"write_back","held":[ep],"log":[],"now":5000}))["ok"].clone();
+    assert!(back
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| !matches!(row["kind"].as_str(), Some("ep") | Some("tracker-event"))));
 }
 fn overlay(base: &Value, delta: &Value) -> Value {
     let mut result = base.as_object().unwrap().clone();

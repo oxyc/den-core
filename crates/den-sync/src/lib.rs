@@ -4,6 +4,7 @@
 mod delivery;
 mod episodes;
 mod events;
+mod library_v3;
 mod series;
 mod tilt;
 mod wire;
@@ -14,6 +15,10 @@ use serde_json::{json, Value};
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
 pub use episodes::episode_mark;
 pub use events::commands;
+pub use library_v3::{
+    episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
+    switch_ready, v2_reading, v3_form, write_back,
+};
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
@@ -24,6 +29,12 @@ pub use wire::{capture, merge, Stamp};
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum Request {
+    Name {
+        row: Value,
+    },
+    Newest {
+        row: Value,
+    },
     Merge {
         a: Value,
         b: Value,
@@ -78,6 +89,74 @@ enum Request {
         command: Command,
         remote: Remote,
     },
+    EpisodeState {
+        register: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    FilmState {
+        rec: Value,
+        register: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    RegisterWrite {
+        action: Value,
+        current: Option<Value>,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    ImportWrite {
+        register: Option<Value>,
+        item: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    PendingTargets {
+        targets: Vec<Value>,
+        receipts: Value,
+        since: Stamp,
+        now: i64,
+    },
+    Settle {
+        outcome: Value,
+        built_from: Value,
+        order: Value,
+    },
+    Lease {
+        input: Value,
+    },
+    V2Reading {
+        rows: Vec<Value>,
+        now: i64,
+    },
+    V3Form {
+        rows: Vec<Value>,
+        now: i64,
+    },
+    WriteBack {
+        held: Vec<Value>,
+        log: Vec<Value>,
+        now: i64,
+    },
+    SwitchReady {
+        input: Value,
+    },
+    WatchName {
+        media: String,
+        id: u64,
+        season: u64,
+        episode: u64,
+    },
+    ReceiptName {
+        provider: String,
+        account: String,
+        target: String,
+    },
     Retry {
         attempts: u32,
         now: u64,
@@ -114,6 +193,8 @@ pub fn evaluate(input: &str) -> String {
         }
         let request: Request = serde_json::from_str(input).map_err(|_| "invalid_request")?;
         match request {
+            Request::Name { row } => Ok(json!(wire::name(&row)?)),
+            Request::Newest { row } => Ok(json!(wire::newest(&row)?)),
             Request::Merge { a, b } => merge(&a, &b),
             Request::Capture {
                 before,
@@ -157,6 +238,60 @@ pub fn evaluate(input: &str) -> String {
                 Ok(json!(last.issue(now, device)?))
             }
             Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
+            Request::EpisodeState {
+                register,
+                resets,
+                now,
+            } => library_v3::episode_state(&register, &resets, now),
+            Request::FilmState {
+                rec,
+                register,
+                resets,
+                now,
+            } => library_v3::film_state(&rec, &register, &resets, now),
+            Request::RegisterWrite {
+                action,
+                current,
+                resets,
+                now,
+            } => library_v3::register_write(&action, current.as_ref(), &resets, now),
+            Request::ImportWrite {
+                register,
+                item,
+                resets,
+                now,
+            } => library_v3::import_write(register.as_ref(), &item, &resets, now),
+            Request::PendingTargets {
+                targets,
+                receipts,
+                since,
+                now,
+            } => library_v3::pending_targets(&targets, &receipts, &since, now),
+            Request::Settle {
+                outcome,
+                built_from,
+                order,
+            } => library_v3::settle(&outcome, &built_from, &order),
+            Request::Lease { input } => library_v3::lease(&input),
+            Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
+            Request::V3Form { rows, now } => library_v3::v3_form(&rows, now),
+            Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
+            Request::SwitchReady { input } => library_v3::switch_ready(&input),
+            Request::WatchName {
+                media,
+                id,
+                season,
+                episode,
+            } => Ok(json!(library_v3::watch_row_name(
+                &media, id, season, episode
+            )?)),
+            Request::ReceiptName {
+                provider,
+                account,
+                target,
+            } => Ok(json!(library_v3::receipt_row_name(
+                &provider, &account, &target
+            )?)),
             Request::Tilt {
                 signals,
                 weights,

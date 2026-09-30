@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "cases": [
+    {"name":"watch block 31","request":{"op":"watch_name","media":"tv","id":1399,"season":1,"episode":31},"ok":"wat:tv:1399:1:0"},
+    {"name":"watch block 32","request":{"op":"watch_name","media":"tv","id":1399,"season":1,"episode":32},"ok":"wat:tv:1399:1:1"},
+    {"name":"film watch name","request":{"op":"watch_name","media":"movie","id":550,"season":0,"episode":0},"ok":"wat:movie:550:0:0"},
+    {"name":"title receipt shard","request":{"op":"receipt_name","provider":"simkl","account":"42","target":"rec:movie:550"},"ok":"snt:simkl:42:t3e0"},
+    {"name":"watch receipt identity","request":{"op":"receipt_name","provider":"trakt","account":"9","target":"wat:tv:1399:1:0"},"ok":"snt:trakt:9:wat:tv:1399:1:0"},
+    {"name":"empty lease take","request":{"op":"lease","input":{"device":"aaaaaaaaaaaaaaaa","holder":"","epoch":2,"greatest_epoch":4,"elapsed":0,"observed":0,"fresh_generation":false}},"ok":{"action":"take","epoch":5}},
+    {"name":"generation stops lease","request":{"op":"lease","input":{"device":"aaaaaaaaaaaaaaaa","holder":"aaaaaaaaaaaaaaaa","epoch":5,"elapsed":1,"generation_changed":true}},"ok":{"action":"stop","reason":"generation_changed"}},
+    {"name":"switch ready web only","request":{"op":"switch_ready","input":{"now":1000,"performer":"web","devices":[{"id":"web","kind":"web","seen":1000,"format":3,"delivers":[]}],"connected":[],"waiting":false,"facade":true}},"ok":{"offered":true,"performable":true,"blockers":[]}},
+    {"name":"timeless state","request":{"op":"episode_state","register":{"imported":true,"plays":{"-9007199254739992":1000},"cleared":null},"resets":[],"now":2000},"ok":{"watched":true,"resume":null,"viewing":0,"plays":[[-9007199254739992,1000]],"first_play":1000,"watched_at":1000}},
+    {"name":"invalid writer id","request":{"op":"register_write","action":{"kind":"progress","value":0.5,"at":[1000,0,"NO"]},"current":null,"resets":[],"now":1000},"error":"invalid_device"}
+  ]
+}

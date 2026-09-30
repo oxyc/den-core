@@ -29,7 +29,7 @@ impl Stamp {
     }
 }
 
-fn stamp(value: &Value) -> Result<Stamp, String> {
+pub(crate) fn stamp(value: &Value) -> Result<Stamp, String> {
     let at: Stamp = serde_json::from_value(value.clone()).map_err(|_| "invalid_stamp")?;
     at.validate()?;
     Ok(at)
@@ -63,6 +63,25 @@ pub(crate) fn name(row: &Value) -> Result<String, String> {
             .map(|n| format!("set:{n}"))
             .ok_or_else(|| "invalid_name".into());
     }
+    if kind == "snt" {
+        let provider = row["provider"].as_str().ok_or("invalid_provider")?;
+        let account = row["account"].as_str().ok_or("invalid_account")?;
+        if provider.is_empty() || account.is_empty() || provider.contains(':') {
+            return Err("invalid_receipt_identity".into());
+        }
+        if let Some(target) = row["target"].as_str() {
+            return Ok(format!("snt:{provider}:{account}:{target}"));
+        }
+        let shard = row["shard"].as_str().ok_or("invalid_shard")?;
+        if shard.len() != 3
+            || !shard
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err("invalid_shard".into());
+        }
+        return Ok(format!("snt:{provider}:{account}:t{shard}"));
+    }
     let media = row["title"]["type"].as_str().ok_or("invalid_title")?;
     if !matches!(media, "movie" | "tv") {
         return Err("invalid_title".into());
@@ -78,11 +97,19 @@ pub(crate) fn name(row: &Value) -> Result<String, String> {
             integer(&row["season"])?,
             integer(&row["episode"])?
         )),
+        "wat" => {
+            let season = integer(&row["season"])?;
+            let block = integer(&row["block"])?;
+            if media == "movie" && (season != 0 || block != 0) {
+                return Err("invalid_film_watch_identity".into());
+            }
+            Ok(format!("wat:{media}:{id}:{season}:{block}"))
+        }
         _ => Err("invalid_kind".into()),
     }
 }
 
-fn newest(row: &Value) -> Result<Stamp, String> {
+pub(crate) fn newest(row: &Value) -> Result<Stamp, String> {
     let stamps: Vec<&Value> = match row["kind"].as_str() {
         Some("rec") => {
             let mut fields: Vec<_> = ["status", "resume", "reaction", "deleted", "dismissed"]
@@ -96,6 +123,42 @@ fn newest(row: &Value) -> Result<Stamp, String> {
         }
         Some("ep") => vec![&row["progress"]["at"]],
         Some("set") => object(&row["values"])?.values().map(|v| &v["at"]).collect(),
+        Some("wat") => {
+            let mut fields = Vec::new();
+            if !row["seasonReset"].is_null() {
+                fields.push(&row["seasonReset"]);
+            }
+            for register in object(&row["entries"])?.values() {
+                if !register["progress"].is_null() {
+                    fields.push(&register["progress"]["at"]);
+                }
+                if !register["cleared"].is_null() {
+                    fields.push(&register["cleared"][1]);
+                }
+            }
+            fields
+        }
+        Some("snt") => {
+            let mut fields = Vec::new();
+            for entry in object(&row["entries"])?.values() {
+                let values = entry.as_array().ok_or("invalid_receipt")?;
+                let order = values
+                    .iter()
+                    .rev()
+                    .find(|value| {
+                        value.as_array().is_some_and(|parts| {
+                            parts.len() == 3
+                                && parts[0].is_u64()
+                                && parts[1].is_u64()
+                                && parts[2].is_string()
+                        })
+                    })
+                    .ok_or("invalid_receipt")?;
+                fields.push(order);
+            }
+            // Settle orders have the stamp shape and deliberately do not use wall clock time.
+            fields
+        }
         _ => return Err("invalid_kind".into()),
     };
     stamps
@@ -107,12 +170,20 @@ fn later(a: &Value, b: &Value) -> Result<Value, String> {
     if !object(a)?.contains_key("value") || !object(b)?.contains_key("value") {
         return Err("invalid_value".into());
     }
-    Ok(if stamp(&b["at"])? > stamp(&a["at"])? {
-        b
-    } else {
-        a
+    let order = stamp(&b["at"])?.cmp(&stamp(&a["at"])?);
+    Ok(match order {
+        Ordering::Greater => b,
+        Ordering::Less => a,
+        Ordering::Equal if canonical(b) > canonical(a) => b,
+        Ordering::Equal => a,
     }
     .clone())
+}
+
+pub(crate) fn canonical(value: &Value) -> Vec<u8> {
+    // serde_json maps are sorted without preserve_order.  All den wire numbers are integers except
+    // progress, whose finite representation is already the shortest JSON form, matching JCS here.
+    serde_json::to_vec(value).expect("JSON value always serializes")
 }
 
 fn furthest(a: &Value, b: &Value) -> Result<Value, String> {
@@ -150,16 +221,130 @@ fn furthest(a: &Value, b: &Value) -> Result<Value, String> {
     )
 }
 
+fn merge_plays(a: &Value, b: &Value) -> Result<Value, String> {
+    let mut plays = object(a)?.clone();
+    for (key, value) in object(b)? {
+        let parsed = key.parse::<i64>().map_err(|_| "invalid_play")?;
+        let watched_at = integer(value)?;
+        if watched_at == 0 {
+            return Err("invalid_play".into());
+        }
+        if let Some(old) = plays.get(key) {
+            if integer(old)? <= watched_at {
+                continue;
+            }
+        }
+        let _ = parsed;
+        plays.insert(key.clone(), value.clone());
+    }
+    let mut keys = plays
+        .keys()
+        .map(|key| key.parse::<i64>().map(|number| (number, key.clone())))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "invalid_play")?;
+    keys.sort_unstable();
+    if keys.len() > 8 {
+        let keep = [keys[..1].to_vec(), keys[keys.len() - 7..].to_vec()].concat();
+        plays.retain(|key, _| keep.iter().any(|(_, kept)| kept == key));
+    }
+    Ok(Value::Object(plays))
+}
+
+fn merge_register(a: &Value, b: &Value) -> Result<Value, String> {
+    let mut out = object(a)?.clone();
+    out.extend(object(b)?.clone());
+    match (a.get("progress"), b.get("progress")) {
+        (Some(a), Some(b)) => {
+            out.insert("progress".into(), furthest(a, b)?);
+        }
+        (Some(a), None) => {
+            out.insert("progress".into(), a.clone());
+        }
+        _ => {}
+    }
+    out.insert(
+        "imported".into(),
+        json!(a["imported"].as_bool().unwrap_or(false) || b["imported"].as_bool().unwrap_or(false)),
+    );
+    out.insert(
+        "plays".into(),
+        merge_plays(
+            a.get("plays").unwrap_or(&json!({})),
+            b.get("plays").unwrap_or(&json!({})),
+        )?,
+    );
+    let cleared = match (
+        a.get("cleared").filter(|v| !v.is_null()),
+        b.get("cleared").filter(|v| !v.is_null()),
+    ) {
+        (None, None) => Value::Null,
+        (Some(value), None) | (None, Some(value)) => value.clone(),
+        (Some(a), Some(b)) => {
+            let aa = a
+                .as_array()
+                .filter(|v| v.len() == 2)
+                .ok_or("invalid_cleared")?;
+            let bb = b
+                .as_array()
+                .filter(|v| v.len() == 2)
+                .ok_or("invalid_cleared")?;
+            let order = integer(&aa[0])?
+                .cmp(&integer(&bb[0])?)
+                .then(stamp(&aa[1])?.cmp(&stamp(&bb[1])?));
+            if order == Ordering::Less {
+                b.clone()
+            } else {
+                a.clone()
+            }
+        }
+    };
+    out.insert("cleared".into(), cleared);
+    Ok(Value::Object(out))
+}
+
+fn receipt_order(entry: &Value) -> Result<(u64, u64, String), String> {
+    entry
+        .as_array()
+        .ok_or("invalid_receipt")?
+        .iter()
+        .rev()
+        .find_map(|value| {
+            let parts = value.as_array()?;
+            if parts.len() != 3 {
+                return None;
+            }
+            Some((
+                parts[0].as_u64()?,
+                parts[1].as_u64()?,
+                parts[2].as_str()?.to_owned(),
+            ))
+        })
+        .ok_or_else(|| "invalid_receipt".into())
+}
+
+fn merge_receipt(a: &Value, b: &Value) -> Result<Value, String> {
+    Ok(match receipt_order(a)?.cmp(&receipt_order(b)?) {
+        Ordering::Less => b,
+        Ordering::Greater => a,
+        Ordering::Equal if canonical(b) > canonical(a) => b,
+        Ordering::Equal => a,
+    }
+    .clone())
+}
+
 /// The existing den-spec v2 merge. Unknown fields survive; no encryption or projection is performed here.
 pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
     if name(a)? != name(b)? {
         return Err("identity_mismatch".into());
     }
-    let (older, newer) = if newest(b)? > newest(a)? {
-        (a, b)
-    } else {
-        (b, a)
-    };
+    let newest_a = newest(a)?;
+    let newest_b = newest(b)?;
+    let (older, newer) =
+        if newest_b > newest_a || (newest_b == newest_a && canonical(b) > canonical(a)) {
+            (a, b)
+        } else {
+            (b, a)
+        };
     let mut out = object(older)?.clone();
     out.extend(object(newer)?.clone());
     out.insert(
@@ -202,6 +387,42 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
                 values.insert(key.clone(), value);
             }
             out.insert("values".into(), Value::Object(values));
+        }
+        Some("wat") => {
+            let mut entries = object(&a["entries"])?.clone();
+            for (key, value) in object(&b["entries"])? {
+                let value = match entries.get(key) {
+                    Some(prior) => merge_register(prior, value)?,
+                    None => value.clone(),
+                };
+                entries.insert(key.clone(), value);
+            }
+            out.insert("entries".into(), Value::Object(entries));
+            let reset = match (
+                a.get("seasonReset").filter(|v| !v.is_null()),
+                b.get("seasonReset").filter(|v| !v.is_null()),
+            ) {
+                (None, None) => Value::Null,
+                (Some(value), None) | (None, Some(value)) => value.clone(),
+                (Some(a), Some(b)) => match stamp(a)?.cmp(&stamp(b)?) {
+                    Ordering::Less => b.clone(),
+                    Ordering::Greater => a.clone(),
+                    Ordering::Equal if canonical(b) > canonical(a) => b.clone(),
+                    Ordering::Equal => a.clone(),
+                },
+            };
+            out.insert("seasonReset".into(), reset);
+        }
+        Some("snt") => {
+            let mut entries = object(&a["entries"])?.clone();
+            for (key, value) in object(&b["entries"])? {
+                let value = match entries.get(key) {
+                    Some(prior) => merge_receipt(prior, value)?,
+                    None => value.clone(),
+                };
+                entries.insert(key.clone(), value);
+            }
+            out.insert("entries".into(), Value::Object(entries));
         }
         _ => return Err("invalid_kind".into()),
     }
