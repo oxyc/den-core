@@ -231,6 +231,17 @@ fn web_only_switch_delivers_missing_work_once_and_does_not_resend_present_work()
         "missing additive work is not dropped"
     );
 }
+
+#[test]
+fn no_receipt_never_authorizes_a_destructive_tracker_command() {
+    let targets = json!([
+        {"key":"watch","kind":"episode","value":"unwatched","stamp":[1000,0,"aaaaaaaaaaaaaaaa"]},
+        {"key":"list","kind":"list","value":"gone","stamp":[1000,0,"aaaaaaaaaaaaaaaa"]},
+        {"key":"rating","kind":"rating","value":"none","stamp":[1000,0,"aaaaaaaaaaaaaaaa"]}
+    ]);
+    let pending = request(json!({"op":"pending_targets","targets":targets,"receipts":{},"since":[2000,0,"aaaaaaaaaaaaaaaa"],"now":2000}))["ok"].clone();
+    assert!(pending.as_array().unwrap().is_empty());
+}
 fn overlay(base: &Value, delta: &Value) -> Value {
     let mut result = base.as_object().unwrap().clone();
     result.extend(delta.as_object().unwrap().clone());

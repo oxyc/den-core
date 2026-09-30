@@ -358,6 +358,12 @@ pub fn pending_targets(
         if receipt.and_then(receipt_value).as_ref() == Some(&current) {
             continue;
         }
+        // With no settlement history, only additive catch-up is safe. An un-watch, removal,
+        // or rating clear could erase provider state that Den never observed; it becomes eligible
+        // after a receipt exists.
+        if receipt.is_none() && matches!(current.as_str(), Some("unwatched" | "gone" | "none")) {
+            continue;
+        }
         let baseline = at.0 == 0 || receipt.is_none() && at <= *since;
         let kind = target["kind"].as_str().ok_or("invalid_target")?;
         let command = match kind {
@@ -385,6 +391,12 @@ pub fn pending_targets(
         command["current"] = json!(true);
         command["baseline"] = json!(baseline);
         command["episode"] = json!(kind == "episode");
+        if command.get("added").is_none() {
+            command["added"] = json!(false);
+        }
+        if command.get("rating").is_none() {
+            command["rating"] = Value::Null;
+        }
         command["built_from"] = target.clone();
         if let Some(value) = target.get("p") {
             command["p"] = value.clone();
