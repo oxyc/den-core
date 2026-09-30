@@ -242,6 +242,24 @@ fn no_receipt_never_authorizes_a_destructive_tracker_command() {
     let pending = request(json!({"op":"pending_targets","targets":targets,"receipts":{},"since":[2000,0,"aaaaaaaaaaaaaaaa"],"now":2000}))["ok"].clone();
     assert!(pending.as_array().unwrap().is_empty());
 }
+
+#[test]
+fn a_watch_receipt_prevents_resending_the_same_play() {
+    let target = json!({
+        "key":"wat:tv:95396:1:0#2", "kind":"episode", "value":"watched",
+        "stamp":[2000,0,"aaaaaaaaaaaaaaaa"], "p":0, "watched_at":2000
+    });
+    let receipts = json!({
+        "wat:tv:95396:1:0#2":["w",0,2000,[2000,0,"aaaaaaaaaaaaaaaa"],[1,1,"aaaaaaaaaaaaaaaa"]]
+    });
+    assert_eq!(
+        request(json!({
+            "op":"pending_targets", "targets":[target], "receipts":receipts,
+            "since":[1000,0,"aaaaaaaaaaaaaaaa"], "now":3000
+        }))["ok"],
+        json!([])
+    );
+}
 fn overlay(base: &Value, delta: &Value) -> Value {
     let mut result = base.as_object().unwrap().clone();
     result.extend(delta.as_object().unwrap().clone());

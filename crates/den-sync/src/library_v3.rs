@@ -334,6 +334,9 @@ fn receipt_value(entry: &Value) -> Option<Value> {
     let parts = entry.as_array()?;
     match parts.first()?.as_str()? {
         "b" => parts.get(1).cloned(),
+        "w" => Some(json!("watched")),
+        "u" => Some(json!("unwatched")),
+        "n" => Some(json!("unwatched")),
         value => Some(json!(value)),
     }
 }
