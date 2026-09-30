@@ -166,6 +166,71 @@ fn v3_fold_and_write_back_never_emit_v2_episode_or_event() {
         .iter()
         .all(|row| !matches!(row["kind"].as_str(), Some("ep") | Some("tracker-event"))));
 }
+
+#[test]
+fn v3_switch_moves_simkl_credentials_and_seeds_delivery() {
+    let keys = json!({"kind":"set","schema":2,"name":"keys","values":{"simkl":{"value":{"string":"secret-token"},"at":[1000,0,"aaaaaaaaaaaaaaaa"]}}});
+    let form = request(json!({
+        "op":"v3_form",
+        "rows":[keys],
+        "now":2000,
+        "context":{
+            "performer":"aaaaaaaaaaaaaaaa",
+            "stamp":[2000,0,"aaaaaaaaaaaaaaaa"],
+            "base":7,
+            "accounts":[{"provider":"simkl","account":"42","credential":"secret-token","connected_at":[1000,0,"aaaaaaaaaaaaaaaa"]}]
+        }
+    }))["ok"].as_array().unwrap().clone();
+    let named = form
+        .iter()
+        .map(|row| {
+            let name = request(json!({"op":"name","row":row}))["ok"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            (name, row)
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(named["set:keys"]["values"]["simkl"]["value"], Value::Null);
+    let connection = named["set:trackers"]["values"]["simkl:42"]["value"]["string"]
+        .as_str()
+        .unwrap();
+    assert!(connection.contains("secret-token"));
+    assert_eq!(
+        named["set:deliver:simkl:42"]["values"]["lease"]["value"],
+        json!({"strings":["","1"]})
+    );
+    assert_eq!(
+        named["set:deliver:simkl:42"]["values"]["seededThrough"]["value"],
+        json!({"int":10})
+    );
+}
+
+#[test]
+fn web_only_switch_delivers_missing_work_once_and_does_not_resend_present_work() {
+    let target = json!({"key":"rec:movie:550:list","kind":"list","value":"in","stamp":[1000,0,"aaaaaaaaaaaaaaaa"]});
+    let pending = request(json!({"op":"pending_targets","targets":[target],"receipts":{},"since":[2000,0,"aaaaaaaaaaaaaaaa"],"now":2000}))["ok"].clone();
+    assert_eq!(pending.as_array().unwrap().len(), 1);
+    assert_eq!(pending[0]["baseline"], true);
+
+    let present = json!({"authoritative":true,"account_matches":true,"simkl":true,"watched":null,"listed":{"at":null},"rated":null,"any_title_watch":false,"unknown_or_newer_title_watch":false,"episodes_complete":true});
+    let decision =
+        request(json!({"op":"decide","command":pending[0],"remote":present}))["ok"].clone();
+    assert_eq!(decision["action"], "acknowledge");
+    let receipt = request(json!({"op":"settle","outcome":decision,"built_from":pending[0]["built_from"],"order":[1,1,"aaaaaaaaaaaaaaaa"]}))["ok"].clone();
+    let after = request(json!({"op":"pending_targets","targets":[target],"receipts":{"rec:movie:550:list":receipt},"since":[2000,0,"aaaaaaaaaaaaaaaa"],"now":2000}))["ok"].clone();
+    assert!(
+        after.as_array().unwrap().is_empty(),
+        "an acknowledged remote value is never sent twice"
+    );
+
+    let absent = json!({"authoritative":true,"account_matches":true,"simkl":true,"watched":null,"listed":null,"rated":null,"any_title_watch":false,"unknown_or_newer_title_watch":false,"episodes_complete":true});
+    let send = request(json!({"op":"decide","command":pending[0],"remote":absent}))["ok"].clone();
+    assert_eq!(
+        send["action"], "send",
+        "missing additive work is not dropped"
+    );
+}
 fn overlay(base: &Value, delta: &Value) -> Value {
     let mut result = base.as_object().unwrap().clone();
     result.extend(delta.as_object().unwrap().clone());

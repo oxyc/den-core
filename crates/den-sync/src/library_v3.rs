@@ -497,6 +497,16 @@ pub fn v2_reading(rows: &[Value], now: i64) -> Result<Value, String> {
 
 /// Conversion deliberately returns only v3 watch/receipt rows plus unchanged v2 rec/set and unknown rows.
 pub fn v3_form(rows: &[Value], now: i64) -> Result<Value, String> {
+    v3_form_with_context(rows, now, None)
+}
+
+/// Fold the v2 log and, when the performer supplies provider facts, seed the v3 connection and delivery rows.
+/// Provider lookups and the rewrite base are inputs so this remains deterministic and free of I/O.
+pub fn v3_form_with_context(
+    rows: &[Value],
+    now: i64,
+    context: Option<&Value>,
+) -> Result<Value, String> {
     let reading = v2_reading(rows, now)?;
     let mut output: Map<String, Value> = Map::new();
     let mut claims: std::collections::BTreeMap<String, Vec<Value>> = Default::default();
@@ -614,7 +624,131 @@ pub fn v3_form(rows: &[Value], now: i64) -> Result<Value, String> {
             }
         }
     }
+    if let Some(context) = context {
+        seed_switch_rows(&mut output, context, now)?;
+    }
     Ok(Value::Array(output.into_values().collect()))
+}
+
+fn switch_setting(value: Value, at: &Stamp) -> Value {
+    json!({"value": value, "at": at})
+}
+
+fn upsert_settings(output: &mut Map<String, Value>, group: &str, values: Map<String, Value>) {
+    let name = format!("set:{group}");
+    let row = output
+        .entry(name)
+        .or_insert_with(|| json!({"kind":"set","schema":2,"name":group,"values":{}}));
+    let settings = row["values"].as_object_mut().expect("settings row values");
+    settings.extend(values);
+}
+
+fn seed_switch_rows(
+    output: &mut Map<String, Value>,
+    context: &Value,
+    now: i64,
+) -> Result<(), String> {
+    let context = object(context)?;
+    let accounts = context
+        .get("accounts")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if accounts.is_empty() {
+        return Ok(());
+    }
+    let at = context
+        .get("stamp")
+        .map(validate_writer_stamp)
+        .transpose()?
+        .unwrap_or(Stamp(
+            now,
+            0,
+            context
+                .get("performer")
+                .and_then(Value::as_str)
+                .unwrap_or("local")
+                .into(),
+        ));
+    let base = context.get("base").and_then(Value::as_u64).unwrap_or(0);
+    let seed_bound = context
+        .get("seed_bound")
+        .and_then(Value::as_i64)
+        .unwrap_or(now);
+
+    let mut tracker_values = Map::new();
+    let mut clear_keys = Map::new();
+    for account in &accounts {
+        let provider = account["provider"].as_str().ok_or("invalid_provider")?;
+        let id = account["account"].as_str().ok_or("invalid_account")?;
+        if provider.is_empty() || provider.contains(':') || id.is_empty() || id.contains(':') {
+            return Err("invalid_account".into());
+        }
+        let connected_at = account
+            .get("connected_at")
+            .map(validate_writer_stamp)
+            .transpose()?
+            .unwrap_or_else(|| at.clone());
+        let connection = if let Some(connection) = account.get("connection").and_then(Value::as_str)
+        {
+            connection.to_owned()
+        } else {
+            let credential = account["credential"].as_str().ok_or("missing_credential")?;
+            serde_json::to_string(&json!({"access_token":credential,"connectedAt":connected_at}))
+                .map_err(|_| "invalid_credential")?
+        };
+        tracker_values.insert(
+            format!("{provider}:{id}"),
+            switch_setting(json!({"string":connection}), &connected_at),
+        );
+        if provider == "simkl" {
+            clear_keys.insert("simkl".into(), switch_setting(Value::Null, &at));
+        }
+        output.entry(format!("set:deliver:{provider}:{id}")).or_insert_with(|| {
+            json!({"kind":"set","schema":2,"name":format!("deliver:{provider}:{id}"),"values":{}})
+        });
+    }
+    upsert_settings(output, "trackers", tracker_values);
+    if !clear_keys.is_empty() {
+        upsert_settings(output, "keys", clear_keys);
+    }
+
+    let seeded_through = base.saturating_add(output.len() as u64);
+    for account in accounts {
+        let provider = account["provider"].as_str().ok_or("invalid_provider")?;
+        let id = account["account"].as_str().ok_or("invalid_account")?;
+        let connected_at = account
+            .get("connected_at")
+            .map(validate_writer_stamp)
+            .transpose()?
+            .unwrap_or_else(|| at.clone());
+        let row = output
+            .get_mut(&format!("set:deliver:{provider}:{id}"))
+            .ok_or("missing_delivery_row")?;
+        let values = row["values"]
+            .as_object_mut()
+            .ok_or("invalid_delivery_row")?;
+        values.insert(
+            "since".into(),
+            switch_setting(
+                json!({"string":serde_json::to_string(&connected_at).unwrap()}),
+                &at,
+            ),
+        );
+        values.insert(
+            "lease".into(),
+            switch_setting(json!({"strings":["","1"]}), &at),
+        );
+        values.insert(
+            "seedBound".into(),
+            switch_setting(json!({"int":seed_bound}), &at),
+        );
+        values.insert(
+            "seededThrough".into(),
+            switch_setting(json!({"int":seeded_through}), &at),
+        );
+    }
+    Ok(())
 }
 
 pub fn write_back(held: &[Value], log: &[Value], now: i64) -> Result<Value, String> {
