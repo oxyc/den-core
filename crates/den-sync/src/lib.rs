@@ -17,7 +17,7 @@ pub use episodes::episode_mark;
 pub use events::commands;
 pub use library_v3::{
     episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
-    switch_ready, v2_reading, v3_form, write_back,
+    switch_ready, v2_reading, v3_form, v3_form_with_context, write_back,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -137,6 +137,8 @@ enum Request {
     V3Form {
         rows: Vec<Value>,
         now: i64,
+        #[serde(default)]
+        context: Option<Value>,
     },
     WriteBack {
         held: Vec<Value>,
@@ -274,7 +276,9 @@ pub fn evaluate(input: &str) -> String {
             } => library_v3::settle(&outcome, &built_from, &order),
             Request::Lease { input } => library_v3::lease(&input),
             Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
-            Request::V3Form { rows, now } => library_v3::v3_form(&rows, now),
+            Request::V3Form { rows, now, context } => {
+                library_v3::v3_form_with_context(&rows, now, context.as_ref())
+            }
             Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
             Request::SwitchReady { input } => library_v3::switch_ready(&input),
             Request::WatchName {

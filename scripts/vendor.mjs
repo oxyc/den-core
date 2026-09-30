@@ -26,7 +26,7 @@ function manifest(target) {
   writeFileSync(join(target, 'SOURCE.json'), JSON.stringify({ schema: 1, crate: 'den-sync', version: '0.1.0',
     rust: '1.95.0', uniffi: '0.29.5', wasmBindgen: '0.2.128', sourceDigest, sources, artifacts }, null, 2) + '\n');
 }
-const native = join(root, '../den/Vendor/DenCore');
+const native = process.env.DEN_NATIVE_VENDOR ?? join(root, '../den/Vendor/DenCore');
 for (const name of ['Package.swift', 'Sources', 'Artifacts']) copy(`Swift/${name}`, join(native, name));
 copy('LICENSE', join(native, 'LICENSE'));
 // The golden cases travel with the binary, as they already do for the web. Kept beside it rather than copied
@@ -35,7 +35,7 @@ for (const fixture of ['policy-v1.json', 'policy-v3.json']) {
   copy(`crates/den-sync/tests/fixtures/${fixture}`, join(native, fixture));
 }
 manifest(native);
-const web = join(root, '../den-edge/web/src/vendor/den-core');
+const web = process.env.DEN_WEB_VENDOR ?? join(root, '../den-edge/web/src/vendor/den-core');
 for (const name of ['index.js', 'index.d.ts']) copy(`web/${name}`, join(web, name));
 for (const name of ['den_core.js', 'den_core.d.ts', 'den_core_bg.wasm', 'den_core_bg.wasm.d.ts']) {
   copy(`web/generated/${name}`, join(web, 'generated', name));
