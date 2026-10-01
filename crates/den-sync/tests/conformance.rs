@@ -167,6 +167,144 @@ fn v3_fold_and_write_back_never_emit_v2_episode_or_event() {
         .all(|row| !matches!(row["kind"].as_str(), Some("ep") | Some("tracker-event"))));
 }
 
+/// A v1 tracker event as shipped (library v3 Appendix A): `capture`'s event inside `set:tracker-event:<id>`.
+fn event_row(id: &str, before: &Value, after: &Value, at: Stamp) -> Value {
+    let event = capture(before, after, &at, id).unwrap();
+    json!({"kind":"set","schema":2,"name":format!("tracker-event:{id}"),"values":{"event":{"value":{"string":event.to_string()},"at":at}}})
+}
+
+fn episode(number: u64, value: f64, viewing: u64, t: i64) -> Value {
+    json!({"kind":"ep","schema":2,"title":{"type":"tv","id":1399},"season":1,"episode":number,"progress":{"value":value,"viewing":viewing,"at":[t,0,"aaaaaaaaaaaaaaaa"]}})
+}
+
+/// A v2 log: episode 2 rewatched to half way (its row), whose first viewing finished only in a v1 event; and a
+/// film watched only in a v1 event.
+fn v2_log_with_events() -> Vec<Value> {
+    let film = overlay(
+        &vectors()["base"],
+        &json!({"title":{"type":"movie","id":550}}),
+    );
+    let watched = overlay(
+        &film,
+        &json!({"status":{"value":"watched","at":[6000,0,"aaaaaaaaaaaaaaaa"]}}),
+    );
+    vec![
+        episode(2, 0.5, 2, 7000),
+        event_row(
+            "e2",
+            &episode(2, 0.0, 0, 1000),
+            &episode(2, 1.0, 1, 5000),
+            Stamp(5000, 0, "aaaaaaaaaaaaaaaa".into()),
+        ),
+        film.clone(),
+        event_row(
+            "f550",
+            &film,
+            &watched,
+            Stamp(6000, 0, "aaaaaaaaaaaaaaaa".into()),
+        ),
+    ]
+}
+
+fn by_name(rows: &Value) -> std::collections::BTreeMap<String, Value> {
+    rows.as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            let name = request(json!({"op":"name","row":row}))["ok"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            (name, row.clone())
+        })
+        .collect()
+}
+
+fn no_v2_rows(rows: &Value) -> bool {
+    by_name(rows)
+        .keys()
+        .all(|name| !name.starts_with("set:tracker-event:") && !name.starts_with("ep:"))
+}
+
+#[test]
+fn v3_form_folds_v1_events_and_keeps_none() {
+    let form =
+        request(json!({"op":"v3_form","rows":v2_log_with_events(),"now":8000}))["ok"].clone();
+    assert!(no_v2_rows(&form), "{form}");
+    let rows = by_name(&form);
+    // §8: the event's finished first viewing is a play beside the row's rewatch in progress.
+    let register = &rows["wat:tv:1399:1:0"]["entries"]["2"];
+    let state = request(json!({"op":"episode_state","register":register,"resets":[],"now":8000}))
+        ["ok"]
+        .clone();
+    assert_eq!(state["viewing"], 2);
+    assert_eq!(state["plays"], json!([[1, 5000]]));
+    assert_eq!(state["resume"]["value"], 0.5);
+    // §8 Titles and Film plays: the film event's `after` merges into the `rec`, which yields the play.
+    let rec = &rows["rec:movie:550"];
+    assert_eq!(rec["status"]["value"], "watched");
+    let film = request(json!({"op":"film_state","rec":rec,"register":rows["wat:movie:550:0:0"]["entries"]["0"],"resets":[],"now":8000}))["ok"].clone();
+    assert_eq!(film["watched"], true);
+    assert_eq!(film["watched_at"], 6000);
+
+    let back = request(json!({"op":"write_back","held":v2_log_with_events(),"log":[],"now":8000}))
+        ["ok"]
+        .clone();
+    assert!(no_v2_rows(&back), "{back}");
+}
+
+#[test]
+fn v3_form_drops_an_event_a_reader_ignores() {
+    let mut forged = event_row(
+        "e2",
+        &episode(2, 0.0, 0, 1000),
+        &episode(2, 1.0, 1, 5000),
+        Stamp(5000, 0, "aaaaaaaaaaaaaaaa".into()),
+    );
+    forged["name"] = json!("tracker-event:other");
+    let form = request(json!({"op":"v3_form","rows":[forged],"now":8000}))["ok"].clone();
+    assert_eq!(form, json!([]));
+}
+
+#[test]
+fn v3_compact_folds_stray_rows_into_the_same_state() {
+    let switched = request(json!({"op":"v3_form","rows":v2_log_with_events(),"now":8000}))["ok"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let events = v2_log_with_events()
+        .into_iter()
+        .filter(|row| row["kind"] == "set")
+        .collect::<Vec<_>>();
+    // A library switched while v3_form still kept its v1 events: compaction drops them and changes nothing else.
+    let kept = [switched.clone(), events.clone()].concat();
+    let compacted = request(json!({"op":"v3_compact","rows":kept,"now":8000}))["ok"].clone();
+    assert!(no_v2_rows(&compacted), "{compacted}");
+    assert_eq!(compacted, json!(switched));
+
+    // A stray episode row written after the switch is folded into the block the log already holds, as the
+    // switch would have folded it.
+    let stray = episode(3, 1.0, 0, 7500);
+    let rows = [switched, events, vec![stray.clone()]].concat();
+    let compacted = request(json!({"op":"v3_compact","rows":rows,"now":8000}))["ok"].clone();
+    let mut log = v2_log_with_events();
+    log.push(stray);
+    let expected = request(json!({"op":"v3_form","rows":log,"now":8000}))["ok"].clone();
+    assert!(no_v2_rows(&compacted), "{compacted}");
+    assert_eq!(compacted, expected);
+}
+
+#[test]
+fn v3_compact_does_not_rederive_film_plays_from_untouched_titles() {
+    let rec = overlay(
+        &vectors()["base"],
+        &json!({"title":{"type":"movie","id":550},"status":{"value":"watched","at":[6000,0,"aaaaaaaaaaaaaaaa"]}}),
+    );
+    let compacted =
+        request(json!({"op":"v3_compact","rows":[rec.clone()],"now":8000}))["ok"].clone();
+    assert_eq!(compacted, json!([rec]));
+}
+
 #[test]
 fn v3_form_preserves_shipped_film_episode_rows_without_deriving_a_watch() {
     let ep = json!({"kind":"ep","schema":2,"title":{"type":"movie","id":129},"season":1,"episode":1,"progress":{"value":1.0,"viewing":0,"at":[5000,0,"aaaaaaaaaaaaaaaa"]}});
