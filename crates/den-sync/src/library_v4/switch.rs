@@ -163,6 +163,78 @@ struct Form {
     titles: BTreeMap<String, Map<String, Value>>,
     seasons: BTreeMap<String, Map<String, Value>>,
     delivery: BTreeMap<String, Map<String, Value>>,
+    /// v3 rows v3 itself keeps but the conversion could not place, as `(reason, row name)`: the dry run aborts on
+    /// each, so state or a receipt is never lost silently.
+    dropped: Vec<(&'static str, String)>,
+}
+
+/// One receipt entry's place in v4: the delivery document's title and season, and the entry's key there.
+type Place = (String, u64, Option<u64>, String);
+
+fn title_coordinate(media: &str, id: &str) -> Option<(String, u64)> {
+    let id = id.parse::<u64>().ok().filter(|id| *id > 0)?;
+    matches!(media, "movie" | "tv").then(|| (media.to_owned(), id))
+}
+
+/// A title's own receipt keys: `list` and `rating`, and `watch` for a film (v3 §6).
+fn title_key(media: &str, key: &str) -> bool {
+    matches!(key, "list" | "rating") || (key == "watch" && media == "movie")
+}
+
+/// Where each entry of a v3 `snt` row lands in v4, with its entry, and how many keys v3 never reads (invalid keys,
+/// dropped and counted). `None` when the row names a target of no shape v3 delivers to, so none of its entries can
+/// be placed. The shapes:
+/// - `target` `wat:<type>:<id>:<season>:<block>`: an episode key (the block condition holding), or a film's `"0"`;
+/// - `target` `rec:<type>:<id>`: the title's `watch|list|rating`, the form both shipped clients write title
+///   receipts in (stored under the `t<shard>` name);
+/// - no `target` (a `t<shard>` row): `rec:<type>:<id>#watch|list|rating`.
+fn receipt_places(row: &Value) -> Option<(Vec<(Place, Value)>, u64)> {
+    enum Target {
+        Watch(String, u64, u64, u64),
+        Title(String, u64),
+        Shard,
+    }
+    let target = match row["target"].as_str() {
+        None => Target::Shard,
+        Some(target) => match target.split(':').collect::<Vec<_>>().as_slice() {
+            ["wat", media, id, season, block] => {
+                let (media, id) = title_coordinate(media, id)?;
+                Target::Watch(media, id, season.parse().ok()?, block.parse().ok()?)
+            }
+            ["rec", media, id] => {
+                let (media, id) = title_coordinate(media, id)?;
+                Target::Title(media, id)
+            }
+            _ => return None,
+        },
+    };
+    let mut placed = Vec::new();
+    let mut invalid = 0;
+    for (key, entry) in row["entries"].as_object().into_iter().flatten() {
+        let place = match &target {
+            Target::Watch(media, id, _, _) if media == "movie" => {
+                (key == "0").then(|| (media.clone(), *id, None, "watch".to_owned()))
+            }
+            Target::Watch(media, id, season, block) => (valid_episode_key(key)
+                && key.parse::<u64>().is_ok_and(|e| e / BLOCK == *block))
+            .then(|| (media.clone(), *id, Some(*season), key.clone())),
+            Target::Title(media, id) => {
+                title_key(media, key).then(|| (media.clone(), *id, None, key.clone()))
+            }
+            Target::Shard => key.split_once('#').and_then(|(rec, field)| {
+                let ["rec", media, id] = rec.split(':').collect::<Vec<_>>()[..] else {
+                    return None;
+                };
+                let (media, id) = title_coordinate(media, id)?;
+                title_key(&media, field).then(|| (media, id, None, field.to_owned()))
+            }),
+        };
+        match place {
+            Some(place) => placed.push((place, entry.clone())),
+            None => invalid += 1,
+        }
+    }
+    Some((placed, invalid))
 }
 
 fn doc_for(
@@ -308,64 +380,33 @@ fn convert(compacted: &[Value], counts: &mut BTreeMap<String, u64>) -> Result<Fo
                     provider: Some(provider.into()),
                     account: Some(account.into()),
                 };
-                let entries = row["entries"].as_object().cloned().unwrap_or_default();
-                if let Some(target) = row["target"].as_str() {
-                    let parts: Vec<&str> = target.split(':').collect();
-                    let parsed = match parts.as_slice() {
-                        ["wat", media, id, season, block] => Some((
-                            *media,
-                            id.parse::<u64>().ok(),
-                            season.parse::<u64>().ok(),
-                            block.parse::<u64>().ok(),
-                        )),
-                        _ => None,
+                let Some((placed, invalid)) = receipt_places(row) else {
+                    bump(counts, "receipt_dropped", 1);
+                    form.dropped
+                        .push(("receipt_dropped", name(row).unwrap_or_default()));
+                    continue;
+                };
+                bump(counts, "invalid_keys", invalid);
+                for ((media, id, season, key), entry) in placed {
+                    let entries =
+                        &mut doc_for(&mut form.delivery, delivery(&media, id, season))["entries"];
+                    // Two v3 rows can hold one title's receipt (a shard entry and a `rec:` target): §9's merge.
+                    let entry = match entries.get(&key) {
+                        Some(held) => merge::delivery_entry(held, &entry),
+                        None => entry,
                     };
-                    let Some((media, Some(id), Some(season), Some(block))) = parsed else {
-                        bump(counts, "failed_identity", 1);
-                        continue;
-                    };
-                    for (key, entry) in entries {
-                        let (doc_id, doc_key) = if media == "movie" {
-                            (
-                                delivery("movie", id, None),
-                                (key == "0").then(|| "watch".to_owned()),
-                            )
-                        } else {
-                            let valid = valid_episode_key(&key)
-                                && key.parse::<u64>().is_ok_and(|e| e / BLOCK == block);
-                            (delivery("tv", id, Some(season)), valid.then_some(key))
-                        };
-                        match doc_key {
-                            Some(k) => {
-                                doc_for(&mut form.delivery, doc_id)["entries"][&k] = entry;
-                            }
-                            None => bump(counts, "invalid_keys", 1),
-                        }
-                    }
-                } else {
-                    for (key, entry) in entries {
-                        let parsed = key.split_once('#').and_then(|(rec, field)| {
-                            let mut parts = rec.split(':');
-                            let (kind, media, id) = (parts.next()?, parts.next()?, parts.next()?);
-                            let id = id.parse::<u64>().ok()?;
-                            let ok = kind == "rec"
-                                && matches!(media, "movie" | "tv")
-                                && parts.next().is_none()
-                                && (matches!(field, "list" | "rating")
-                                    || (field == "watch" && media == "movie"));
-                            ok.then(|| (media.to_owned(), id, field.to_owned()))
-                        });
-                        match parsed {
-                            Some((media, id, field)) => {
-                                doc_for(&mut form.delivery, delivery(&media, id, None))
-                                    ["entries"][&field] = entry;
-                            }
-                            None => bump(counts, "invalid_keys", 1),
-                        }
-                    }
+                    entries[&key] = entry;
                 }
             }
-            _ => bump(counts, "failed_identity", 1),
+            // A row v3 cannot name (a film's `ep` row among them) is one v3 drops too (§10 *Unknown kinds*); any
+            // other row reaching here is one v3 keeps and the conversion would lose.
+            _ => match name(row) {
+                Err(_) => bump(counts, "failed_identity", 1),
+                Ok(row_name) => {
+                    bump(counts, "row_dropped", 1);
+                    form.dropped.push(("row_dropped", row_name));
+                }
+            },
         }
     }
     Ok(form)
@@ -603,23 +644,15 @@ fn v3_targets(
         .iter()
         .filter(|r| r["kind"] == "snt" && r["provider"] == provider && r["account"] == account)
     {
-        for (key, entry) in row["entries"].as_object().into_iter().flatten() {
-            let joined = if let Some(target) = row["target"].as_str() {
-                let parts: Vec<&str> = target.split(':').collect();
-                match parts.as_slice() {
-                    ["wat", "movie", id, ..] if key == "0" => format!("movie:{id}#watch"),
-                    ["wat", "tv", id, season, _] => format!("tv:{id}:{season}#{key}"),
-                    _ => continue,
-                }
-            } else {
-                match key.split_once('#') {
-                    Some((rec, field)) => {
-                        format!("{}#{field}", rec.trim_start_matches("rec:"))
-                    }
-                    None => continue,
-                }
+        let Some((placed, _)) = receipt_places(row) else {
+            continue;
+        };
+        for ((media, id, season, key), entry) in placed {
+            let coordinate = match season {
+                Some(season) => format!("{media}:{id}:{season}"),
+                None => format!("{media}:{id}"),
             };
-            receipts.insert(joined, entry.clone());
+            receipts.insert(format!("{coordinate}#{key}"), entry);
         }
     }
     // Targets via the v4 rules with no receipts, then re-keyed: the reference decides them with shipped v3 code.
@@ -686,6 +719,32 @@ pub fn v4_dry_run(rows: &[Value], form: &Value, now: i64) -> Result<Value, Strin
     let reference = library_v3::v3_compact(&input.v3, now)?;
     let reference = reference.as_array().cloned().unwrap_or_default();
     let in_log: BTreeSet<&String> = input.documents.keys().collect();
+    // Every v3 row v3 keeps must land somewhere, and every receipt entry it holds must reach its delivery document
+    // as stored: through the merge with other rows of the same receipt, sanitizing, encoding and seeding (which
+    // only moves an `n` at −1 to 0). A delivery document the log already held is checked for the round trip only.
+    let placed = convert(&reference, &mut BTreeMap::new())?;
+    for (reason, row) in &placed.dropped {
+        abort.push(json!({"reason": reason, "row": row}));
+    }
+    for (doc_name, doc) in &placed.delivery {
+        if in_log.contains(doc_name) {
+            continue;
+        }
+        for (key, entry) in doc["entries"].as_object().into_iter().flatten() {
+            let mut seeded = entry.clone();
+            if seeded[0] == "n" && seeded[1] == -1 {
+                seeded[1] = json!(0);
+            }
+            let kept = decoded
+                .get(doc_name)
+                .and_then(|d| d.get("entries"))
+                .and_then(|e| e.get(key))
+                .is_some_and(|got| jcs::same(got, entry) || jcs::same(got, &seeded));
+            if !kept {
+                abort.push(json!({"reason": "receipt_dropped", "name": doc_name, "key": key}));
+            }
+        }
+    }
     let empty = Map::new();
     // Derived state: every title's rec fields, and every coordinate's episode or film state.
     let mut recs: BTreeMap<String, &Value> = BTreeMap::new();

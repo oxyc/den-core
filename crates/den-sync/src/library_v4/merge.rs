@@ -187,7 +187,7 @@ fn unknown_set(identity: &Identity, doc: &Map<String, Value>) -> Value {
     Value::Array(vec![Value::Object(top), Value::Object(keys)])
 }
 
-fn delivery_entry(a: &Value, b: &Value) -> Value {
+pub fn delivery_entry(a: &Value, b: &Value) -> Value {
     pick(a, b, entry_order(a).cmp(&entry_order(b)))
 }
 

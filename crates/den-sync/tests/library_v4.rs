@@ -2008,6 +2008,67 @@ fn v3_log() -> Vec<Value> {
     .collect()
 }
 
+fn rec_row(media: &str, id: u64, status: &str, reaction: Value, t: i64, viewing: u64) -> Value {
+    json!({"kind": "rec", "schema": 2, "title": {"type": media, "id": id},
+        "status": {"value": status, "at": st(t)}, "resume": {"value": 0, "viewing": viewing, "at": st(t)},
+        "reaction": {"value": reaction, "at": st(t)}, "deleted": {"value": false, "at": st(1000)},
+        "dismissed": {"value": false, "at": st(1000)}, "episodesReset": null, "addedAt": 1000,
+        "watchedAt": if status == "watched" { json!(t) } else { Value::Null }})
+}
+
+/// A v3 log whose title receipts are in the form both shipped v3 clients write them: an `snt` row with `target`
+/// `rec:<type>:<id>` and entries keyed `watch` / `list` / `rating`. The account was seeded through seq 1, so every
+/// target here is above `seededThrough`: a receipt the switch lost would be replaced by a seeded default.
+fn title_receipt_log() -> Vec<Value> {
+    let deliver = json!({"kind": "set", "schema": 2, "name": "deliver:simkl:4812736", "values": {
+        "since": {"value": {"string": serde_json::to_string(&st(1000)).unwrap()}, "at": st(1000)},
+        "lease": {"value": {"strings": ["", "1"]}, "at": st(1000)},
+        "seededThrough": {"value": {"int": 1}, "at": st(1000)}
+    }});
+    let film_wat = |id: u64, register: Value| json!({"kind": "wat", "schema": 3, "title": {"type": "movie", "id": id}, "season": 0, "block": 0, "seasonReset": null, "entries": {"0": register}});
+    let receipt = |target: &str, entries: Value| json!({"kind": "snt", "schema": 3, "provider": "simkl", "account": "4812736", "target": target, "entries": entries});
+    vec![
+        deliver,
+        // Watched and rated, both delivered: nothing is pending. A lost receipt would send both again.
+        rec_row("movie", 550, "watched", json!("love"), 5000, 0),
+        film_wat(
+            550,
+            json!({"imported": false, "plays": {"0": 5000}, "cleared": null}),
+        ),
+        receipt(
+            "rec:movie:550",
+            json!({
+                "watch": ["w", 0, 5000, st(5000), [1, 1, D]],
+                "rating": ["love", st(5000), [1, 2, D]]
+            }),
+        ),
+        // Un-watched after its watch was delivered: the un-watch is pending. A lost receipt would hide it.
+        rec_row("movie", 551, "none", json!("like"), 6000, 1),
+        film_wat(
+            551,
+            json!({"imported": false, "plays": {"0": 4000}, "cleared": [0, st(6000)]}),
+        ),
+        receipt(
+            "rec:movie:551",
+            json!({
+                "watch": ["w", 0, 4000, st(4000), [1, 3, D]],
+                "rating": ["like", st(6000), [1, 4, D]]
+            }),
+        ),
+        // On the watchlist (delivered) and unrated since its rating was delivered: the rating removal is pending.
+        // A lost receipt would hide the removal and send the list add again.
+        rec_row("tv", 1399, "watchlist", Value::Null, 6000, 0),
+        receipt(
+            "rec:tv:1399",
+            json!({
+                "list": ["in", st(6000), [1, 5, D]],
+                "rating": ["like", st(2000), [1, 6, D]],
+                "watch": ["w", 0, 2000, st(2000), [1, 7, D]]
+            }),
+        ),
+    ]
+}
+
 fn rows(log: &[Value]) -> Value {
     Value::Array(
         log.iter()
@@ -2059,7 +2120,13 @@ fn switches() -> Vec<Switch> {
     // A register v3 cannot derive (a malformed play key), which v4_form reads with that `plays` dropped.
     let mut malformed = log.clone();
     malformed[3]["entries"]["2"]["plays"] = json!({"0": 3100, "x": 5});
+    let title_receipts = title_receipt_log();
+    let mut unplaceable = title_receipts.clone();
+    unplaceable.push(json!({"kind": "snt", "schema": 3, "provider": "simkl", "account": "4812736", "target": "rec:person:5", "entries": {"list": ["in", st(2000), [1, 9, D]]}}));
     vec![
+        Switch { name: "title receipts with a rec: target convert into the title's delivery document and the dry run passes", rows: rows(&title_receipts), tamper: None, form: Expect::Subset(json!({"counts": {"invalid_keys": 1}})), dry_run: Some(json!({"pass": true, "pending_differences": []})) },
+        Switch { name: "a receipt row the switch cannot place aborts the dry run", rows: rows(&unplaceable), tamper: None, form: Expect::Subset(json!({"counts": {"receipt_dropped": 1}})), dry_run: Some(json!({"pass": false, "abort": [{"reason": "receipt_dropped", "row": "snt:simkl:4812736:rec:person:5"}]})) },
+        Switch { name: "a delivered receipt the form lost aborts the dry run", rows: rows(&title_receipts), tamper: Some(("dlv:simkl:4812736:movie:551".into(), json!({"entries": {"watch": ["n", 0, null, [0, 0, ""], [0, 1, D]], "rating": ["like", st(6000), [1, 4, D]], "list": ["out", [0, 0, ""], [0, 2, D]]}}))), form: Expect::Subset(json!({})), dry_run: Some(json!({"pass": false, "abort": [{"reason": "receipt_dropped", "name": "dlv:simkl:4812736:movie:551", "key": "watch"}]})) },
         Switch { name: "a register v3 cannot derive is compared with its malformed member dropped on both sides", rows: rows(&malformed), tamper: None, form: Expect::Subset(json!({"rows": 10})), dry_run: Some(json!({"pass": true, "counts": {"malformed_reference": 1}})) },
         Switch { name: "a v3 corpus converts and passes the dry run", rows: rows(&log), tamper: None, form: Expect::Subset(json!({
             "keep": ["k07", "k08", "k11"],
@@ -2309,6 +2376,140 @@ fn switch_details() {
         dry["counts"]["window_known_limit"].as_u64().unwrap() >= 1,
         "{dry}"
     );
+}
+
+/// Title receipts written as both shipped v3 clients write them (`target` `rec:<type>:<id>`) reach the title's
+/// delivery document as stored, and v4's pending commands after the switch are the ones v3 had: built here the way
+/// the clients build them (their targets from each `rec` row, receipts keyed `<target>#<key>`), not by the switch.
+#[test]
+fn switch_keeps_title_receipts() {
+    let log = title_receipt_log();
+    let form = ok(
+        &json!({"op": "v4_form", "rows": rows(&log), "base": 20, "performer": D, "now": 10_000}),
+    );
+    let docs: Map<String, Value> = form["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["name"].as_str().unwrap().to_owned(),
+                d["document"].clone(),
+            )
+        })
+        .collect();
+    let receipts = |name: &str| docs[&format!("dlv:simkl:4812736:{name}")]["entries"].clone();
+    // Carried as stored. The films' list targets had no receipt, so seeding (above seededThrough) adds `out`.
+    let seeded_out = |n: u64| json!(["out", [0, 0, ""], [0, n, D]]);
+    assert_eq!(
+        receipts("movie:550"),
+        json!({"watch": ["w", 0, 5000, st(5000), [1, 1, D]], "rating": ["love", st(5000), [1, 2, D]], "list": seeded_out(1)})
+    );
+    assert_eq!(
+        receipts("movie:551"),
+        json!({"watch": ["w", 0, 4000, st(4000), [1, 3, D]], "rating": ["like", st(6000), [1, 4, D]], "list": seeded_out(2)})
+    );
+    // A series has no title watch target, so v3 never read that key: dropped and counted.
+    assert_eq!(
+        receipts("tv:1399"),
+        json!({"list": ["in", st(6000), [1, 5, D]], "rating": ["like", st(2000), [1, 6, D]]})
+    );
+    assert_eq!(form["counts"]["invalid_keys"], 1, "{}", form["counts"]);
+    assert!(form["counts"].get("receipt_dropped").is_none());
+
+    let mut targets = Vec::new();
+    let mut v3_receipts = Map::new();
+    for row in &log {
+        match row["kind"].as_str() {
+            Some("rec") => {
+                let (media, id) = (row["title"]["type"].as_str().unwrap(), &row["title"]["id"]);
+                let target = format!("rec:{media}:{id}");
+                let common = json!({"media": media, "id": id});
+                if media == "movie" {
+                    let watched = if row["status"]["value"] == "watched" {
+                        "watched"
+                    } else {
+                        "unwatched"
+                    };
+                    targets.push(with(common.clone(), json!({"key": format!("{target}#watch"), "kind": "film",
+                        "value": watched, "stamp": row["status"]["at"], "p": row["resume"]["viewing"],
+                        "watched_at": row["watchedAt"]})));
+                }
+                let listed = if row["status"]["value"] == "watchlist" {
+                    "in"
+                } else {
+                    "gone"
+                };
+                targets.push(with(
+                    common.clone(),
+                    json!({"key": format!("{target}#list"), "kind": "list",
+                    "value": listed, "stamp": row["status"]["at"]}),
+                ));
+                let reaction = row["reaction"]["value"].as_str().unwrap_or("none");
+                targets.push(with(
+                    common,
+                    json!({"key": format!("{target}#rating"), "kind": "rating",
+                    "value": reaction, "stamp": row["reaction"]["at"]}),
+                ));
+            }
+            Some("snt") => {
+                for (key, entry) in row["entries"].as_object().unwrap() {
+                    v3_receipts.insert(
+                        format!("{}#{key}", row["target"].as_str().unwrap()),
+                        entry.clone(),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    let v3 = ok(
+        &json!({"op": "pending_targets", "targets": targets, "receipts": v3_receipts, "since": st(1000), "now": 10_000}),
+    );
+    let documents: Vec<Value> = docs.values().cloned().collect();
+    let v4 = ok(&pending(json!(documents), simkl(1000), 10_000));
+    let key = |cmd: &Value, target: String| {
+        json!([
+            target,
+            cmd["kind"],
+            cmd["added"],
+            cmd["rating"],
+            cmd.get("p").cloned().unwrap_or(Value::Null)
+        ])
+    };
+    let mut v3_set: Vec<Value> = v3
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            key(
+                c,
+                c["key"]
+                    .as_str()
+                    .unwrap()
+                    .trim_start_matches("rec:")
+                    .to_owned(),
+            )
+        })
+        .collect();
+    let mut v4_set: Vec<Value> = v4["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            let doc = c["document"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("dlv:simkl:4812736:");
+            key(c, format!("{doc}#{}", c["key"].as_str().unwrap()))
+        })
+        .collect();
+    v3_set.sort_by_key(|v| v.to_string());
+    v4_set.sort_by_key(|v| v.to_string());
+    assert_eq!(v4_set, v3_set, "v4 {v4}\nv3 {v3}");
+    // The pending set this library has: the film's un-watch and the series' rating removal, nothing re-sent.
+    let pending: Vec<&str> = v3_set.iter().map(|k| k[0].as_str().unwrap()).collect();
+    assert_eq!(pending, ["movie:551#watch", "tv:1399#rating"], "{v3}");
 }
 
 #[test]
