@@ -11,7 +11,9 @@ publish = false
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# `float_roundtrip`: library v4 §4 compares documents by their JCS bytes, so a number must parse to the double it
+# spells. Without it about one shortest-form fraction in ten parses 1 ULP off and a `resume.value` moves.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # Library v4 §4 pins the compressor: den-core compresses at level 9 with exactly the version in Cargo.lock.
 miniz_oxide = "=0.9.1"
 den-sync = { path = "crates/den-sync" }

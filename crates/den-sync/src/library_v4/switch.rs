@@ -4,7 +4,8 @@
 use super::codec;
 use super::delivery::{self, Snapshot};
 use super::doc::{
-    identity, sanitize, valid_account, valid_episode_key, valid_provider, Identity, Kind,
+    identity, sanitize, sanitize_register, valid_account, valid_episode_key, valid_provider,
+    Identity, Kind,
 };
 use super::jcs;
 use super::merge;
@@ -622,6 +623,11 @@ fn v3_targets(
         }
     }
     // Targets via the v4 rules with no receipts, then re-keyed: the reference decides them with shipped v3 code.
+    // Known limit: shipped v3 has no target builder of its own (its `pending_targets` takes normalized targets), so
+    // this reference is not independent of v4's target rules. A bug in how v4 builds a target is invisible here, and
+    // the receipt-dependent rules (*An un-watch survives playback*, *Un-watch then re-mark*) never apply, so they
+    // show as differences that are not real. Pending differences are logged and counted, never an abort (§10), and
+    // this comparison does not verify the target rules: the delivery vectors do.
     let deliver = json!({"provider": provider, "account": account, "since": [0, 0, ""]});
     docs.retain(|d| d.is_object());
     let snapshot = Snapshot::read(&docs)?;
@@ -721,6 +727,22 @@ pub fn v4_dry_run(rows: &[Value], form: &Value, now: i64) -> Result<Value, Strin
         (Err(a), Err(b)) => a != b,
         _ => true,
     };
+    // A register shipped v3 cannot derive (a malformed play key, say) is one `v4_form` reads with that member
+    // dropped (§4 *Malformed parts*). The reference derives it the same way, with the malformed member dropped, so
+    // the switch is not aborted for good over a part neither version can read; each such register is counted.
+    let mut malformed_reference = 0u64;
+    let mut derive_v3 = |register: &Value, derive: &dyn Fn(&Value) -> Result<Value, String>| {
+        let v3 = derive(register);
+        match (&v3, register.as_object()) {
+            (Err(_), Some(register)) => {
+                let mut register = register.clone();
+                sanitize_register(&mut register, "", &mut Vec::new());
+                malformed_reference += 1;
+                derive(&Value::Object(register))
+            }
+            _ => v3,
+        }
+    };
     for (title_name, rec) in &recs {
         if in_log.contains(title_name) {
             continue;
@@ -737,11 +759,9 @@ pub fn v4_dry_run(rows: &[Value], form: &Value, now: i64) -> Result<Value, Strin
             }
         }
         if title_name.starts_with("title:movie:") {
-            let v3 = library_v3::film_state(
-                rec,
+            let v3 = derive_v3(
                 film_registers.get(title_name).unwrap_or(&json!({})),
-                &[],
-                now,
+                &|register| library_v3::film_state(rec, register, &[], now),
             );
             let v4 = state::film_state(title, now);
             if differ(&v3, &v4) {
@@ -783,12 +803,11 @@ pub fn v4_dry_run(rows: &[Value], form: &Value, now: i64) -> Result<Value, Strin
         if let Some(reset) = season_resets.get(&season_name) {
             resets.extend(stamp(reset).ok());
         }
-        let v3 = library_v3::episode_state(
+        let v3 = derive_v3(
             registers
                 .get(&(season_name.clone(), key.clone()))
                 .unwrap_or(&json!({})),
-            &resets,
-            now,
+            &|register| library_v3::episode_state(register, &resets, now),
         );
         let v4 = state::episode_state(
             decoded.get(&title_name),
@@ -884,6 +903,7 @@ pub fn v4_dry_run(rows: &[Value], form: &Value, now: i64) -> Result<Value, Strin
             "stored_bytes": form["stored_bytes"],
             "largest": form["largest"],
             "pending_differences": differences.len(),
+            "malformed_reference": malformed_reference,
             "window_known_limit": window,
             "dropped": form["counts"],
         },

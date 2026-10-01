@@ -11,7 +11,7 @@ mod tilt;
 mod wire;
 
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 // `v3_form`, `v3_compact`, `write_back`, `v4_form` and `v4_dry_run` receive a whole library. Keep the boundary bounded, but
 // large enough for den-edge's 32 MiB stored-library limit plus JSON field names and request framing.
@@ -94,15 +94,35 @@ enum Request {
         command: Command,
         remote: Remote,
     },
-    /// v3: `{register, resets, now}`. v4 (§7): `{title, season, episode, now}` with the documents.
+    // The ops v3 and v4 both define take a name per version: the v3 name keeps exactly v3's shape, and the v4 shape
+    // is `<name>_v4`. A shape chosen by which fields are present would turn a v4 request whose optional field a
+    // client's encoder omitted into a v3 one.
     EpisodeState {
-        #[serde(flatten)]
-        input: Map<String, Value>,
+        register: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
     },
-    /// v3: `{rec, register, resets, now}`. v4 (§7): `{title, now}` with the film's title document.
+    /// Library v4 §7: an episode's state from its series title and season documents.
+    EpisodeStateV4 {
+        #[serde(default)]
+        title: Option<Value>,
+        #[serde(default)]
+        season: Option<Value>,
+        episode: Value,
+        now: i64,
+    },
     FilmState {
-        #[serde(flatten)]
-        input: Map<String, Value>,
+        rec: Value,
+        register: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    /// Library v4 §7: a film's state from its title document.
+    FilmStateV4 {
+        title: Value,
+        now: i64,
     },
     RegisterWrite {
         action: Value,
@@ -118,15 +138,30 @@ enum Request {
         resets: Vec<Stamp>,
         now: i64,
     },
-    /// v3: `{targets, receipts, since, now}`. v4 (§9): `{documents, deliver, now}`.
     PendingTargets {
-        #[serde(flatten)]
-        input: Map<String, Value>,
+        targets: Vec<Value>,
+        receipts: Value,
+        since: Stamp,
+        now: i64,
     },
-    /// v3: `{outcome, built_from, order}`. v4 (§9) adds `entry`, the entry it replaces (null for none).
+    /// Library v4 §9: the documents, delivery documents included, and the account's `set:deliver` facts.
+    PendingTargetsV4 {
+        documents: Vec<Value>,
+        deliver: Value,
+        now: i64,
+    },
     Settle {
-        #[serde(flatten)]
-        input: Map<String, Value>,
+        outcome: Value,
+        built_from: Value,
+        order: Value,
+    },
+    /// Library v4 §9: also the entry it replaces (absent or null for none), whose lasting elements it keeps.
+    SettleV4 {
+        outcome: Value,
+        built_from: Value,
+        order: Value,
+        #[serde(default)]
+        entry: Option<Value>,
     },
     Lease {
         input: Value,
@@ -146,10 +181,18 @@ enum Request {
         rows: Vec<Value>,
         now: i64,
     },
-    /// v3: `{held, log, now}` with rows. v4 (§11): `{documents, kept, log, now}` with documents and kept ops.
     WriteBack {
-        #[serde(flatten)]
-        input: Map<String, Value>,
+        held: Vec<Value>,
+        log: Vec<Value>,
+        now: i64,
+    },
+    /// Library v4 §11: held documents and kept ops on the new log.
+    WriteBackV4 {
+        documents: Vec<Value>,
+        #[serde(default)]
+        kept: Vec<Value>,
+        log: Vec<Value>,
+        now: i64,
     },
     /// Library v4 §4: a row's opened plaintext (base64) → document, JSON row, unreadable or newer.
     DocDecode {
@@ -251,82 +294,6 @@ fn yes() -> bool {
     true
 }
 
-/// The ops v3 and v4 share a name for take one of two shapes; each shape is a struct read from the flattened input.
-fn shape<T: serde::de::DeserializeOwned>(input: Map<String, Value>) -> Result<T, String> {
-    serde_json::from_value(Value::Object(input)).map_err(|_| "invalid_request".into())
-}
-
-#[derive(Deserialize)]
-struct V3EpisodeState {
-    register: Value,
-    #[serde(default)]
-    resets: Vec<Stamp>,
-    now: i64,
-}
-
-#[derive(Deserialize)]
-struct V4EpisodeState {
-    #[serde(default)]
-    title: Option<Value>,
-    #[serde(default)]
-    season: Option<Value>,
-    episode: Value,
-    now: i64,
-}
-
-#[derive(Deserialize)]
-struct V3FilmState {
-    rec: Value,
-    register: Value,
-    #[serde(default)]
-    resets: Vec<Stamp>,
-    now: i64,
-}
-
-#[derive(Deserialize)]
-struct V4FilmState {
-    title: Value,
-    now: i64,
-}
-
-#[derive(Deserialize)]
-struct V3PendingTargets {
-    targets: Vec<Value>,
-    receipts: Value,
-    since: Stamp,
-    now: i64,
-}
-
-#[derive(Deserialize)]
-struct V4PendingTargets {
-    documents: Vec<Value>,
-    deliver: Value,
-    now: i64,
-}
-
-#[derive(Deserialize)]
-struct V3Settle {
-    outcome: Value,
-    built_from: Value,
-    order: Value,
-}
-
-#[derive(Deserialize)]
-struct V3WriteBack {
-    held: Vec<Value>,
-    log: Vec<Value>,
-    now: i64,
-}
-
-#[derive(Deserialize)]
-struct V4WriteBack {
-    documents: Vec<Value>,
-    #[serde(default)]
-    kept: Vec<Value>,
-    log: Vec<Value>,
-    now: i64,
-}
-
 /// Versioned, non-throwing FFI boundary. An error is never an empty snapshot or an acknowledgement.
 pub fn evaluate(input: &str) -> String {
     fn run(input: &str) -> Result<Value, String> {
@@ -380,27 +347,33 @@ pub fn evaluate(input: &str) -> String {
                 Ok(json!(last.issue(now, device)?))
             }
             Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
-            Request::EpisodeState { input } if input.contains_key("episode") => {
-                let v4: V4EpisodeState = shape(input)?;
-                let title = v4.title.as_ref().map(library_v4::readable).transpose()?;
-                let season = v4.season.as_ref().map(library_v4::readable).transpose()?;
-                let episode = match &v4.episode {
+            Request::EpisodeState {
+                register,
+                resets,
+                now,
+            } => library_v3::episode_state(&register, &resets, now),
+            Request::EpisodeStateV4 {
+                title,
+                season,
+                episode,
+                now,
+            } => {
+                let title = title.as_ref().map(library_v4::readable).transpose()?;
+                let season = season.as_ref().map(library_v4::readable).transpose()?;
+                let episode = match &episode {
                     Value::String(key) => key.clone(),
                     other => other.to_string(),
                 };
-                library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, v4.now)
+                library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, now)
             }
-            Request::EpisodeState { input } => {
-                let v3: V3EpisodeState = shape(input)?;
-                library_v3::episode_state(&v3.register, &v3.resets, v3.now)
-            }
-            Request::FilmState { input } if !input.contains_key("rec") => {
-                let v4: V4FilmState = shape(input)?;
-                library_v4::state::film_state(&library_v4::readable(&v4.title)?, v4.now)
-            }
-            Request::FilmState { input } => {
-                let v3: V3FilmState = shape(input)?;
-                library_v3::film_state(&v3.rec, &v3.register, &v3.resets, v3.now)
+            Request::FilmState {
+                rec,
+                register,
+                resets,
+                now,
+            } => library_v3::film_state(&rec, &register, &resets, now),
+            Request::FilmStateV4 { title, now } => {
+                library_v4::state::film_state(&library_v4::readable(&title)?, now)
             }
             Request::RegisterWrite {
                 action,
@@ -414,41 +387,46 @@ pub fn evaluate(input: &str) -> String {
                 resets,
                 now,
             } => library_v3::import_write(register.as_ref(), &item, &resets, now),
-            Request::PendingTargets { input } if input.contains_key("documents") => {
-                let v4: V4PendingTargets = shape(input)?;
-                library_v4::delivery::pending_targets(&v4.documents, &v4.deliver, v4.now)
-            }
-            Request::PendingTargets { input } => {
-                let v3: V3PendingTargets = shape(input)?;
-                library_v3::pending_targets(&v3.targets, &v3.receipts, &v3.since, v3.now)
-            }
-            Request::Settle { input } => {
-                let entry = input.get("entry").cloned();
-                let v3: V3Settle = shape(input)?;
-                match entry {
-                    Some(entry) => library_v4::delivery::settle(
-                        &v3.outcome,
-                        &v3.built_from,
-                        &v3.order,
-                        Some(&entry).filter(|e| !e.is_null()),
-                    ),
-                    None => library_v3::settle(&v3.outcome, &v3.built_from, &v3.order),
-                }
-            }
+            Request::PendingTargets {
+                targets,
+                receipts,
+                since,
+                now,
+            } => library_v3::pending_targets(&targets, &receipts, &since, now),
+            Request::PendingTargetsV4 {
+                documents,
+                deliver,
+                now,
+            } => library_v4::delivery::pending_targets(&documents, &deliver, now),
+            Request::Settle {
+                outcome,
+                built_from,
+                order,
+            } => library_v3::settle(&outcome, &built_from, &order),
+            Request::SettleV4 {
+                outcome,
+                built_from,
+                order,
+                entry,
+            } => library_v4::delivery::settle(
+                &outcome,
+                &built_from,
+                &order,
+                entry.as_ref().filter(|e| !e.is_null()),
+            ),
             Request::Lease { input } => library_v3::lease(&input),
             Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
             Request::V3Form { rows, now, context } => {
                 library_v3::v3_form_with_context(&rows, now, context.as_ref())
             }
             Request::V3Compact { rows, now } => library_v3::v3_compact(&rows, now),
-            Request::WriteBack { input } if input.contains_key("documents") => {
-                let v4: V4WriteBack = shape(input)?;
-                library_v4::write_back(&v4.documents, &v4.kept, &v4.log, v4.now)
-            }
-            Request::WriteBack { input } => {
-                let v3: V3WriteBack = shape(input)?;
-                library_v3::write_back(&v3.held, &v3.log, v3.now)
-            }
+            Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
+            Request::WriteBackV4 {
+                documents,
+                kept,
+                log,
+                now,
+            } => library_v4::write_back(&documents, &kept, &log, now),
             Request::DocDecode { plaintext, name } => Ok(library_v4::decode(
                 &library_v4::codec::unbase64(&plaintext)?,
                 name.as_deref(),

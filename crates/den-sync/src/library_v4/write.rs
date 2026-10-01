@@ -3,7 +3,7 @@
 
 use super::doc::{play_key, safe_u64, Identity, Kind};
 use super::jcs;
-use super::merge::select;
+use super::merge::{later, select};
 use super::state;
 use crate::library_v3;
 use crate::wire::{stamp, Stamp};
@@ -46,6 +46,41 @@ fn writer_stamp(value: &Value) -> Result<Stamp, String> {
         return Err("timeless_write".into());
     }
     Ok(at)
+}
+
+/// Whether a write stamped `at` is not later than a stamp the state it writes already holds: a kept write replayed
+/// after a newer change, or a resend. Applying it would overwrite that change, so it writes nothing (§2.2, §2.7). A
+/// stored stamp more than a day ahead counts as none, as everywhere a stamp is read (§5).
+fn stale(stored: &[Option<Stamp>], at: &Stamp, now: i64) -> bool {
+    stored
+        .iter()
+        .flatten()
+        .any(|s| effective_t(s, now) > 0 && s >= at)
+}
+
+fn at_of(value: Option<&Value>) -> Option<Stamp> {
+    stamp(&value?["at"]).ok()
+}
+
+/// The stamps an episode register's own writes leave: `progress.at` and the `cleared` stamp.
+fn register_stamps(register: &Map<String, Value>) -> [Option<Stamp>; 2] {
+    [
+        at_of(register.get("progress")),
+        cleared_of(register).map(|(_, at)| at),
+    ]
+}
+
+/// The stamps a film's own writes leave: `resume.at`, `status.at` and its `watch` register's `cleared` stamp.
+fn film_stamps(title: &Map<String, Value>) -> [Option<Stamp>; 3] {
+    [
+        at_of(title.get("resume")),
+        at_of(title.get("status")),
+        title
+            .get("watch")
+            .and_then(Value::as_object)
+            .and_then(cleared_of)
+            .map(|(_, at)| at),
+    ]
 }
 
 fn default_register() -> Map<String, Value> {
@@ -185,7 +220,9 @@ fn episode_unwatch(
     now: i64,
 ) -> Result<(), String> {
     let state = library_v3::episode_state(&Value::Object(register.clone()), resets, now)?;
-    if state["watched"] != json!(true) {
+    // v3 §7 un-watches a watched or an in-progress episode (clearing its resume point); one with neither has
+    // nothing to clear. A replay is caught by the stamp check before this.
+    if state["watched"] != json!(true) && state["resume"].is_null() {
         return Ok(());
     }
     let viewing = state["viewing"].as_u64().unwrap_or(0);
@@ -327,7 +364,20 @@ fn deleted(title: &Map<String, Value>) -> bool {
     title.get("deleted").and_then(|d| d["value"].as_bool()) == Some(true)
 }
 
-fn film_progress(title: &mut Map<String, Value>, write: &Value, at: &Stamp) -> Result<(), String> {
+fn film_progress(
+    title: &mut Map<String, Value>,
+    write: &Value,
+    at: &Stamp,
+    now: i64,
+) -> Result<(), String> {
+    // The status is this op's to decide, below: a client that left a film `watched` while playing it again would
+    // start another viewing on every progress write.
+    if write.get("status").is_some() {
+        return Err("invalid_write:status".into());
+    }
+    if stale(&film_stamps(title), at, now) {
+        return Ok(());
+    }
     let resume = title.get("resume").cloned();
     let viewing = resume
         .as_ref()
@@ -354,7 +404,19 @@ fn film_progress(title: &mut Map<String, Value>, write: &Value, at: &Stamp) -> R
         return Ok(());
     }
     title.insert("resume".into(), progress_value(write, at, next)?);
-    if let Some(status) = write.get("status").and_then(Value::as_str) {
+    // v2's status machine, as the shipped clients run it: finishing makes the film `watched`, any other position
+    // above 0 makes it `inProgress`, and 0 leaves it. So a watched film played again is in progress in its new
+    // viewing, and the next tick stays there. Written when the value changes or a viewing starts, so a rewatch
+    // finished in one write carries its own stamp.
+    let status = if value >= 0.95 {
+        Some("watched")
+    } else if value > 0.0 {
+        Some("inProgress")
+    } else {
+        None
+    };
+    let stored = title.get("status").and_then(|s| s["value"].as_str());
+    if let Some(status) = status.filter(|s| stored != Some(*s) || next != viewing) {
         title.insert("status".into(), json!({"value": status, "at": at}));
     }
     if value >= 0.95 {
@@ -368,8 +430,10 @@ fn film_progress(title: &mut Map<String, Value>, write: &Value, at: &Stamp) -> R
     Ok(())
 }
 
-fn film_mark_watched(title: &mut Map<String, Value>, write: &Value, at: &Stamp) {
-    if title.get("status").and_then(|s| s["value"].as_str()) == Some("watched") {
+fn film_mark_watched(title: &mut Map<String, Value>, write: &Value, at: &Stamp, now: i64) {
+    if title.get("status").and_then(|s| s["value"].as_str()) == Some("watched")
+        || stale(&film_stamps(title), at, now)
+    {
         return;
     }
     let resume = title.get("resume").cloned().unwrap_or(Value::Null);
@@ -397,8 +461,10 @@ fn film_mark_watched(title: &mut Map<String, Value>, write: &Value, at: &Stamp) 
     title.insert("watch".into(), Value::Object(watch));
 }
 
-fn film_unwatch(title: &mut Map<String, Value>, at: &Stamp) {
-    if title.get("status").and_then(|s| s["value"].as_str()) != Some("watched") {
+fn film_unwatch(title: &mut Map<String, Value>, at: &Stamp, now: i64) {
+    if title.get("status").and_then(|s| s["value"].as_str()) != Some("watched")
+        || stale(&film_stamps(title), at, now)
+    {
         return;
     }
     let viewing = title
@@ -533,6 +599,10 @@ pub fn apply_write(
                 .map(|(s, e)| (s, e, Value::Null))
                 .collect()
         };
+        // v3 §7: imports skip a title that is `deleted`, episodes of a deleted series included.
+        if kind == "import_episodes" && deleted(&new_title) {
+            return Ok(json!({"documents": []}));
+        }
         let at = if kind == "import_episodes" {
             Stamp::default()
         } else {
@@ -554,6 +624,9 @@ pub fn apply_write(
                 .and_then(Value::as_object)
                 .cloned();
             let mut register = stored.clone().unwrap_or_else(default_register);
+            if kind != "import_episodes" && stale(&register_stamps(&register), &at, now) {
+                continue;
+            }
             match kind {
                 "progress" => episode_progress(&mut register, write, &at, &resets, now)?,
                 "mark_watched" => episode_mark_watched(&mut register, write, &at, &resets, now)?,
@@ -593,6 +666,9 @@ pub fn apply_write(
             }
             "series_reset" => {
                 let at = writer_stamp(&write["at"])?;
+                if film {
+                    return Err("invalid_target".into());
+                }
                 if !new_title
                     .get("episodesReset")
                     .is_some_and(|old| stamp(old).is_ok_and(|old| old >= at))
@@ -613,7 +689,14 @@ pub fn apply_write(
                     if !ok {
                         return Err(format!("invalid_field:{field}"));
                     }
-                    new_title.insert(field, json!({"value": value, "at": at}));
+                    // Each field by its own merge rule, the later stamp: a kept write replayed, or a resend, never
+                    // overwrites a newer change (§2.2, §2.7).
+                    let written = json!({"value": value, "at": at});
+                    let field_value = match new_title.get(&field) {
+                        Some(stored) => later(stored, &written),
+                        None => written,
+                    };
+                    new_title.insert(field, field_value);
                 }
                 if let Some(added) = write.get("added_at").and_then(Value::as_i64) {
                     let old = new_title.get("addedAt").and_then(Value::as_i64);
@@ -629,15 +712,15 @@ pub fn apply_write(
             }
             "progress" if film => {
                 let at = writer_stamp(&write["at"])?;
-                film_progress(&mut new_title, write, &at)?;
+                film_progress(&mut new_title, write, &at, now)?;
             }
             "mark_watched" if film => {
                 let at = writer_stamp(&write["at"])?;
-                film_mark_watched(&mut new_title, write, &at);
+                film_mark_watched(&mut new_title, write, &at, now);
             }
             "unwatch" if film => {
                 let at = writer_stamp(&write["at"])?;
-                film_unwatch(&mut new_title, &at);
+                film_unwatch(&mut new_title, &at, now);
             }
             "import_film" if film && !deleted(&new_title) => {
                 let name = write["provider"]
@@ -679,6 +762,12 @@ pub fn apply_write(
                 );
             }
             "import_rating" if !deleted(&new_title) => {
+                if !matches!(
+                    write["reaction"].as_str(),
+                    Some("dislike" | "like" | "love")
+                ) {
+                    return Err("invalid_reaction".into());
+                }
                 let c = write["rated_at"].as_u64().filter(|c| *c > 0).unwrap_or(1);
                 title_import(
                     &mut new_title,

@@ -143,7 +143,7 @@ fn reset_later_than_floor(reset: Option<&Stamp>, floor: Option<i64>) -> bool {
 }
 
 /// Value, value stamp, `p`, watched-at, and an un-watch owed first.
-type EpisodeValue = (Value, Stamp, i64, Option<u64>, Option<(Stamp, i64)>);
+type WatchValue = (Value, Stamp, i64, Option<u64>, Option<(Stamp, i64)>);
 
 /// An episode's value against its receipt (v3 §6 *Targets*, *An un-watch survives playback*).
 fn episode_value(
@@ -151,7 +151,7 @@ fn episode_value(
     resets: &[Stamp],
     now: i64,
     receipt: Option<&Receipt>,
-) -> Result<EpisodeValue, String> {
+) -> Result<WatchValue, String> {
     let state = library_v3::episode_state(register, resets, now)?;
     let p = state["viewing"].as_i64().unwrap_or(0);
     let reset_floor = resets
@@ -201,9 +201,21 @@ fn episode_value(
             return Ok((json!("unwatched"), at.clone(), p, None, None));
         }
     }
-    let watched_state = progress.is_some_and(|p| p["value"].as_f64().unwrap_or(0.0) >= 0.95)
-        || register.get("imported").and_then(Value::as_bool) == Some(true);
-    if watched_state && reset.is_some() {
+    // A watched state hidden by a covering reset (v3 §6 *Targets and values*), judged as v3 §5 hides it: finished
+    // progress whose `t` is not after the reset, or `imported` with no visible imported play later than the reset.
+    // Visible plays are already later than every covering reset.
+    let finished_hidden = progress.is_some_and(|p| p["value"].as_f64().unwrap_or(0.0) >= 0.95)
+        && progress_at
+            .as_ref()
+            .is_some_and(|at| effective_t(at, now) <= reset_floor);
+    let imported_play = state["plays"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|play| play[0].as_i64().is_some_and(|key| key < 0));
+    let imported_hidden =
+        register.get("imported").and_then(Value::as_bool) == Some(true) && !imported_play;
+    if reset.is_some() && (finished_hidden || imported_hidden) {
         return Ok((json!("unwatched"), reset.unwrap_or_default(), p, None, None));
     }
     if let Some(r @ Receipt::Watch { class, p: rp, .. }) = receipt {
@@ -229,36 +241,46 @@ fn film_value(
     title: &Map<String, Value>,
     now: i64,
     receipt: Option<&Receipt>,
-) -> Result<(Value, Stamp, i64, Option<u64>), String> {
+) -> Result<WatchValue, String> {
     let state = state::film_state(title, now)?;
     let rec = state::film_rec(title);
     let viewing = safe_u64(&rec["resume"]["viewing"]).unwrap_or(0) as i64;
     let status = rec["status"]["value"].as_str().unwrap_or("none");
     let status_at = stamp(&rec["status"]["at"]).unwrap_or_default();
-    if status == "watched" {
-        return Ok((
-            json!("watched"),
-            status_at,
-            viewing,
-            state["watched_at"].as_u64(),
-        ));
-    }
     let cleared = title
         .get("watch")
         .and_then(|w| w.get("cleared"))
         .filter(|c| !c.is_null())
         .and_then(|c| Some((safe_u64(&c[0])? as i64, stamp(&c[1]).ok()?)));
+    if status == "watched" {
+        // Un-watch then re-mark, as for an episode (a film has no resets): a re-mark in a later viewing than a `w`
+        // receipt whose viewing was cleared owes the un-watch first.
+        let first = match receipt {
+            Some(Receipt::Watch { class, p: rp, .. }) if class == "w" && viewing > *rp => cleared
+                .clone()
+                .filter(|(cleared_viewing, _)| *cleared_viewing >= *rp)
+                .map(|(cleared_viewing, at)| (at, cleared_viewing + 1)),
+            _ => None,
+        };
+        return Ok((
+            json!("watched"),
+            status_at,
+            viewing,
+            state["watched_at"].as_u64(),
+            first,
+        ));
+    }
     if let Some((cleared_viewing, at)) = cleared {
         if status == "none" && cleared_viewing == viewing - 1 {
-            return Ok((json!("unwatched"), at, viewing, None));
+            return Ok((json!("unwatched"), at, viewing, None, None));
         }
         if let Some(Receipt::Watch { class, p, .. }) = receipt {
             if class == "w" && cleared_viewing >= *p {
-                return Ok((json!("unwatched"), at, viewing, None));
+                return Ok((json!("unwatched"), at, viewing, None, None));
             }
         }
     }
-    Ok((json!("none"), status_at, viewing, None))
+    Ok((json!("none"), status_at, viewing, None, None))
 }
 
 fn field<'a>(title: &'a Map<String, Value>, name: &str) -> Option<&'a Value> {
@@ -323,8 +345,10 @@ impl Snapshot {
             let doc = match super::checked(doc) {
                 Ok((_, doc)) => doc,
                 Err(e) if e == "newer_format" => {
+                    // Read as a format-4 reader reads it, so a part a newer format reshaped cannot fail the pass;
+                    // every target it holds or names is held below.
                     out.newer.insert(id.name());
-                    map.clone()
+                    super::read_newer(&id, map, &mut Vec::new())
                 }
                 Err(e) => return Err(e),
             };
@@ -399,10 +423,11 @@ pub fn targets_for(
         if film {
             let current = entry(&document, "watch");
             let parsed = current.as_ref().and_then(receipt);
-            let (value, stamp, p, watched_at) = film_value(title, now, parsed.as_ref())?;
+            let (value, stamp, p, watched_at, first) = film_value(title, now, parsed.as_ref())?;
             let mut target = make("watch", "film", value, stamp);
             target.p = Some(p);
             target.watched_at = watched_at;
+            target.unwatch_first = first;
             out.push((target, current));
         }
     }
@@ -567,10 +592,8 @@ fn decide_target(target: &Target, entry: Option<&Value>, account: &Account, now:
             return Decision::Nothing;
         }
         if target.stamp.0 != 0 && target.stamp > account.since {
-            return match change_command(target, None).or(match target.kind {
-                "list" if target.value == json!("gone") => Some("list"),
-                _ => None,
-            }) {
+            // Only `in → gone` is a list removal (v3 §6 command table): with no receipt, `gone` settles silently.
+            return match change_command(target, None) {
                 Some(kind) => Decision::Command(command(target, kind, false, None)),
                 None => Decision::Settle(target.built_from()),
             };
@@ -607,6 +630,15 @@ fn decide_target(target: &Target, entry: Option<&Value>, account: &Account, now:
             };
         }
         return Decision::Nothing;
+    }
+    // v3 §6 *Timeless values*: a timeless rating is not pending against a receipt whose value stamp equals its own,
+    // which is how a `baseline` rating settles when the remote's maps to another reaction.
+    if target.kind == "rating" && target.stamp.0 == 0 {
+        if let Receipt::Field { stamp, .. } = &r {
+            if *stamp == target.stamp {
+                return Decision::Nothing;
+            }
+        }
     }
     if watch_none || regression(target, &r) {
         return Decision::Nothing;
@@ -685,7 +717,11 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
         } else {
             target.title.clone()
         };
-        if snapshot.newer.contains(&target.document) || snapshot.newer.contains(&source) {
+        // An episode's series title names its covering reset, so a newer series title holds its episodes too.
+        if [&target.document, &source, &target.title]
+            .iter()
+            .any(|name| snapshot.newer.contains(*name))
+        {
             held.push(
                 json!({"document": target.document, "key": target.key, "reason": "newer_format"}),
             );
@@ -721,10 +757,13 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
             .then(a["document"].as_str().cmp(&b["document"].as_str()))
             .then(a["key"].as_str().cmp(&b["key"].as_str()))
     });
+    // The epoch rule of a lease take reads this account's settle epochs only (§9).
+    let own = delivery_name(&account, "");
     let greatest_epoch = snapshot
         .delivery
-        .values()
-        .flat_map(|d| {
+        .iter()
+        .filter(|(name, _)| name.starts_with(&own))
+        .flat_map(|(_, d)| {
             d.get("entries")
                 .and_then(Value::as_object)
                 .into_iter()
@@ -897,11 +936,20 @@ pub fn delivery_write(
         let (settled, intents) = build(count)?;
         Ok(fits(&settled)? && intents.as_ref().map(fits).transpose()?.unwrap_or(true))
     };
+    // Fitting is monotone in the prefix (a document only grows), so the longest prefix that fits is found by
+    // bisection: each probe encodes and self-checks up to 256 KiB, and a long season can carry thousands of commands.
     let mut accepted = commands.len();
     if !fit(accepted)? {
-        accepted = (0..commands.len())
-            .find(|n| !fit(n + 1).unwrap_or(false))
-            .unwrap_or(commands.len());
+        let (mut fits_up_to, mut fails_at) = (0, commands.len());
+        while fails_at - fits_up_to > 1 {
+            let mid = fits_up_to + (fails_at - fits_up_to) / 2;
+            if fit(mid)? {
+                fits_up_to = mid;
+            } else {
+                fails_at = mid;
+            }
+        }
+        accepted = fits_up_to;
     }
     let (document, intent_document) = build(accepted)?;
     let held: Vec<Value> = commands[accepted..]

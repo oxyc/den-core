@@ -29,12 +29,32 @@ pub fn checked(value: &Value) -> Result<(Identity, Map<String, Value>), String> 
     Ok((identity, doc))
 }
 
+/// A newer document read for the fields this spec defines (§4 *Newer rows*): its known parts checked as format 4's,
+/// so a part the newer format reshaped is dropped rather than failing the read. A new entry shape comes with a newer
+/// format (§9), so its delivery entries are kept as they are.
+pub fn read_newer(
+    identity: &Identity,
+    doc: &Map<String, Value>,
+    dropped: &mut Vec<Value>,
+) -> Map<String, Value> {
+    let mut doc = doc.clone();
+    let entries = doc.remove("entries");
+    sanitize(identity, &mut doc, dropped);
+    if let Some(entries) = entries {
+        doc.insert("entries".into(), entries);
+    }
+    doc
+}
+
 /// A document as state is read from it: like `checked`, but a newer `format` is read for the fields this spec
 /// defines (§4 *Newer rows*).
 pub fn readable(value: &Value) -> Result<Map<String, Value>, String> {
     match checked(value) {
         Ok((_, doc)) => Ok(doc),
-        Err(error) if error == "newer_format" => Ok(value.as_object().cloned().unwrap_or_default()),
+        Err(error) if error == "newer_format" => {
+            let doc = value.as_object().ok_or("invalid_document")?;
+            Ok(read_newer(&identity(doc)?, doc, &mut Vec::new()))
+        }
         Err(error) => Err(error),
     }
 }
@@ -51,7 +71,8 @@ pub fn doc_merge(a: &Value, b: &Value) -> Result<Value, String> {
 
 /// `write_back` (§11): after a generation change, the merge of every held document with the log's when it
 /// differs, the kept writes re-applied as ops, and settled delivery entries merged by settle order. Held v2 or v3
-/// rows are discarded; nothing here writes a `lease`.
+/// rows are discarded; nothing here writes a `lease`. A kept op that touches a newer document, or that no longer
+/// applies, is reported in `dropped` with its index (`kept`) and the rest still apply.
 pub fn write_back(
     held: &[Value],
     kept: &[Value],
@@ -91,13 +112,21 @@ pub fn write_back(
         };
         current.insert(name, merged);
     }
-    for write in kept {
+    for (index, write) in kept.iter().enumerate() {
         let target = &write["target"];
         let title_name = format!(
             "title:{}:{}",
             target["type"].as_str().unwrap_or_default(),
             target["id"]
         );
+        // Reported per kept op, so one op the client must hold or give up never stops the others.
+        let drop = |reason: &str| json!({"kept": index, "name": title_name, "reason": reason});
+        // §4 *Newer rows*: a newer document is never written, so a write to it is held. One to its series title is
+        // held too, since the write would be decided without that document's state.
+        if newer.contains(&title_name) {
+            dropped.push(drop("newer_format"));
+            continue;
+        }
         let season_prefix = format!("season:tv:{}:", target["id"]);
         let title = current.get(&title_name).cloned();
         let seasons: Vec<Value> = current
@@ -110,16 +139,31 @@ pub fn write_back(
             .filter(|(n, _)| n.starts_with("dlv:"))
             .map(|(_, d)| d.clone())
             .collect();
-        let out = write::apply_write(
+        let out = match write::apply_write(
             &write["write"],
             target,
             title.as_ref(),
             &seasons,
             &receipts,
             now,
-        )?;
-        for doc in out["documents"].as_array().into_iter().flatten() {
-            let name = name(doc)?;
+        ) {
+            Ok(out) => out,
+            Err(reason) => {
+                dropped.push(drop(&reason));
+                continue;
+            }
+        };
+        let documents: Vec<(String, &Value)> = out["documents"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|doc| Ok((name(doc)?, doc)))
+            .collect::<Result<_, String>>()?;
+        if documents.iter().any(|(name, _)| newer.contains(name)) {
+            dropped.push(drop("newer_format"));
+            continue;
+        }
+        for (name, doc) in documents {
             write_cap.insert(name.clone());
             current.insert(name, doc.clone());
         }
@@ -195,25 +239,14 @@ pub fn decode(plaintext: &[u8], expected: Option<&str>) -> Value {
     if expected.is_some_and(|expected| expected != name) {
         return unreadable("identity");
     }
-    let mut doc = row.clone();
     let mut dropped = Vec::new();
     if format == FORMAT {
+        let mut doc = row.clone();
         sanitize(&identity, &mut doc, &mut dropped);
-    } else {
-        // §4 *Newer rows*: read for the fields this spec defines. A new entry shape comes with a newer format
-        // (§9), so a newer document's entries are not judged by format 4's shapes.
-        let entries = doc.remove("entries");
-        sanitize(&identity, &mut doc, &mut dropped);
-        if let Some(entries) = entries {
-            doc.insert("entries".into(), entries);
-        }
+        return json!({"status": "document", "name": name, "document": doc, "dropped": dropped});
     }
-    json!({
-        "status": if format == FORMAT { "document" } else { "newer" },
-        "name": name,
-        "document": doc,
-        "dropped": dropped,
-    })
+    let doc = read_newer(&identity, row, &mut dropped);
+    json!({"status": "newer", "reason": "format", "name": name, "document": doc, "dropped": dropped})
 }
 
 /// `doc_encode` (§4, §14): document → plaintext, or `too_large` against the cap. A writer decodes what it
