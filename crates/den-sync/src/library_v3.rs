@@ -492,24 +492,66 @@ pub fn lease(input: &Value) -> Result<Value, String> {
     Ok(json!({"action":"wait","reason":"observation"}))
 }
 
+/// A row that holds a v1 tracker event as shipped: the settings row `set:tracker-event:<id>`.
+fn is_event_row(row: &Value) -> bool {
+    row["kind"] == json!("set")
+        && row["name"]
+            .as_str()
+            .is_some_and(|row_name| row_name.starts_with("tracker-event:"))
+}
+
+/// The event a `set:tracker-event:<id>` row holds (library v3 Appendix A), or `None` when a reader ignores it:
+/// `schema` 1, the row named for its `id`, `values.event.at` equal to its `at`, and `before` and `after` naming
+/// the same non-settings row.
+fn stored_event(row: &Value) -> Option<Value> {
+    let id = row["name"].as_str()?.strip_prefix("tracker-event:")?;
+    let stored = &row["values"]["event"];
+    let event: Value = serde_json::from_str(stored["value"]["string"].as_str()?).ok()?;
+    let target = name(&event["after"]).ok()?;
+    let valid = event["schema"] == json!(1)
+        && event["id"].as_str() == Some(id)
+        && stamp(&stored["at"]).ok()? == stamp(&event["at"]).ok()?
+        && event["after"]["kind"] != json!("set")
+        && name(&event["before"]).ok()? == target;
+    valid.then_some(event)
+}
+
+/// What a log row claims for §8: a v1 event's `after` (stored as `set:tracker-event:<id>`, or already decoded),
+/// otherwise the row itself. `None` for an event row a reader ignores.
+fn claim(row: &Value) -> Option<Value> {
+    if row["schema"] == json!(1) && row.get("after").is_some() {
+        return Some(row["after"].clone());
+    }
+    if is_event_row(row) {
+        return stored_event(row).map(|event| event["after"].clone());
+    }
+    Some(row.clone())
+}
+
 pub fn v2_reading(rows: &[Value], now: i64) -> Result<Value, String> {
     let mut folded: Map<String, Value> = Map::new();
-    for row in rows {
-        let candidate = if row["schema"] == json!(1) && row.get("after").is_some() {
-            &row["after"]
-        } else {
-            row
-        };
-        let row_name = name(candidate).unwrap_or_else(|_| format!("unknown:{}", folded.len()));
+    for candidate in rows.iter().filter_map(claim) {
+        let row_name = name(&candidate).unwrap_or_else(|_| format!("unknown:{}", folded.len()));
         let merged = match folded.get(&row_name) {
             Some(old) => {
-                merge(old, candidate).map_err(|error| format!("v2_reading:{row_name}:{error}"))?
+                merge(old, &candidate).map_err(|error| format!("v2_reading:{row_name}:{error}"))?
             }
-            None => candidate.clone(),
+            None => candidate,
         };
         folded.insert(row_name, merged);
     }
     Ok(json!({"rows":folded,"now":now}))
+}
+
+/// Insert a row, merging it (§3) with a row of the same name already there, so a register the fold derives joins
+/// the one the log holds instead of replacing it.
+fn put(output: &mut Map<String, Value>, row_name: String, row: Value) -> Result<(), String> {
+    let row = match output.get(&row_name) {
+        Some(old) => merge(old, &row).map_err(|error| format!("v3_form:{row_name}:{error}"))?,
+        None => row,
+    };
+    output.insert(row_name, row);
+    Ok(())
 }
 
 /// Conversion deliberately returns only v3 watch/receipt rows plus unchanged v2 rec/set and unknown rows.
@@ -527,19 +569,14 @@ pub fn v3_form_with_context(
     let reading = v2_reading(rows, now).map_err(|error| format!("v3_form:reading:{error}"))?;
     let mut output: Map<String, Value> = Map::new();
     let mut claims: std::collections::BTreeMap<String, Vec<Value>> = Default::default();
-    for row in rows {
-        let candidate = if row["schema"] == json!(1) && row.get("after").is_some() {
-            &row["after"]
-        } else {
-            row
-        };
+    for candidate in rows.iter().filter_map(claim) {
         // Shipped Simkl data can contain episode-shaped rows for anime films. v2 clients ignore
         // them, so preserve them as unknown state rather than deriving a TV watch or losing them.
         if candidate["kind"] == json!("ep") && candidate["title"]["type"] == json!("tv") {
             claims
-                .entry(name(candidate).map_err(|error| format!("v3_form:claim:{error}"))?)
+                .entry(name(&candidate).map_err(|error| format!("v3_form:claim:{error}"))?)
                 .or_default()
-                .push(candidate.clone());
+                .push(candidate);
         }
     }
     let read_rows = reading["rows"].as_object().ok_or("invalid_reading")?;
@@ -601,14 +638,7 @@ pub fn v3_form_with_context(
                     .map(|(viewing, at)| json!([viewing, at]))
                     .unwrap_or(Value::Null);
                 let wat = json!({"kind":"wat","schema":3,"title":row["title"],"season":season,"block":block,"seasonReset":null,"entries":{episode.to_string():register}});
-                output.insert(
-                    watch_name.clone(),
-                    match output.get(&watch_name) {
-                        Some(old) => merge(old, &wat)
-                            .map_err(|error| format!("v3_form:{watch_name}:{error}"))?,
-                        None => wat,
-                    },
-                );
+                put(&mut output, watch_name, wat)?;
             }
             Some("rec") => {
                 output.insert(
@@ -635,18 +665,21 @@ pub fn v3_form_with_context(
                         .is_some_and(|plays| !plays.is_empty())
                         || !register["cleared"].is_null()
                     {
-                        output.insert(
+                        put(
+                            &mut output,
                             format!("wat:movie:{id}:0:0"),
                             json!({"kind":"wat","schema":3,"title":row["title"],"season":0,"block":0,"seasonReset":null,"entries":{"0":register}}),
-                        );
+                        )?;
                     }
                 }
             }
+            // §9: no `set:tracker-event:*` row arrives here; `claim` gave the reading its `after` instead.
             Some("set" | "wat" | "snt") => {
-                output.insert(
+                put(
+                    &mut output,
                     name(row).map_err(|error| format!("v3_form:preserved_name:{error}"))?,
                     row.clone(),
-                );
+                )?;
             }
             Some("ep") => {
                 output.insert(format!("unknown:{}", output.len()), row.clone());
@@ -661,6 +694,50 @@ pub fn v3_form_with_context(
             .map_err(|error| format!("v3_form:seed:{error}"))?;
     }
     Ok(Value::Array(output.into_values().collect()))
+}
+
+/// §9's compaction of a library already in v3: its rows, with every stray series `ep` row and v1 tracker event
+/// folded through §8 and dropped, and rows of one name merged (§3). Only the stray rows are folded: a `rec` no
+/// stray event touches is kept as it is and yields no film play, since its plays already live in its `wat` row.
+/// Seeds nothing; the caller commits it with an unchanged wire minimum.
+pub fn v3_compact(rows: &[Value], now: i64) -> Result<Value, String> {
+    let stray = |row: &Value| {
+        is_event_row(row)
+            || row["schema"] == json!(1) && row.get("after").is_some()
+            || row["kind"] == json!("ep") && row["title"]["type"] == json!("tv")
+    };
+    let touched = rows
+        .iter()
+        .filter(|row| stray(row))
+        .filter_map(claim)
+        .filter(|after| after["kind"] == json!("rec"))
+        .filter_map(|after| name(&after).ok())
+        .collect::<std::collections::BTreeSet<_>>();
+    let to_fold = rows
+        .iter()
+        .filter(|row| {
+            stray(row)
+                || row["kind"] == json!("rec") && name(row).is_ok_and(|n| touched.contains(&n))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let folded = v3_form(&to_fold, now).map_err(|error| format!("v3_compact:{error}"))?;
+    let mut output: Map<String, Value> = Map::new();
+    let mut unknown = Vec::new();
+    for row in rows
+        .iter()
+        .filter(|row| !stray(row))
+        .chain(folded.as_array().into_iter().flatten())
+    {
+        match name(row) {
+            Ok(row_name) if matches!(row["kind"].as_str(), Some("rec" | "set" | "wat" | "snt")) => {
+                put(&mut output, row_name, row.clone())
+                    .map_err(|error| format!("v3_compact:{error}"))?
+            }
+            _ => unknown.push(row.clone()),
+        }
+    }
+    Ok(Value::Array(output.into_values().chain(unknown).collect()))
 }
 
 fn switch_setting(value: Value, at: &Stamp) -> Value {

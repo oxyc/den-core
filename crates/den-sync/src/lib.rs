@@ -12,8 +12,8 @@ mod wire;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-// `v3_form` and `write_back` receive a whole library. Keep the boundary bounded, but large enough
-// for den-edge's 32 MiB stored-library limit plus JSON field names and request framing.
+// `v3_form`, `v3_compact` and `write_back` receive a whole library. Keep the boundary bounded, but
+// large enough for den-edge's 32 MiB stored-library limit plus JSON field names and request framing.
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
@@ -21,7 +21,7 @@ pub use episodes::episode_mark;
 pub use events::commands;
 pub use library_v3::{
     episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
-    switch_ready, v2_reading, v3_form, v3_form_with_context, write_back,
+    switch_ready, v2_reading, v3_compact, v3_form, v3_form_with_context, write_back,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -143,6 +143,11 @@ enum Request {
         now: i64,
         #[serde(default)]
         context: Option<Value>,
+    },
+    /// Library v3 §9's compaction of a v3 log: stray `ep` and v1 tracker-event rows folded and dropped.
+    V3Compact {
+        rows: Vec<Value>,
+        now: i64,
     },
     WriteBack {
         held: Vec<Value>,
@@ -283,6 +288,7 @@ pub fn evaluate(input: &str) -> String {
             Request::V3Form { rows, now, context } => {
                 library_v3::v3_form_with_context(&rows, now, context.as_ref())
             }
+            Request::V3Compact { rows, now } => library_v3::v3_compact(&rows, now),
             Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
             Request::SwitchReady { input } => library_v3::switch_ready(&input),
             Request::WatchName {
