@@ -423,7 +423,7 @@ fn encoding_cases() -> Vec<Case> {
             "§4 Newer rows",
             decode(compressed(&newer)),
             Expect::Ok(
-                json!({"status": "newer", "name": "title:movie:550", "document": newer, "dropped": []}),
+                json!({"status": "newer", "reason": "format", "name": "title:movie:550", "document": newer, "dropped": []}),
             ),
         ),
         case(
@@ -535,7 +535,7 @@ fn malformed_cases() -> Vec<Case> {
         case(
             "its target is decided as having no receipt, and delivery is not paused",
             "§4 Malformed parts",
-            json!({"op": "pending_targets", "documents": [read, kept], "deliver": {"provider": "simkl", "account": "4812736", "since": st(500)}, "now": 2000}),
+            json!({"op": "pending_targets_v4", "documents": [read, kept], "deliver": {"provider": "simkl", "account": "4812736", "since": st(500)}, "now": 2000}),
             Expect::Subset(
                 json!({"commands": [{"kind": "watched", "key": "1", "baseline": false}], "held": []}),
             ),
@@ -574,19 +574,19 @@ fn state_cases() -> Vec<Case> {
         case(
             "a series reset in the title document hides a season's registers",
             "§7",
-            json!({"op": "episode_state", "title": reset_title, "season": season(1399, 1, json!({"seasonReset": null, "episodes": {"1": watched}})), "episode": "1", "now": 3000}),
+            json!({"op": "episode_state_v4", "title": reset_title, "season": season(1399, 1, json!({"seasonReset": null, "episodes": {"1": watched}})), "episode": "1", "now": 3000}),
             Expect::Ok(hidden.clone()),
         ),
         case(
             "a season reset hides its registers",
             "§7",
-            json!({"op": "episode_state", "title": null, "season": season(1399, 1, json!({"seasonReset": st(2000), "episodes": {"1": watched}})), "episode": 1, "now": 3000}),
+            json!({"op": "episode_state_v4", "title": null, "season": season(1399, 1, json!({"seasonReset": st(2000), "episodes": {"1": watched}})), "episode": 1, "now": 3000}),
             Expect::Ok(hidden),
         ),
         case(
             "an import after a reset stays visible",
             "§7",
-            json!({"op": "episode_state", "title": reset_title, "season": season(1399, 1, json!({"episodes": {"1": imported}})), "episode": "1", "now": 4000}),
+            json!({"op": "episode_state_v4", "title": reset_title, "season": season(1399, 1, json!({"episodes": {"1": imported}})), "episode": "1", "now": 4000}),
             Expect::Ok(
                 json!({"watched": true, "resume": null, "viewing": 0, "plays": [[3000 - IMPORT, 3000]], "first_play": 3000, "watched_at": 3000}),
             ),
@@ -594,19 +594,19 @@ fn state_cases() -> Vec<Case> {
         case(
             "a future progress stamp derives as timeless",
             "§5",
-            json!({"op": "episode_state", "season": season(1399, 1, json!({"episodes": {"1": {"progress": {"value": 1, "at": st(10 * 86_400_000), "viewing": 0}, "imported": false, "plays": {}, "cleared": null}}})), "episode": "1", "now": 1000}),
+            json!({"op": "episode_state_v4", "season": season(1399, 1, json!({"episodes": {"1": {"progress": {"value": 1, "at": st(10 * 86_400_000), "viewing": 0}, "imported": false, "plays": {}, "cleared": null}}})), "episode": "1", "now": 1000}),
             Expect::Subset(json!({"watched": false, "viewing": 0})),
         ),
         case(
             "a missing register derives as nothing",
             "§7",
-            json!({"op": "episode_state", "season": null, "episode": "7", "now": 1000}),
+            json!({"op": "episode_state_v4", "season": null, "episode": "7", "now": 1000}),
             Expect::Subset(json!({"watched": false, "plays": []})),
         ),
         case(
             "a film's watched-at before its play lands",
             "§7",
-            json!({"op": "film_state", "title": title("movie", 550, json!({"status": {"value": "watched", "at": st(5000)}, "resume": {"value": 1, "at": st(5000), "viewing": 0}})), "now": 6000}),
+            json!({"op": "film_state_v4", "title": title("movie", 550, json!({"status": {"value": "watched", "at": st(5000)}, "resume": {"value": 1, "at": st(5000), "viewing": 0}})), "now": 6000}),
             Expect::Ok(
                 json!({"watched": true, "resume": {"value": 1, "at": st(5000), "viewing": 0}, "viewing": 0, "plays": [], "first_play": null, "watched_at": 5000}),
             ),
@@ -614,7 +614,7 @@ fn state_cases() -> Vec<Case> {
         case(
             "a film's plays come from its watch register",
             "§7",
-            json!({"op": "film_state", "title": film(), "now": 1789000000000i64}),
+            json!({"op": "film_state_v4", "title": film(), "now": 1789000000000i64}),
             Expect::Subset(
                 json!({"watched": true, "viewing": 1, "watched_at": 1789000000000i64, "first_play": 1700000000000i64}),
             ),
@@ -622,7 +622,7 @@ fn state_cases() -> Vec<Case> {
         case(
             "a title document with no rec fields derives as none",
             "§10 v4 form",
-            json!({"op": "film_state", "title": title("movie", 550, json!({"watch": {"plays": {"0": 1000}, "cleared": null}})), "now": 2000}),
+            json!({"op": "film_state_v4", "title": title("movie", 550, json!({"watch": {"plays": {"0": 1000}, "cleared": null}})), "now": 2000}),
             Expect::Subset(json!({"watched": false, "plays": []})),
         ),
         case(
@@ -743,7 +743,7 @@ fn write_cases() -> Vec<Case> {
             "a film finished by playing writes resume and its play in one document",
             "§8 Films",
             write(
-                json!({"kind": "progress", "value": 0.97, "at": st(2000), "status": "watched"}),
+                json!({"kind": "progress", "value": 0.97, "at": st(2000)}),
                 movie(),
                 title("movie", 550, json!({"resume": progress(0.5, 1000, 0)})),
                 json!([]),
@@ -1233,7 +1233,7 @@ fn simkl(since: i64) -> Value {
 }
 
 fn pending(documents: Value, deliver: Value, now: i64) -> Value {
-    json!({"op": "pending_targets", "documents": documents, "deliver": deliver, "now": now})
+    json!({"op": "pending_targets_v4", "documents": documents, "deliver": deliver, "now": now})
 }
 
 fn delivery_cases() -> Vec<Case> {
@@ -1407,19 +1407,19 @@ fn delivery_cases() -> Vec<Case> {
         case(
             "settle keeps a [-1, I] element and drops the intent",
             "v3 §6 Intent",
-            json!({"op": "settle", "outcome": {"action": "send"}, "built_from": {"key": "1", "kind": "episode", "value": "watched", "stamp": st(3000), "p": 1, "watched_at": 3000}, "order": [2, 9, D], "entry": ["w", 0, 1000, st(1000), [2, 8, D], [[-1, 1000], [1, 3000]]]}),
+            json!({"op": "settle_v4", "outcome": {"action": "send"}, "built_from": {"key": "1", "kind": "episode", "value": "watched", "stamp": st(3000), "p": 1, "watched_at": 3000}, "order": [2, 9, D], "entry": ["w", 0, 1000, st(1000), [2, 8, D], [[-1, 1000], [1, 3000]]]}),
             Expect::Ok(json!(["w", 1, 3000, st(3000), [2, 9, D], [[-1, 1000]]])),
         ),
         case(
             "settle with no entry",
             "v3 §6 Settling",
-            json!({"op": "settle", "outcome": {"action": "acknowledge"}, "built_from": {"key": "list", "kind": "list", "value": "in", "stamp": st(1000)}, "order": [2, 1, D], "entry": null}),
+            json!({"op": "settle_v4", "outcome": {"action": "acknowledge"}, "built_from": {"key": "list", "kind": "list", "value": "in", "stamp": st(1000)}, "order": [2, 1, D], "entry": null}),
             Expect::Ok(json!(["in", st(1000), [2, 1, D]])),
         ),
         case(
             "a timeless baseline rating acknowledged by another bucket settles as the remote's",
             "v3 §6 Timeless values",
-            json!({"op": "settle", "outcome": {"action": "acknowledge", "remote_rating": 8}, "built_from": {"key": "rating", "kind": "rating", "value": "like", "stamp": [0, 5, ""]}, "order": [2, 1, D], "entry": null}),
+            json!({"op": "settle_v4", "outcome": {"action": "acknowledge", "remote_rating": 8}, "built_from": {"key": "rating", "kind": "rating", "value": "like", "stamp": [0, 5, ""]}, "order": [2, 1, D], "entry": null}),
             Expect::Ok(json!(["love", [0, 5, ""], [2, 1, D], 8])),
         ),
         case(
@@ -1500,13 +1500,13 @@ fn write_back_cases() -> Vec<Case> {
         case(
             "a held document equal to the log's is not written",
             "§11 Write-back",
-            json!({"op": "write_back", "documents": [log_doc], "kept": [], "log": [log_doc], "now": 3000}),
+            json!({"op": "write_back_v4", "documents": [log_doc], "kept": [], "log": [log_doc], "now": 3000}),
             Expect::Ok(json!({"writes": [], "dropped": [], "discarded": 0})),
         ),
         case(
             "a held document is merged with the log's and written",
             "§11 Write-back",
-            json!({"op": "write_back", "documents": [held_doc, rec], "kept": [], "log": [log_doc], "now": 3000}),
+            json!({"op": "write_back_v4", "documents": [held_doc, rec], "kept": [], "log": [log_doc], "now": 3000}),
             Expect::Ok(
                 json!({"writes": [{"name": "title:movie:550", "document": merged}], "dropped": [], "discarded": 1}),
             ),
@@ -1514,7 +1514,7 @@ fn write_back_cases() -> Vec<Case> {
         case(
             "kept ops are re-applied on the new log",
             "§11 Write-back",
-            json!({"op": "write_back", "documents": [], "kept": [{"target": movie(), "write": {"kind": "title", "fields": {"reaction": "like"}, "at": st(2500)}}], "log": [log_doc], "now": 3000}),
+            json!({"op": "write_back_v4", "documents": [], "kept": [{"target": movie(), "write": {"kind": "title", "fields": {"reaction": "like"}, "at": st(2500)}}], "log": [log_doc], "now": 3000}),
             Expect::Ok(
                 json!({"writes": [{"name": "title:movie:550", "document": with(log_doc.clone(), json!({"reaction": {"value": "like", "at": st(2500)}}))}], "dropped": [], "discarded": 0}),
             ),
@@ -1522,7 +1522,7 @@ fn write_back_cases() -> Vec<Case> {
         case(
             "settled entries merge by settle order",
             "§11 Write-back",
-            json!({"op": "write_back", "documents": [held_dlv], "kept": [], "log": [log_dlv], "now": 3000}),
+            json!({"op": "write_back_v4", "documents": [held_dlv], "kept": [], "log": [log_dlv], "now": 3000}),
             Expect::Ok(
                 json!({"writes": [{"name": "dlv:simkl:4812736:tv:1399:1", "document": held_dlv}], "dropped": [], "discarded": 0}),
             ),
@@ -1530,10 +1530,292 @@ fn write_back_cases() -> Vec<Case> {
         case(
             "a merge over 256 KiB leaves the log's version",
             "§11 Write-back",
-            json!({"op": "write_back", "documents": [big], "kept": [], "log": [log_doc], "now": 3000}),
+            json!({"op": "write_back_v4", "documents": [big], "kept": [], "log": [log_doc], "now": 3000}),
             Expect::Ok(
                 json!({"writes": [], "dropped": [{"name": "title:movie:550", "reason": "too_large"}], "discarded": 0}),
             ),
+        ),
+    ]
+}
+
+/// The cases of den-core#24, the review of the first implementation: each failed on it.
+fn review_cases() -> Vec<Case> {
+    let order = |n: u64| json!([2, n, D]);
+    let progress =
+        |value: f64, t: i64, viewing: u64| json!({"value": value, "at": st(t), "viewing": viewing});
+    let film_watched = title(
+        "movie",
+        550,
+        json!({"status": {"value": "watched", "at": st(1000)}, "resume": progress(1.0, 1000, 0), "watch": {"imported": false, "plays": {"0": 1000}, "cleared": null}}),
+    );
+    // An imported watch, unhidden by a play later than the season reset, replayed to 0.3 in viewing 1.
+    let replayed_import = season(
+        1399,
+        1,
+        json!({"seasonReset": st(2000), "episodes": {"1": {"progress": progress(0.3, 4000, 1), "imported": true, "plays": {(3000 - IMPORT).to_string(): 3000}, "cleared": null}}}),
+    );
+    let hidden_import = season(
+        1399,
+        1,
+        json!({"seasonReset": st(2000), "episodes": {"1": {"imported": true, "plays": {(1000 - IMPORT).to_string(): 1000}, "cleared": null}}}),
+    );
+    let remarked_film = title(
+        "movie",
+        550,
+        json!({"status": {"value": "watched", "at": st(3000)}, "resume": progress(1.0, 3000, 1), "watch": {"plays": {"0": 1000, "1": 3000}, "cleared": [0, st(2000)]}}),
+    );
+    let newer_title = with(
+        title("movie", 550, json!({"status": "watched"})),
+        json!({"format": 5}),
+    );
+    let other_film = title(
+        "movie",
+        551,
+        json!({"status": {"value": "watched", "at": st(1000)}, "resume": progress(1.0, 1000, 0), "watch": {"plays": {"0": 1000}, "cleared": null}}),
+    );
+    let remarked_episode = register(
+        json!({"progress": progress(1.0, 3000, 1), "plays": {"0": 1000, "1": 3000}, "cleared": [0, st(2000)]}),
+    );
+    let nine_plays: Map<String, Value> = (0..9).map(|k| (k.to_string(), json!(1000 + k))).collect();
+    let eight_plays: Map<String, Value> = [0, 2, 3, 4, 5, 6, 7, 8]
+        .iter()
+        .map(|k| (k.to_string(), json!(1000 + k)))
+        .collect();
+    vec![
+        case(
+            "a timeless rating is not pending against a receipt with its own value stamp",
+            "v3 §6 Timeless values",
+            pending(
+                json!([
+                    title("movie", 550, json!({"reaction": {"value": "like", "at": [0, 5, ""]}})),
+                    dlv("movie", 550, None, json!({"rating": ["love", [0, 5, ""], order(1), 9], "list": ["out", [0, 0, ""], order(2)]}))
+                ]),
+                simkl(500),
+                3000,
+            ),
+            Expect::Subset(json!({"commands": [], "settle": []})),
+        ),
+        case(
+            "an in-progress replay of an unhidden imported watch sends no un-watch against its receipt",
+            "v3 §6 Targets and values",
+            pending(
+                json!([
+                    replayed_import,
+                    dlv("tv", 1399, Some(1), json!({"1": ["w", 0, 3000, [0, 0, ""], order(1)]}))
+                ]),
+                simkl(500),
+                5000,
+            ),
+            Expect::Subset(json!({"commands": [], "settle": []})),
+        ),
+        case(
+            "an in-progress replay of an unhidden imported watch sends no un-watch with no receipt",
+            "v3 §6 Targets and values",
+            pending(json!([replayed_import]), simkl(500), 5000),
+            Expect::Subset(json!({"commands": []})),
+        ),
+        case(
+            "an imported watch a reset hides is an un-watch",
+            "v3 §6 Targets and values",
+            pending(json!([hidden_import]), simkl(500), 5000),
+            Expect::Subset(
+                json!({"commands": [{"kind": "unwatched", "key": "1", "at": 2000, "p": 0}]}),
+            ),
+        ),
+        case(
+            "a replayed title write older than the stored field writes nothing",
+            "§2 Idempotence",
+            write(
+                json!({"kind": "title", "fields": {"status": "watchlist"}, "at": st(1000)}),
+                movie(),
+                title("movie", 550, json!({"status": {"value": "watched", "at": st(2000)}})),
+                json!([]),
+            ),
+            docs(json!([])),
+        ),
+        case(
+            "a title write sets only the fields it is later than",
+            "§2 Idempotence",
+            write(
+                json!({"kind": "title", "fields": {"status": "watchlist", "reaction": "like"}, "at": st(1500)}),
+                movie(),
+                title("movie", 550, json!({"status": {"value": "watched", "at": st(2000)}})),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({"status": {"value": "watched", "at": st(2000)}, "reaction": {"value": "like", "at": st(1500)}})
+            )])),
+        ),
+        case(
+            "a kept title write older than the log's field writes nothing back",
+            "§11 Write-back",
+            json!({"op": "write_back_v4", "documents": [], "kept": [{"target": movie(), "write": {"kind": "title", "fields": {"status": "watchlist"}, "at": st(1000)}}], "log": [title("movie", 550, json!({"status": {"value": "watched", "at": st(2000)}}))], "now": 3000}),
+            Expect::Ok(json!({"writes": [], "dropped": [], "discarded": 0})),
+        ),
+        case(
+            "a kept write to a newer-format document is held, never written",
+            "§4 Newer rows",
+            json!({"op": "write_back_v4", "documents": [], "kept": [{"target": movie(), "write": {"kind": "title", "fields": {"reaction": "love"}, "at": st(2500)}}], "log": [with(title("movie", 550, json!({"status": {"value": "watched", "at": st(1000)}})), json!({"format": 5}))], "now": 3000}),
+            Expect::Ok(
+                json!({"writes": [], "dropped": [{"kept": 0, "name": "title:movie:550", "reason": "newer_format"}], "discarded": 0}),
+            ),
+        ),
+        case(
+            "one kept write that cannot apply is dropped and the rest written back",
+            "§11 Write-back",
+            json!({"op": "write_back_v4", "documents": [], "kept": [{"target": movie(), "write": {"kind": "nonsense", "at": st(2500)}}, {"target": movie(), "write": {"kind": "title", "fields": {"reaction": "like"}, "at": st(2500)}}], "log": [], "now": 3000}),
+            Expect::Ok(
+                json!({"writes": [{"name": "title:movie:550", "document": title("movie", 550, json!({"reaction": {"value": "like", "at": st(2500)}}))}], "dropped": [{"kept": 0, "name": "title:movie:550", "reason": "invalid_write"}], "discarded": 0}),
+            ),
+        ),
+        case(
+            "playing a watched film starts one new viewing, in progress",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0.3, "at": st(2000)}),
+                movie(),
+                film_watched.clone(),
+                json!([]),
+            ),
+            docs(json!([with(
+                film_watched.clone(),
+                json!({"status": {"value": "inProgress", "at": st(2000)}, "resume": progress(0.3, 2000, 1)})
+            )])),
+        ),
+        case(
+            "the next tick stays in that viewing",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0.4, "at": st(3000)}),
+                movie(),
+                with(
+                    film_watched.clone(),
+                    json!({"status": {"value": "inProgress", "at": st(2000)}, "resume": progress(0.3, 2000, 1)}),
+                ),
+                json!([]),
+            ),
+            docs(json!([with(
+                film_watched.clone(),
+                json!({"status": {"value": "inProgress", "at": st(2000)}, "resume": progress(0.4, 3000, 1)})
+            )])),
+        ),
+        case(
+            "a film's status is decided by the op, never sent with progress",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0.3, "at": st(2000), "status": "inProgress"}),
+                movie(),
+                Value::Null,
+                json!([]),
+            ),
+            Expect::Error("invalid_write:status"),
+        ),
+        case(
+            "a reshaped format 5 title holds its own targets and no other",
+            "§4 Newer rows",
+            pending(json!([newer_title, other_film]), simkl(500), 3000),
+            Expect::Subset(json!({
+                "commands": [{"kind": "watched", "document": "dlv:simkl:4812736:movie:551"}],
+                "held": [{"document": "dlv:simkl:4812736:movie:550", "key": "list", "reason": "newer_format"}, {"document": "dlv:simkl:4812736:movie:550", "key": "rating", "reason": "newer_format"}, {"document": "dlv:simkl:4812736:movie:550", "key": "watch", "reason": "newer_format"}]
+            })),
+        ),
+        case(
+            "a film re-marked after a delivered un-watch sends the un-watch first",
+            "v3 §6 Un-watch then re-mark",
+            pending(
+                json!([
+                    remarked_film,
+                    dlv("movie", 550, None, json!({"watch": ["w", 0, 1000, st(1000), order(1)], "list": ["out", st(3000), order(2)], "rating": [null, [0, 0, ""], order(3)]}))
+                ]),
+                simkl(500),
+                4000,
+            ),
+            Expect::Subset(
+                json!({"commands": [{"kind": "unwatched", "key": "watch", "at": 2000, "p": 1, "step": "unwatch_then_remark"}]}),
+            ),
+        ),
+        case(
+            "a list removal with no receipt settles silently",
+            "v3 §6 command table",
+            pending(
+                json!([title("movie", 550, json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000)}}))]),
+                simkl(500),
+                4000,
+            ),
+            Expect::Ok(json!({"commands": [], "settle": [
+                {"document": "dlv:simkl:4812736:movie:550", "key": "list", "built_from": {"key": "list", "kind": "list", "value": "gone", "stamp": st(3000)}}
+            ], "held": [], "removals": null, "greatest_epoch": 0})),
+        ),
+        case(
+            "episode imports skip a deleted series",
+            "v3 §7 Title imports",
+            write(
+                json!({"kind": "import_episodes", "items": [{"season": 1, "episode": 1, "plays": [1_700_000_000_000i64]}]}),
+                tv(),
+                title("tv", 1399, json!({"deleted": {"value": true, "at": st(1)}})),
+                json!([]),
+            ),
+            docs(json!([])),
+        ),
+        case(
+            "a replayed un-watch after a re-mark writes nothing",
+            "§2 Idempotence",
+            write(
+                json!({"kind": "unwatch", "episodes": [[1, 1]], "at": st(2000)}),
+                tv(),
+                Value::Null,
+                one(json!({"1": remarked_episode})),
+            ),
+            docs(json!([])),
+        ),
+        case(
+            "un-watching an in-progress episode clears its resume point",
+            "v3 §7 Un-watch",
+            write(
+                json!({"kind": "unwatch", "episodes": [[1, 1]], "at": st(2000)}),
+                tv(),
+                Value::Null,
+                one(json!({"1": register(json!({"progress": progress(0.5, 1000, 0)}))})),
+            ),
+            docs(json!([season(
+                1399,
+                1,
+                json!({"seasonReset": null, "episodes": {"1": register(json!({"progress": progress(0.0, 2000, 1), "cleared": [0, st(2000)]}))}})
+            )])),
+        ),
+        case(
+            "un-watching an episode with nothing to clear writes nothing",
+            "v3 §7 Un-watch",
+            write(
+                json!({"kind": "unwatch", "episodes": [[1, 5]], "at": st(2000)}),
+                tv(),
+                Value::Null,
+                json!([]),
+            ),
+            docs(json!([])),
+        ),
+        case(
+            "decode keeps the 8-kept selection of plays, so every decoded document merges with itself unchanged",
+            "§6",
+            decode(compressed(&title(
+                "movie",
+                550,
+                json!({"watch": {"plays": nine_plays, "cleared": null}}),
+            ))),
+            Expect::Ok(json!({
+                "status": "document",
+                "name": "title:movie:550",
+                "document": title("movie", 550, json!({"watch": {"plays": eight_plays, "cleared": null}})),
+                "dropped": [{"part": "watch.plays", "reason": "selection"}]
+            })),
+        ),
+        case(
+            "a format 5 document reads with its reason",
+            "§4 Newer rows",
+            decode(compressed(&with(film(), json!({"format": 5})))),
+            Expect::Subset(json!({"status": "newer", "reason": "format"})),
         ),
     ]
 }
@@ -1546,6 +1828,7 @@ fn cases() -> Vec<Case> {
         write_cases(),
         delivery_cases(),
         write_back_cases(),
+        review_cases(),
     ]
     .into_iter()
     .flatten()
@@ -1773,7 +2056,11 @@ fn switches() -> Vec<Switch> {
     let rec_tv = late_rec.remove(1);
     late_rec.push(rec_tv);
     let seeded_null = json!({"pass": true});
+    // A register v3 cannot derive (a malformed play key), which v4_form reads with that `plays` dropped.
+    let mut malformed = log.clone();
+    malformed[3]["entries"]["2"]["plays"] = json!({"0": 3100, "x": 5});
     vec![
+        Switch { name: "a register v3 cannot derive is compared with its malformed member dropped on both sides", rows: rows(&malformed), tamper: None, form: Expect::Subset(json!({"rows": 10})), dry_run: Some(json!({"pass": true, "counts": {"malformed_reference": 1}})) },
         Switch { name: "a v3 corpus converts and passes the dry run", rows: rows(&log), tamper: None, form: Expect::Subset(json!({
             "keep": ["k07", "k08", "k11"],
             "counts": {"events_folded": 1, "film_wat_keys": 1, "invalid_keys": 3, "row_unknown_fields": 2},
@@ -1838,6 +2125,103 @@ fn library_v4_cases() {
     for case in cases() {
         check(&case);
     }
+}
+
+/// Runs every review case and names each one that fails, rather than stopping at the first.
+#[test]
+fn review_cases_hold() {
+    let failed: Vec<&str> = review_cases()
+        .iter()
+        .filter(|case| std::panic::catch_unwind(|| check(case)).is_err())
+        .map(|case| case.name)
+        .collect();
+    assert!(failed.is_empty(), "failing: {failed:#?}");
+}
+
+/// The v3 names keep exactly v3's shape: a v4 request sent to one is refused, never read as the other version.
+#[test]
+fn v3_op_names_keep_the_v3_shape() {
+    let refused = [
+        json!({"op": "episode_state", "season": season(1399, 1, json!({})), "episode": "1", "now": 1}),
+        json!({"op": "film_state", "title": film(), "now": 1}),
+        json!({"op": "pending_targets", "documents": [], "deliver": simkl(1), "now": 1}),
+        json!({"op": "write_back", "documents": [], "kept": [], "log": [], "now": 1}),
+    ];
+    for request in refused {
+        assert_eq!(call(&request)["error"], "invalid_request", "{request}");
+    }
+    // `settle_v4` with no `entry` (an encoder that omits a nil optional) is still v4, read as "no entry".
+    let built = json!({"key": "1", "kind": "episode", "value": "watched", "stamp": st(3000), "p": 1, "watched_at": 3000});
+    let v4 = ok(
+        &json!({"op": "settle_v4", "outcome": {"action": "send"}, "built_from": built, "order": [2, 9, D]}),
+    );
+    assert_eq!(v4, json!(["w", 1, 3000, st(3000), [2, 9, D]]));
+}
+
+/// Blocker 5 of den-core#24: progress on a watched film, with no status from the client, moved to a new viewing on
+/// every tick and turned each pass into a rewatch.
+#[test]
+fn film_playback_ticks_stay_in_one_viewing() {
+    let mut film = title(
+        "movie",
+        550,
+        json!({"status": {"value": "watched", "at": st(1000)}, "resume": {"value": 1, "at": st(1000), "viewing": 0}, "watch": {"plays": {"0": 1000}, "cleared": null}}),
+    );
+    for (value, t) in [(0.3, 2000), (0.4, 3000), (0.5, 4000)] {
+        let out = ok(
+            &json!({"op": "apply_write", "write": {"kind": "progress", "value": value, "at": st(t)}, "target": movie(), "title": film, "now": 10_000}),
+        );
+        film = out["documents"][0].clone();
+    }
+    assert_eq!(film["resume"]["viewing"], 1, "{film}");
+    assert_eq!(film["status"]["value"], "inProgress", "{film}");
+    let receipt = dlv(
+        "movie",
+        550,
+        None,
+        json!({"watch": ["w", 0, 1000, st(1000), [2, 1, D]], "list": ["out", st(1000), [2, 2, D]], "rating": [null, [0, 0, ""], [2, 3, D]]}),
+    );
+    let pass = ok(&pending(json!([film, receipt]), simkl(500), 10_000));
+    assert_eq!(pass["commands"], json!([]), "{pass}");
+}
+
+/// serde_json parses about one shortest-form double in ten 1 ULP off without `float_roundtrip`, so a progress
+/// fraction moved between the client's document and den-core's.
+#[test]
+fn progress_fractions_round_trip_exactly() {
+    let mut state = 0x5eed_u64;
+    let mut checked = 0;
+    while checked < 20_000 {
+        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        let x = ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64;
+        if !(0.1..0.95).contains(&x) {
+            continue;
+        }
+        let text = format!("{x}");
+        let doc = format!(
+            r#"{{"format":4,"kind":"title","title":{{"type":"movie","id":550}},"resume":{{"value":{text},"at":[1000,0,"{D}"],"viewing":0}}}}"#
+        );
+        let merged = evaluate(&format!(r#"{{"op":"doc_merge","a":{doc},"b":{doc}}}"#));
+        assert!(
+            merged.contains(&format!(r#""value":{text}"#)),
+            "{text} → {merged}"
+        );
+        let written = evaluate(&format!(
+            r#"{{"op":"apply_write","write":{{"kind":"progress","value":{text},"at":[2000,0,"{D}"]}},"target":{{"type":"movie","id":550}},"now":3000}}"#
+        ));
+        assert!(
+            written.contains(&format!(r#""value":{text}"#)),
+            "{text} → {written}"
+        );
+        checked += 1;
+    }
+    let known = evaluate(
+        r#"{"op":"doc_merge","a":{"format":4,"kind":"title","title":{"type":"movie","id":550},"resume":{"value":0.9856906946328695,"at":[1,0,""],"viewing":0}},"b":{"format":4,"kind":"title","title":{"type":"movie","id":550}}}"#,
+    );
+    assert!(known.contains("0.9856906946328695"), "{known}");
 }
 
 #[test]
@@ -1969,17 +2353,17 @@ fn malformed_input_is_an_error_not_a_panic() {
         json!({"op": "doc_name", "document": "J"}),
         json!({"op": "doc_merge", "a": "J", "b": "J"}),
         json!({"op": "title_state", "title": "J", "now": 1}),
-        json!({"op": "episode_state", "title": "J", "season": "J", "episode": "1", "now": 1}),
-        json!({"op": "film_state", "title": "J", "now": 1}),
+        json!({"op": "episode_state_v4", "title": "J", "season": "J", "episode": "1", "now": 1}),
+        json!({"op": "film_state_v4", "title": "J", "now": 1}),
         json!({"op": "apply_write", "write": "J", "target": "J", "title": "J", "seasons": ["J"], "now": 1}),
         json!({"op": "apply_write", "write": {"kind": "mark_watched", "episodes": [[1, 1]], "at": st(5)}, "target": tv(), "seasons": ["J"], "now": 1}),
-        json!({"op": "pending_targets", "documents": ["J"], "deliver": "J", "now": 1}),
-        json!({"op": "pending_targets", "documents": ["J"], "deliver": simkl(1), "now": 1}),
-        json!({"op": "settle", "outcome": "J", "built_from": "J", "order": "J", "entry": "J"}),
+        json!({"op": "pending_targets_v4", "documents": ["J"], "deliver": "J", "now": 1}),
+        json!({"op": "pending_targets_v4", "documents": ["J"], "deliver": simkl(1), "now": 1}),
+        json!({"op": "settle_v4", "outcome": "J", "built_from": "J", "order": "J", "entry": "J"}),
         json!({"op": "delivery_write", "document": "J", "identity": "J", "commands": ["J"]}),
         json!({"op": "v4_form", "rows": [{"k": "a", "seq": 1, "row": "J"}], "base": 1, "performer": D, "now": 1}),
         json!({"op": "v4_dry_run", "rows": [{"row": "J"}], "form": "J", "now": 1}),
-        json!({"op": "write_back", "documents": ["J"], "kept": ["J"], "log": ["J"], "now": 1}),
+        json!({"op": "write_back_v4", "documents": ["J"], "kept": ["J"], "log": ["J"], "now": 1}),
     ];
     /// `shape` with every `"J"` replaced by `value`.
     fn fill(shape: &Value, value: &Value) -> Value {

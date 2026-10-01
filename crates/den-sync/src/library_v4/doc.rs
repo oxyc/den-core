@@ -365,7 +365,7 @@ pub fn dropped(part: String, reason: &str) -> Value {
     serde_json::json!({"part": part, "reason": reason})
 }
 
-fn sanitize_register(register: &mut Map<String, Value>, at: &str, out: &mut Vec<Value>) {
+pub fn sanitize_register(register: &mut Map<String, Value>, at: &str, out: &mut Vec<Value>) {
     register.retain(|member, value| {
         let ok = register_member_ok(member, value);
         if !ok {
@@ -373,6 +373,18 @@ fn sanitize_register(register: &mut Map<String, Value>, at: &str, out: &mut Vec<
         }
         ok
     });
+    // Read with the 8-kept selection every writer and merge applies (v3 §3), so the merge laws hold over every
+    // document a reader returns, not only over well-behaved writers'.
+    if let Some(Value::Object(plays)) = register.get_mut("plays") {
+        if plays.len() > 8 {
+            let mut all: Vec<(i64, u64)> = plays
+                .iter()
+                .filter_map(|(key, at)| Some((play_key(key)?, safe_u64(at)?)))
+                .collect();
+            *plays = super::merge::select(&mut all);
+            out.push(dropped(format!("{at}.plays"), "selection"));
+        }
+    }
 }
 
 /// §4 *Malformed parts*: drop every malformed known part, keep the rest and every unknown member.

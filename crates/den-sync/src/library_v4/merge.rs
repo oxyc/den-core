@@ -23,7 +23,7 @@ fn at(value: &Value) -> Stamp {
 }
 
 /// `status`, `reaction`, `deleted`, `dismissed`: the later stamp.
-fn later(a: &Value, b: &Value) -> Value {
+pub fn later(a: &Value, b: &Value) -> Value {
     pick(a, b, at(a).cmp(&at(b)))
 }
 
