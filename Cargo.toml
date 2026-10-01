@@ -12,6 +12,8 @@ publish = false
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# Library v4 §4 pins the compressor: den-core compresses at level 9 with exactly the version in Cargo.lock.
+miniz_oxide = "=0.9.1"
 den-sync = { path = "crates/den-sync" }
 den-store = { path = "crates/den-store" }
 

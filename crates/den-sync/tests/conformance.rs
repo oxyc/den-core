@@ -27,6 +27,7 @@ fn shared_binding_contract() {
     for fixture in [
         include_str!("fixtures/policy-v1.json"),
         include_str!("fixtures/policy-v3.json"),
+        include_str!("fixtures/policy-v4.json"),
     ] {
         let fixture: Value = serde_json::from_str(fixture).unwrap();
         for case in fixture["cases"].as_array().unwrap() {

@@ -31,7 +31,10 @@ jobs:
       - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: wasm-bindgen@0.2.128
+      # Its `cargo test -p den-sync` replays den-spec's library-v4 vectors, so it needs den-spec too.
       - run: bash scripts/build-bindings.sh
+        env:
+          DEN_SPEC_DIR: ${{ github.workspace }}/den-spec-checkout
       # The whole workspace, not just den-sync: `default-members` is den-sync alone, so a bare
       # `cargo test` silently skipped den-store entirely.
       - run: cargo test --locked --workspace
