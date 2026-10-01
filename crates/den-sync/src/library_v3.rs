@@ -502,7 +502,9 @@ pub fn v2_reading(rows: &[Value], now: i64) -> Result<Value, String> {
         };
         let row_name = name(candidate).unwrap_or_else(|_| format!("unknown:{}", folded.len()));
         let merged = match folded.get(&row_name) {
-            Some(old) => merge(old, candidate)?,
+            Some(old) => {
+                merge(old, candidate).map_err(|error| format!("v2_reading:{row_name}:{error}"))?
+            }
             None => candidate.clone(),
         };
         folded.insert(row_name, merged);
@@ -522,7 +524,7 @@ pub fn v3_form_with_context(
     now: i64,
     context: Option<&Value>,
 ) -> Result<Value, String> {
-    let reading = v2_reading(rows, now)?;
+    let reading = v2_reading(rows, now).map_err(|error| format!("v3_form:reading:{error}"))?;
     let mut output: Map<String, Value> = Map::new();
     let mut claims: std::collections::BTreeMap<String, Vec<Value>> = Default::default();
     for row in rows {
@@ -531,9 +533,11 @@ pub fn v3_form_with_context(
         } else {
             row
         };
-        if candidate["kind"] == json!("ep") {
+        // Shipped Simkl data can contain episode-shaped rows for anime films. v2 clients ignore
+        // them, so preserve them as unknown state rather than deriving a TV watch or losing them.
+        if candidate["kind"] == json!("ep") && candidate["title"]["type"] == json!("tv") {
             claims
-                .entry(name(candidate)?)
+                .entry(name(candidate).map_err(|error| format!("v3_form:claim:{error}"))?)
                 .or_default()
                 .push(candidate.clone());
         }
@@ -541,17 +545,20 @@ pub fn v3_form_with_context(
     let read_rows = reading["rows"].as_object().ok_or("invalid_reading")?;
     for row in read_rows.values() {
         match row["kind"].as_str() {
-            Some("ep") => {
+            Some("ep") if row["title"]["type"] == json!("tv") => {
+                let logical_name =
+                    name(row).map_err(|error| format!("v3_form:episode_name:{error}"))?;
                 let season = safe_u64(&row["season"])?;
                 let episode = safe_u64(&row["episode"])?;
                 let block = episode / 32;
                 let watch_name =
                     format!("wat:tv:{}:{season}:{block}", safe_u64(&row["title"]["id"])?);
-                let row_claims = claims.get(&name(row)?).ok_or("missing_claims")?;
+                let row_claims = claims.get(&logical_name).ok_or("missing_claims")?;
                 let merged = row_claims
                     .iter()
                     .skip(1)
-                    .try_fold(row_claims[0].clone(), |old, next| merge(&old, next))?;
+                    .try_fold(row_claims[0].clone(), |old, next| merge(&old, next))
+                    .map_err(|error| format!("v3_form:{logical_name}:{error}"))?;
                 let progress_at = stamp(&merged["progress"]["at"])?;
                 let value = merged["progress"]["value"]
                     .as_f64()
@@ -597,13 +604,17 @@ pub fn v3_form_with_context(
                 output.insert(
                     watch_name.clone(),
                     match output.get(&watch_name) {
-                        Some(old) => merge(old, &wat)?,
+                        Some(old) => merge(old, &wat)
+                            .map_err(|error| format!("v3_form:{watch_name}:{error}"))?,
                         None => wat,
                     },
                 );
             }
             Some("rec") => {
-                output.insert(name(row)?, row.clone());
+                output.insert(
+                    name(row).map_err(|error| format!("v3_form:title_name:{error}"))?,
+                    row.clone(),
+                );
                 if row["title"]["type"] == json!("movie") {
                     let id = safe_u64(&row["title"]["id"])?;
                     let status = row["status"]["value"].as_str().ok_or("invalid_status")?;
@@ -632,7 +643,13 @@ pub fn v3_form_with_context(
                 }
             }
             Some("set" | "wat" | "snt") => {
-                output.insert(name(row)?, row.clone());
+                output.insert(
+                    name(row).map_err(|error| format!("v3_form:preserved_name:{error}"))?,
+                    row.clone(),
+                );
+            }
+            Some("ep") => {
+                output.insert(format!("unknown:{}", output.len()), row.clone());
             }
             _ => {
                 output.insert(format!("unknown:{}", output.len()), row.clone());
@@ -640,7 +657,8 @@ pub fn v3_form_with_context(
         }
     }
     if let Some(context) = context {
-        seed_switch_rows(&mut output, context, now)?;
+        seed_switch_rows(&mut output, context, now)
+            .map_err(|error| format!("v3_form:seed:{error}"))?;
     }
     Ok(Value::Array(output.into_values().collect()))
 }

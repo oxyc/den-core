@@ -12,6 +12,10 @@ mod wire;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+// `v3_form` and `write_back` receive a whole library. Keep the boundary bounded, but large enough
+// for den-edge's 32 MiB stored-library limit plus JSON field names and request framing.
+const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
 pub use episodes::episode_mark;
 pub use events::commands;
@@ -190,7 +194,7 @@ fn yes() -> bool {
 /// Versioned, non-throwing FFI boundary. An error is never an empty snapshot or an acknowledgement.
 pub fn evaluate(input: &str) -> String {
     fn run(input: &str) -> Result<Value, String> {
-        if input.len() > 1024 * 1024 {
+        if input.len() > MAX_REQUEST_BYTES {
             return Err("request_too_large".into());
         }
         let request: Request = serde_json::from_str(input).map_err(|_| "invalid_request")?;
@@ -332,5 +336,25 @@ pub fn evaluate(input: &str) -> String {
     match run(input) {
         Ok(value) => json!({ "version": 1, "ok": value }).to_string(),
         Err(error) => json!({ "version": 1, "error": error }).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::evaluate;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn whole_library_operations_are_not_limited_to_one_megabyte() {
+        // serde ignores the framing field, just as the boundary ignores future request fields. This
+        // pins the transport limit without making the policy test construct thousands of real rows.
+        let request = json!({
+            "op": "v3_form",
+            "rows": [],
+            "now": 0,
+            "framing": "x".repeat(2 * 1024 * 1024),
+        });
+        let response: Value = serde_json::from_str(&evaluate(&request.to_string())).unwrap();
+        assert!(response.get("ok").is_some(), "{response}");
     }
 }

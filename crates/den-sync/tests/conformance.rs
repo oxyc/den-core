@@ -168,6 +168,18 @@ fn v3_fold_and_write_back_never_emit_v2_episode_or_event() {
 }
 
 #[test]
+fn v3_form_preserves_shipped_film_episode_rows_without_deriving_a_watch() {
+    let ep = json!({"kind":"ep","schema":2,"title":{"type":"movie","id":129},"season":1,"episode":1,"progress":{"value":1.0,"viewing":0,"at":[5000,0,"aaaaaaaaaaaaaaaa"]}});
+    let form = request(json!({"op":"v3_form","rows":[ep],"now":5000}))["ok"].clone();
+    assert_eq!(form, json!([ep]));
+    assert!(form
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| row["kind"] != json!("wat")));
+}
+
+#[test]
 fn v3_switch_moves_simkl_credentials_and_seeds_delivery() {
     let keys = json!({"kind":"set","schema":2,"name":"keys","values":{"simkl":{"value":{"string":"secret-token"},"at":[1000,0,"aaaaaaaaaaaaaaaa"]}}});
     let form = request(json!({
