@@ -891,7 +891,8 @@ pub fn v4_dry_run(rows: &[Value], form: &Value, now: i64) -> Result<Value, Strin
         }
         let (targets, receipts) = v3_targets(&reference, &provider, &account, now)?;
         let v3 = library_v3::pending_targets(&targets, &receipts, &since, now)?;
-        let deliver = json!({"provider": provider, "account": account, "since": since});
+        let deliver =
+            json!({"provider": provider, "account": account, "since": since, "removals_sent": []});
         let v4 = delivery::pending_targets(&documents, &deliver, now)?;
         let prefix = format!("dlv:{provider}:{account}:");
         let mut v3_set: BTreeMap<String, Value> = BTreeMap::new();

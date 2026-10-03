@@ -535,7 +535,7 @@ fn malformed_cases() -> Vec<Case> {
         case(
             "its target is decided as having no receipt, and delivery is not paused",
             "§4 Malformed parts",
-            json!({"op": "pending_targets_v4", "documents": [read, kept], "deliver": {"provider": "simkl", "account": "4812736", "since": st(500)}, "now": 2000}),
+            json!({"op": "pending_targets_v4", "documents": [read, kept], "deliver": {"provider": "simkl", "account": "4812736", "since": st(500), "removals_sent": []}, "now": 2000}),
             Expect::Subset(
                 json!({"commands": [{"kind": "watched", "key": "1", "baseline": false}], "held": []}),
             ),
@@ -1228,8 +1228,18 @@ fn write_cases() -> Vec<Case> {
     ]
 }
 
+/// A `set:deliver:simkl:42` row holding `values`.
+fn deliver_row(values: Value) -> Value {
+    json!({"kind": "set", "schema": 2, "name": "deliver:simkl:42", "values": values})
+}
+
+/// A `since` setting: the stamp at `t`, written at `at`.
+fn since_value(t: i64, at: i64) -> Value {
+    json!({"value": {"string": st(t).to_string()}, "at": st(at)})
+}
+
 fn simkl(since: i64) -> Value {
-    json!({"provider": "simkl", "account": "4812736", "since": st(since)})
+    json!({"provider": "simkl", "account": "4812736", "since": st(since), "removals_sent": []})
 }
 
 fn pending(documents: Value, deliver: Value, now: i64) -> Value {
@@ -1295,7 +1305,7 @@ fn delivery_cases() -> Vec<Case> {
             {"document": "dlv:simkl:4812736:movie:550", "key": "list", "built_from": {"key": "list", "kind": "list", "value": "out", "stamp": st(1000)}},
             {"document": "dlv:simkl:4812736:movie:550", "key": "rating", "built_from": {"key": "rating", "kind": "rating", "value": null, "stamp": [0, 0, ""]}},
             {"document": "dlv:simkl:4812736:movie:550", "key": "watch", "built_from": {"key": "watch", "kind": "film", "value": "unwatched", "stamp": st(1000), "p": 1}}
-        ], "held": [], "removals": null, "greatest_epoch": 0})),
+        ], "held": [], "removals": null, "approval": null, "greatest_epoch": 0, "unverified": []})),
         ),
         case(
             "no receipt: an unwatched value after since is sent",
@@ -1361,7 +1371,7 @@ fn delivery_cases() -> Vec<Case> {
             "v3 §6 removals",
             pending(Value::Array(many), simkl(500), 4000),
             Expect::Subset(
-                json!({"removals": "held", "commands": vec![json!({"kind": "list", "added": false, "removals_held": true}); 21]}),
+                json!({"removals": {"held": st(3000)}, "approval": st(3000), "commands": vec![json!({"kind": "list", "added": false, "removals_held": true}); 21]}),
             ),
         ),
         case(
@@ -1383,6 +1393,111 @@ fn delivery_cases() -> Vec<Case> {
             Expect::Subset(
                 json!({"commands": [{"kind": "watched", "key": "watch", "unverified": true, "baseline": true}]}),
             ),
+        ),
+        case(
+            "an epoch two devices settled under becomes unverified, and a listed epoch no receipt holds is dropped",
+            "v3 §6 Unverified receipts",
+            pending(
+                json!([
+                    title("movie", 550, json!({"status": {"value": "watchlist", "at": st(1000)}})),
+                    title("movie", 551, json!({"status": {"value": "watchlist", "at": st(1000)}})),
+                    dlv("movie", 550, None, json!({"list": ["in", st(1000), [3, 1, "aaaaaaaaaaaaaaaa"]]})),
+                    dlv("movie", 551, None, json!({"list": ["in", st(1000), [3, 1, "bbbbbbbbbbbbbbbb"]]}))
+                ]),
+                with(simkl(500), json!({"unverified": [5]})),
+                4000,
+            ),
+            Expect::Subset(json!({
+                "unverified": [3],
+                "commands": [
+                    {"kind": "list", "added": true, "document": "dlv:simkl:4812736:movie:550", "unverified": true},
+                    {"kind": "list", "added": true, "document": "dlv:simkl:4812736:movie:551", "unverified": true}
+                ]
+            })),
+        ),
+        // §9 Account settings: each `set:deliver` merge, and a malformed version ranked below every well-formed one.
+        // `since` a (1000, at 5), b (malformed, at 6), c (2000, at 7): (a⊔b)⊔c and a⊔(b⊔c) are both a.
+        case(
+            "set:deliver since: a malformed version ranks below a well-formed one (a⊔b = a)",
+            "§9 Account settings",
+            json!({"op": "merge", "a": deliver_row(json!({"since": since_value(1000, 5)})),
+                "b": deliver_row(json!({"since": {"value": {"string": "nope"}, "at": st(6)}}))}),
+            Expect::Ok(deliver_row(json!({"since": since_value(1000, 5)}))),
+        ),
+        case(
+            "set:deliver since: a malformed version ranks below a well-formed one (b⊔c = c)",
+            "§9 Account settings",
+            json!({"op": "merge", "a": deliver_row(json!({"since": {"value": {"string": "nope"}, "at": st(6)}})),
+                "b": deliver_row(json!({"since": since_value(2000, 7)}))}),
+            Expect::Ok(deliver_row(json!({"since": since_value(2000, 7)}))),
+        ),
+        case(
+            "set:deliver since: the earlier stamp, whatever the later write (a⊔c = a)",
+            "§9 Account settings",
+            json!({"op": "merge", "a": deliver_row(json!({"since": since_value(1000, 5)})),
+                "b": deliver_row(json!({"since": since_value(2000, 7)}))}),
+            Expect::Ok(deliver_row(json!({"since": since_value(1000, 5)}))),
+        ),
+        case(
+            "set:deliver lease: the greater epoch, and at one epoch an empty holder",
+            "§9 Account settings",
+            json!({"op": "merge",
+                "a": deliver_row(json!({"lease": {"value": {"strings": ["aaaaaaaaaaaaaaaa", "5"]}, "at": st(9)}})),
+                "b": deliver_row(json!({"lease": {"value": {"strings": ["", "5"]}, "at": st(7)}}))}),
+            Expect::Ok(deliver_row(json!({"lease": {"value": {"strings": ["", "5"]}, "at": st(7)}}))),
+        ),
+        case(
+            "set:deliver unverified: the union of the epochs",
+            "§9 Account settings",
+            json!({"op": "merge",
+                "a": deliver_row(json!({"unverified": {"value": {"ints": [2]}, "at": st(9)}})),
+                "b": deliver_row(json!({"unverified": {"value": {"ints": [4]}, "at": st(7)}}))}),
+            Expect::Ok(deliver_row(json!({"unverified": {"value": {"ints": [2, 4]}, "at": st(9)}}))),
+        ),
+        case(
+            "set:deliver removals: the later approval and the later hold, each kept",
+            "§9 Account settings",
+            json!({"op": "merge",
+                "a": deliver_row(json!({"removals": {"value": {"string": json!({"approved": st(4000)}).to_string()}, "at": st(4000)}})),
+                "b": deliver_row(json!({"removals": {"value": {"string": json!({"approved": st(1000), "held": st(6000)}).to_string()}, "at": st(9000)}}))}),
+            Expect::Ok(deliver_row(json!({"removals": {"value": {"string": json!({"approved": st(4000), "held": st(6000)}).to_string()}, "at": st(9000)}}))),
+        ),
+        case(
+            "a compaction removes one unreadable row, whatever the library's size",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 1, "rows": 3}),
+            Expect::Ok(json!({"compact": true})),
+        ),
+        case(
+            "a compaction removes a few unreadable rows of a large library",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 10, "rows": 100}),
+            Expect::Ok(json!({"compact": true})),
+        ),
+        case(
+            "a compaction refuses more than ten unreadable rows",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 11, "rows": 100000}),
+            Expect::Ok(json!({"compact": false, "reason": "too_many_rows"})),
+        ),
+        case(
+            "a compaction refuses unreadable rows past a tenth of the log",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 2, "rows": 19}),
+            Expect::Ok(json!({"compact": false, "reason": "too_large_a_share"})),
+        ),
+        case(
+            "receipts at one epoch from one device stay verified",
+            "v3 §6 Unverified receipts",
+            pending(
+                json!([
+                    title("movie", 550, json!({"status": {"value": "watchlist", "at": st(1000)}})),
+                    dlv("movie", 550, None, json!({"list": ["in", st(1000), [3, 1, D]], "rating": [null, [0, 0, ""], [3, 2, D]]}))
+                ]),
+                simkl(500),
+                4000,
+            ),
+            Expect::Subset(json!({"unverified": [], "commands": []})),
         ),
         case(
             "a re-mark after a delivered un-watch sends the un-watch first",
@@ -1746,7 +1861,25 @@ fn review_cases() -> Vec<Case> {
             ),
             Expect::Ok(json!({"commands": [], "settle": [
                 {"document": "dlv:simkl:4812736:movie:550", "key": "list", "built_from": {"key": "list", "kind": "list", "value": "gone", "stamp": st(3000)}}
-            ], "held": [], "removals": null, "greatest_epoch": 0})),
+            ], "held": [], "removals": null, "approval": null, "greatest_epoch": 0, "unverified": []})),
+        ),
+        case(
+            "an approval reaches the stored held when the removal that closed the latch was undone",
+            "§9 Approving",
+            pending(
+                json!([
+                    title("movie", 550, json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000)}})),
+                    dlv("movie", 550, None, json!({"list": ["in", st(1000), [2, 1, D]]}))
+                ]),
+                with(simkl(500), json!({"removals": {"held": st(3500)}})),
+                4000,
+            ),
+            Expect::Ok(json!({"commands": [{
+                "added": false, "at": 3000, "baseline": false,
+                "built_from": {"key": "list", "kind": "list", "stamp": st(3000), "value": "gone"},
+                "current": true, "document": "dlv:simkl:4812736:movie:550", "episode": false, "key": "list",
+                "kind": "list", "rating": null, "removals_held": true, "title": "title:movie:550"
+            }], "settle": [], "held": [], "removals": null, "approval": st(3500), "greatest_epoch": 2, "unverified": []})),
         ),
         case(
             "episode imports skip a deleted series",
@@ -2223,6 +2356,191 @@ fn v3_op_names_keep_the_v3_shape() {
         &json!({"op": "settle_v4", "outcome": {"action": "send"}, "built_from": built, "order": [2, 9, D]}),
     );
     assert_eq!(v4, json!(["w", 1, 3000, st(3000), [2, 9, D]]));
+}
+
+/// v3 §6 `removals`: after an approval, a new batch of more than 20 closes the latch again on that batch alone. The
+/// latch is stored beside the approval (`{"approved", "held"}`), so the removals approved earlier still go out.
+#[test]
+fn a_latch_closed_after_an_approval_holds_only_the_later_removals() {
+    let batch = |from: u64, count: u64, at: i64| -> Vec<Value> {
+        (from..from + count)
+            .flat_map(|id| {
+                [
+                    title(
+                        "movie",
+                        id,
+                        json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(at)}}),
+                    ),
+                    dlv("movie", id, None, json!({"list": ["in", st(1000), [2, id, D]]})),
+                ]
+            })
+            .collect()
+    };
+    let answer = |documents: &[Value], deliver: Value| -> Value {
+        call(&json!({"op": "pending_targets_v4", "documents": documents,
+            "deliver": with(simkl(500), deliver), "now": 8000}))["ok"]
+            .clone()
+    };
+    let held_of = |answer: &Value| -> Vec<u64> {
+        let mut ids: Vec<u64> = answer["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["removals_held"] == json!(true))
+            .map(|c| c["title"].as_str().unwrap()[12..].parse().unwrap())
+            .collect();
+        ids.sort();
+        ids
+    };
+    let held_ids = |documents: &[Value], removals: Value| -> Vec<u64> {
+        held_of(&answer(documents, json!({"removals": removals})))
+    };
+    // 21 approved at 4000, then 21 more: those close the latch by count and are held; the approved 21 are not. The
+    // answer closes it at the latest of them, and an approval of what is held would write that same stamp.
+    let mut documents = batch(1, 21, 3000);
+    documents.extend(batch(101, 21, 6000));
+    let closing = answer(&documents, json!({"removals": {"approved": st(4000)}}));
+    assert_eq!(held_of(&closing), (101..122).collect::<Vec<_>>());
+    assert_eq!(closing["removals"], json!({"held": st(6000)}));
+    assert_eq!(closing["approval"], st(6000));
+    // The latch then stored beside the approval stays closed on what is left of the later batch, under 20 of them,
+    // and still holds none of the approved ones.
+    let mut documents = batch(1, 21, 3000);
+    documents.extend(batch(101, 5, 6000));
+    let closed = json!({"approved": st(4000), "held": st(6000)});
+    assert_eq!(held_ids(&documents, closed), (101..106).collect::<Vec<_>>());
+    // Approving what was shown opens it: `approved` reaches `held`, and nothing stamped at or before it counts.
+    let opened = json!({"approved": st(6000), "held": st(6000)});
+    assert!(held_ids(&documents, opened).is_empty());
+    // A value that isn't an object of stamps is a closed latch with no approval: v3's bare "held", or a garbage stamp.
+    let five = (101..106).collect::<Vec<_>>();
+    assert_eq!(held_ids(&batch(101, 5, 6000), json!("held")), five);
+    assert_eq!(held_ids(&batch(101, 5, 6000), json!({"held": "x"})), five);
+}
+
+/// The latch closed at the stamp of its latest removal, and that title was then re-added: the approval of what is
+/// left must still reach the stored `held`, or the same list comes back after every approval.
+#[test]
+fn an_approval_reaches_the_stored_held_when_the_closing_removal_was_undone() {
+    // 25 removals closed it at 3025; the 25th title is back on the watchlist, so 24 are pending.
+    let documents: Vec<Value> = (1..=24u64)
+        .flat_map(|id| {
+            [
+                title(
+                    "movie",
+                    id,
+                    json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000 + id as i64)}}),
+                ),
+                dlv("movie", id, None, json!({"list": ["in", st(1000), [2, id, D]]})),
+            ]
+        })
+        .collect();
+    let answer = |removals: Value| -> Value {
+        call(&json!({"op": "pending_targets_v4", "documents": documents,
+            "deliver": with(simkl(500), json!({"removals": removals})), "now": 8000}))["ok"]
+            .clone()
+    };
+    let closed = answer(json!({"held": st(3025)}));
+    let held = closed["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["removals_held"] == json!(true))
+        .count();
+    assert_eq!(held, 24);
+    assert_eq!(closed["approval"], st(3025));
+    // Approving it opens the latch: none of the 24 is held.
+    let opened = answer(json!({"approved": st(3025), "held": st(3025)}));
+    assert!(opened["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|c| c["removals_held"] != json!(true)));
+    assert_eq!(opened["approval"], Value::Null);
+}
+
+/// An approval covers every removal stamped at or before it, including ones that arrive after it. 21 approved
+/// removals go out; a batch of 300 an offline device stamped earlier, read within 120 s of those sends, is held and
+/// closes the latch past the approval, so the person sees it before it goes.
+#[test]
+fn a_late_batch_stamped_before_the_approval_is_held_once_more_than_20_were_sent() {
+    let documents: Vec<Value> = (1..=300u64)
+        .flat_map(|id| {
+            [
+                title(
+                    "movie",
+                    id,
+                    json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000)}}),
+                ),
+                dlv("movie", id, None, json!({"list": ["in", st(1000), [2, id, D]]})),
+            ]
+        })
+        .collect();
+    let answer = |removals: Value, sent: Vec<i64>| -> Value {
+        call(&json!({"op": "pending_targets_v4", "documents": documents,
+            "deliver": with(simkl(500), json!({"removals": removals, "removals_sent": sent})), "now": 200_000}))["ok"]
+            .clone()
+    };
+    let held = |answer: &Value| {
+        answer["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["removals_held"] == json!(true))
+            .count()
+    };
+    let approved = json!({"approved": st(4000), "held": st(4000)});
+    // The 21 approved removals were sent at 150 000: all 300 are held, and the latch closes past the approval.
+    let after_21 = answer(approved.clone(), vec![150_000; 21]);
+    assert_eq!(held(&after_21), 300);
+    assert_eq!(after_21["removals"], json!({"held": st(200_000)}));
+    assert_eq!(after_21["approval"], st(200_000));
+    // Approving that opens it: the sends before the approval no longer count, so nothing re-closes it.
+    let opened = json!({"approved": st(200_000), "held": st(200_000)});
+    assert_eq!(held(&answer(opened, vec![150_000; 21])), 0);
+    // The known limit: with no more than 20 sent in the window, an approval covers a late batch unseen.
+    assert_eq!(held(&answer(approved, vec![150_000; 20])), 0);
+}
+
+/// v3 §6: the latch also closes when more than 20 list removals were sent in 120 s, so a trickle of a few removals a
+/// pass can't empty a watchlist. Only sends inside the window count.
+#[test]
+fn removals_sent_in_the_last_two_minutes_close_the_latch() {
+    let documents: Vec<Value> = (1..=5u64)
+        .flat_map(|id| {
+            [
+                title(
+                    "movie",
+                    id,
+                    json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000)}}),
+                ),
+                dlv("movie", id, None, json!({"list": ["in", st(1000), [2, id, D]]})),
+            ]
+        })
+        .collect();
+    let held = |sent: Vec<i64>| -> usize {
+        let answer = call(&json!({"op": "pending_targets_v4", "documents": documents,
+            "deliver": with(simkl(500), json!({"removals_sent": sent})), "now": 200_000}))["ok"]
+            .clone();
+        answer["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["removals_held"] == json!(true))
+            .count()
+    };
+    // 16 sent within the window and 5 pending make 21: held.
+    assert_eq!(held(vec![150_000; 16]), 5);
+    // 15 sent within it make 20: sent.
+    assert_eq!(held(vec![150_000; 15]), 0);
+    // Sends older than 120 s don't count.
+    assert_eq!(held(vec![50_000; 30]), 0);
+    // `removals_sent` is required: a binding that forgets it fails rather than turning the rule off.
+    let missing = json!({"provider": "simkl", "account": "4812736", "since": st(500)});
+    let refused = call(
+        &json!({"op": "pending_targets_v4", "documents": documents, "deliver": missing, "now": 1}),
+    );
+    assert_eq!(refused["error"], "invalid_account");
 }
 
 /// Blocker 5 of den-core#24: progress on a watched film, with no status from the client, moved to a new viewing on

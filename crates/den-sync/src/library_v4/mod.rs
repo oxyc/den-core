@@ -278,6 +278,31 @@ pub fn encode(document: &Value, write: bool) -> Result<Value, String> {
     }))
 }
 
+/// The most unreadable rows one compaction removes, and the greatest share of the rows read through its base they may
+/// be, past a single row, which is removed whatever the library's size (§4 *Unreadable rows*). Corruption touches a
+/// row or two; many at once is a wrong key or a decoder that disagrees
+/// with the writer, and removing them would delete good rows for every device.
+const COMPACTION_MAX_ROWS: u64 = 10;
+const COMPACTION_MAX_PERCENT: u64 = 10;
+
+/// `compaction_guard` (§4): whether a compaction may remove `unreadable` of the `rows` read through its base. When
+/// it may not, the rows stay, delivery stays paused, and the client says so.
+pub fn compaction_guard(unreadable: u64, rows: u64) -> Value {
+    let reason = if unreadable == 0 {
+        Some("nothing_unreadable")
+    } else if unreadable > COMPACTION_MAX_ROWS {
+        Some("too_many_rows")
+    } else if unreadable > 1 && unreadable * 100 > rows.max(unreadable) * COMPACTION_MAX_PERCENT {
+        Some("too_large_a_share")
+    } else {
+        None
+    };
+    match reason {
+        None => json!({"compact": true}),
+        Some(reason) => json!({"compact": false, "reason": reason}),
+    }
+}
+
 /// `doc_name` (§3): the name a document's identity spells.
 pub fn name(document: &Value) -> Result<String, String> {
     Ok(identity(document.as_object().ok_or("invalid_document")?)?.name())

@@ -180,6 +180,121 @@ fn later(a: &Value, b: &Value) -> Result<Value, String> {
     .clone())
 }
 
+/// The `removals` latch of a `set:deliver` row (library-v4 §9): its `approved` and `held` stamps, either absent.
+/// `None` for a value that is not an object of stamps.
+pub(crate) fn removals_latch(value: &Value) -> Option<(Option<Stamp>, Option<Stamp>)> {
+    let object = value.as_object()?;
+    let field = |name: &str| -> Option<Option<Stamp>> {
+        match object.get(name) {
+            None => Some(None),
+            Some(found) => stamp(found).ok().map(Some),
+        }
+    };
+    Some((field("approved")?, field("held")?))
+}
+
+/// A `set:deliver` setting merged by its own rule (library-v3 §6, v4 §9): `since` to the earlier stamp it holds,
+/// `lease` by epoch, then an empty holder, then the JCS of the stamped value, `unverified` as the union of its epochs
+/// at the later stamp, and `removals` by the later `approved` and the later `held`, each on its own. A value not in
+/// its setting's form ranks below every value that is, and two of them merge by the later stamp, so each rule stays a
+/// join over any mix of values. Any other setting merges by the later stamp.
+fn merge_deliver(key: &str, a: &Value, b: &Value) -> Result<Value, String> {
+    let pick = |a_wins: bool| if a_wins { a.clone() } else { b.clone() };
+    // A well-formed value beats a malformed one; two malformed ones go by the later stamp.
+    let malformed = |a_ok: bool, b_ok: bool| -> Option<Result<Value, String>> {
+        match (a_ok, b_ok) {
+            (true, true) => None,
+            (true, false) => Some(Ok(a.clone())),
+            (false, true) => Some(Ok(b.clone())),
+            (false, false) => Some(later(a, b)),
+        }
+    };
+    let json_string = |v: &Value| {
+        v["value"]["string"]
+            .as_str()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+    };
+    match key {
+        "since" => {
+            let held = |v: &Value| json_string(v).and_then(|s| stamp(&s).ok());
+            let (sa, sb) = (held(a), held(b));
+            if let Some(result) = malformed(sa.is_some(), sb.is_some()) {
+                return result;
+            }
+            let (sa, sb) = (sa.unwrap_or_default(), sb.unwrap_or_default());
+            Ok(pick(match sa.cmp(&sb) {
+                Ordering::Less => true,
+                Ordering::Greater => false,
+                Ordering::Equal => canonical(a) >= canonical(b),
+            }))
+        }
+        "lease" => {
+            let rank = |v: &Value| {
+                let parts = v["value"]["strings"].as_array()?;
+                let holder = parts.first()?.as_str()?;
+                let epoch = parts.get(1)?.as_str()?.parse::<u64>().ok()?;
+                Some((epoch, holder.is_empty(), canonical(v)))
+            };
+            let (ra, rb) = (rank(a), rank(b));
+            if let Some(result) = malformed(ra.is_some(), rb.is_some()) {
+                return result;
+            }
+            Ok(pick(ra >= rb))
+        }
+        "unverified" => {
+            let epochs = |v: &Value| -> Option<Vec<u64>> {
+                v["value"]["ints"]
+                    .as_array()?
+                    .iter()
+                    .map(Value::as_u64)
+                    .collect()
+            };
+            let (ea, eb) = (epochs(a), epochs(b));
+            if let Some(result) = malformed(ea.is_some(), eb.is_some()) {
+                return result;
+            }
+            let union: std::collections::BTreeSet<u64> = ea
+                .into_iter()
+                .flatten()
+                .chain(eb.into_iter().flatten())
+                .collect();
+            let at = later(a, b)?["at"].clone();
+            Ok(json!({"value": {"ints": union.into_iter().collect::<Vec<_>>()}, "at": at}))
+        }
+        "removals" => {
+            if a == b {
+                return Ok(a.clone());
+            }
+            let (la, lb) = (
+                json_string(a).as_ref().and_then(removals_latch),
+                json_string(b).as_ref().and_then(removals_latch),
+            );
+            if let Some(result) = malformed(la.is_some(), lb.is_some()) {
+                return result;
+            }
+            let ((aa, ha), (ab, hb)) = (la.unwrap_or_default(), lb.unwrap_or_default());
+            // Always the canonical JSON of the join, at the later of the two stamps, so every grouping of three
+            // versions gives the same value.
+            let mut latch = Map::new();
+            if let Some(approved) = aa.max(ab) {
+                latch.insert("approved".into(), json!(approved));
+            }
+            if let Some(held) = ha.max(hb) {
+                latch.insert("held".into(), json!(held));
+            }
+            let text = serde_json::to_string(&Value::Object(latch))
+                .map_err(|_| "invalid_removals".to_string())?;
+            let at = if stamp(&a["at"])? >= stamp(&b["at"])? {
+                a["at"].clone()
+            } else {
+                b["at"].clone()
+            };
+            Ok(json!({"value": {"string": text}, "at": at}))
+        }
+        _ => later(a, b),
+    }
+}
+
 pub(crate) fn canonical(value: &Value) -> Vec<u8> {
     // serde_json maps are sorted without preserve_order.  All den wire numbers are integers except
     // progress, whose finite representation is already the shortest JSON form, matching JCS here.
@@ -378,9 +493,13 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
             out.insert("progress".into(), furthest(&a["progress"], &b["progress"])?);
         }
         Some("set") => {
+            let deliver = a["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("deliver:"));
             let mut values = object(&a["values"])?.clone();
             for (key, value) in object(&b["values"])? {
                 let value = match values.get(key) {
+                    Some(prior) if deliver => merge_deliver(key, prior, value)?,
                     Some(prior) => later(prior, value)?,
                     None => value.clone(),
                 };
