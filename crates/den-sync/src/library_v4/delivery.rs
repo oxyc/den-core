@@ -745,7 +745,11 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
                 .is_none_or(|a| stamp(&c["built_from"]["stamp"]).is_ok_and(|s| s > *a))
     };
     let removals = commands.iter().filter(|c| is_counted_removal(c)).count();
-    let latch = account.removals == json!("held") || removals > REMOVAL_LATCH;
+    // Closed when `set:deliver` says so — v3's `"held"`, or a `held` stamp beside the approval it leaves standing —
+    // or when this pass counts more than 20. Either way it holds only removals stamped after the approval.
+    let latch = account.removals == json!("held")
+        || account.removals.get("held").is_some()
+        || removals > REMOVAL_LATCH;
     if latch {
         for c in commands.iter_mut().filter(|c| is_counted_removal(c)) {
             c["removals_held"] = json!(true);

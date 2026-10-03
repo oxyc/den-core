@@ -2283,6 +2283,56 @@ fn v3_op_names_keep_the_v3_shape() {
     assert_eq!(v4, json!(["w", 1, 3000, st(3000), [2, 9, D]]));
 }
 
+/// v3 §6 `removals`: after an approval, a new batch of more than 20 closes the latch again on that batch alone. The
+/// latch is stored beside the approval (`{"approved", "held"}`), so the removals approved earlier still go out.
+#[test]
+fn a_latch_closed_after_an_approval_holds_only_the_later_removals() {
+    let batch = |from: u64, count: u64, at: i64| -> Vec<Value> {
+        (from..from + count)
+            .flat_map(|id| {
+                [
+                    title(
+                        "movie",
+                        id,
+                        json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(at)}}),
+                    ),
+                    dlv("movie", id, None, json!({"list": ["in", st(1000), [2, id, D]]})),
+                ]
+            })
+            .collect()
+    };
+    let held_ids = |documents: &[Value], removals: Value| -> Vec<u64> {
+        let answer = call(&json!({"op": "pending_targets_v4", "documents": documents,
+            "deliver": with(simkl(500), json!({"removals": removals})), "now": 8000}))["ok"]
+            .clone();
+        let mut ids: Vec<u64> = answer["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["removals_held"] == json!(true))
+            .map(|c| c["title"].as_str().unwrap()[12..].parse().unwrap())
+            .collect();
+        ids.sort();
+        ids
+    };
+    // 21 approved at 4000, then 21 more: those close the latch by count and are held; the approved 21 are not.
+    let mut documents = batch(1, 21, 3000);
+    documents.extend(batch(101, 21, 6000));
+    let approved = json!({"approved": st(4000)});
+    assert_eq!(
+        held_ids(&documents, approved),
+        (101..122).collect::<Vec<_>>()
+    );
+    // The latch then stored beside the approval stays closed on what is left of the later batch, under 20 of them,
+    // and still holds none of the approved ones.
+    let mut documents = batch(1, 21, 3000);
+    documents.extend(batch(101, 5, 6000));
+    let closed = json!({"approved": st(4000), "held": st(7000)});
+    assert_eq!(held_ids(&documents, closed), (101..106).collect::<Vec<_>>());
+    // v3's bare "held", with no approval, holds every removal.
+    assert_eq!(held_ids(&documents, json!("held")).len(), 26);
+}
+
 /// Blocker 5 of den-core#24: progress on a watched film, with no status from the client, moved to a new viewing on
 /// every tick and turned each pass into a rewatch.
 #[test]
