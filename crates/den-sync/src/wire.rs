@@ -180,22 +180,48 @@ fn later(a: &Value, b: &Value) -> Result<Value, String> {
     .clone())
 }
 
-/// A `set:deliver` setting merged by its own rule (library-v3 §6): `since` to the earlier stamp it holds, `lease` by
-/// epoch, then an empty holder, then JCS (its stamp ignored), and `unverified` as the union of its epochs at the
-/// later stamp. Any other setting, or one whose value is not in its expected form, merges by the later stamp.
+/// The `removals` latch of a `set:deliver` row (library-v4 §9): its `approved` and `held` stamps, either absent.
+/// `None` for a value that is not an object of stamps.
+pub(crate) fn removals_latch(value: &Value) -> Option<(Option<Stamp>, Option<Stamp>)> {
+    let object = value.as_object()?;
+    let field = |name: &str| -> Option<Option<Stamp>> {
+        match object.get(name) {
+            None => Some(None),
+            Some(found) => stamp(found).ok().map(Some),
+        }
+    };
+    Some((field("approved")?, field("held")?))
+}
+
+/// A `set:deliver` setting merged by its own rule (library-v3 §6, v4 §9): `since` to the earlier stamp it holds,
+/// `lease` by epoch, then an empty holder, then the JCS of the stamped value, `unverified` as the union of its epochs
+/// at the later stamp, and `removals` by the later `approved` and the later `held`, each on its own. A value not in
+/// its setting's form ranks below every value that is, and two of them merge by the later stamp, so each rule stays a
+/// join over any mix of values. Any other setting merges by the later stamp.
 fn merge_deliver(key: &str, a: &Value, b: &Value) -> Result<Value, String> {
     let pick = |a_wins: bool| if a_wins { a.clone() } else { b.clone() };
+    // A well-formed value beats a malformed one; two malformed ones go by the later stamp.
+    let malformed = |a_ok: bool, b_ok: bool| -> Option<Result<Value, String>> {
+        match (a_ok, b_ok) {
+            (true, true) => None,
+            (true, false) => Some(Ok(a.clone())),
+            (false, true) => Some(Ok(b.clone())),
+            (false, false) => Some(later(a, b)),
+        }
+    };
+    let json_string = |v: &Value| {
+        v["value"]["string"]
+            .as_str()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+    };
     match key {
         "since" => {
-            let held = |v: &Value| {
-                v["value"]["string"]
-                    .as_str()
-                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
-                    .and_then(|stamp_value| stamp(&stamp_value).ok())
-            };
-            let (Some(sa), Some(sb)) = (held(a), held(b)) else {
-                return later(a, b);
-            };
+            let held = |v: &Value| json_string(v).and_then(|s| stamp(&s).ok());
+            let (sa, sb) = (held(a), held(b));
+            if let Some(result) = malformed(sa.is_some(), sb.is_some()) {
+                return result;
+            }
+            let (sa, sb) = (sa.unwrap_or_default(), sb.unwrap_or_default());
             Ok(pick(match sa.cmp(&sb) {
                 Ordering::Less => true,
                 Ordering::Greater => false,
@@ -209,9 +235,10 @@ fn merge_deliver(key: &str, a: &Value, b: &Value) -> Result<Value, String> {
                 let epoch = parts.get(1)?.as_str()?.parse::<u64>().ok()?;
                 Some((epoch, holder.is_empty(), canonical(v)))
             };
-            let (Some(ra), Some(rb)) = (rank(a), rank(b)) else {
-                return later(a, b);
-            };
+            let (ra, rb) = (rank(a), rank(b));
+            if let Some(result) = malformed(ra.is_some(), rb.is_some()) {
+                return result;
+            }
             Ok(pick(ra >= rb))
         }
         "unverified" => {
@@ -222,12 +249,47 @@ fn merge_deliver(key: &str, a: &Value, b: &Value) -> Result<Value, String> {
                     .map(Value::as_u64)
                     .collect()
             };
-            let (Some(ea), Some(eb)) = (epochs(a), epochs(b)) else {
-                return later(a, b);
-            };
-            let union: std::collections::BTreeSet<u64> = ea.into_iter().chain(eb).collect();
+            let (ea, eb) = (epochs(a), epochs(b));
+            if let Some(result) = malformed(ea.is_some(), eb.is_some()) {
+                return result;
+            }
+            let union: std::collections::BTreeSet<u64> = ea
+                .into_iter()
+                .flatten()
+                .chain(eb.into_iter().flatten())
+                .collect();
             let at = later(a, b)?["at"].clone();
             Ok(json!({"value": {"ints": union.into_iter().collect::<Vec<_>>()}, "at": at}))
+        }
+        "removals" => {
+            if a == b {
+                return Ok(a.clone());
+            }
+            let (la, lb) = (
+                json_string(a).as_ref().and_then(removals_latch),
+                json_string(b).as_ref().and_then(removals_latch),
+            );
+            if let Some(result) = malformed(la.is_some(), lb.is_some()) {
+                return result;
+            }
+            let ((aa, ha), (ab, hb)) = (la.unwrap_or_default(), lb.unwrap_or_default());
+            // Always the canonical JSON of the join, at the later of the two stamps, so every grouping of three
+            // versions gives the same value.
+            let mut latch = Map::new();
+            if let Some(approved) = aa.max(ab) {
+                latch.insert("approved".into(), json!(approved));
+            }
+            if let Some(held) = ha.max(hb) {
+                latch.insert("held".into(), json!(held));
+            }
+            let text = serde_json::to_string(&Value::Object(latch))
+                .map_err(|_| "invalid_removals".to_string())?;
+            let at = if stamp(&a["at"])? >= stamp(&b["at"])? {
+                a["at"].clone()
+            } else {
+                b["at"].clone()
+            };
+            Ok(json!({"value": {"string": text}, "at": at}))
         }
         _ => later(a, b),
     }

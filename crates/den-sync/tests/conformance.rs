@@ -102,6 +102,67 @@ fn deliver_settings_merge_as_a_join() {
     );
 }
 
+/// The `set:deliver` merges as a property: random versions of `since`, `lease`, `unverified` and `removals` from three
+/// devices — equal stamps, equal epochs, empty holders and malformed values among them — merge commutatively,
+/// associatively and idempotently.
+#[test]
+fn deliver_settings_merge_laws_hold_over_random_versions() {
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let devices = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"];
+    for _ in 0..500 {
+        let mut versions = Vec::new();
+        for device in devices {
+            let at = json!([1000 + next(4) * 1000, 0, device]);
+            let stamp = |t: u64| json!([t * 1000, 0, devices[(t % 3) as usize]]);
+            let since = if next(5) == 0 {
+                json!({"value": {"string": "nope"}, "at": at})
+            } else {
+                json!({"value": {"string": stamp(1 + next(3)).to_string()}, "at": at})
+            };
+            let lease = if next(5) == 0 {
+                json!({"value": {"strings": ["x"]}, "at": at})
+            } else {
+                let holder = if next(2) == 0 { "" } else { device };
+                json!({"value": {"strings": [holder, (1 + next(3)).to_string()]}, "at": at})
+            };
+            let unverified = if next(5) == 0 {
+                json!({"value": {"ints": [1.5]}, "at": at})
+            } else {
+                let epochs: Vec<u64> = (2..6).filter(|_| next(2) == 0).collect();
+                json!({"value": {"ints": epochs}, "at": at})
+            };
+            let removals = if next(5) == 0 {
+                json!({"value": {"string": "\"held\""}, "at": at})
+            } else {
+                let mut latch = serde_json::Map::new();
+                if next(2) == 0 {
+                    latch.insert("approved".into(), stamp(1 + next(4)));
+                }
+                if next(2) == 0 {
+                    latch.insert("held".into(), stamp(1 + next(4)));
+                }
+                json!({"value": {"string": Value::Object(latch).to_string()}, "at": at})
+            };
+            versions.push(
+                json!({"kind": "set", "schema": 2, "name": "deliver:simkl:42", "values": {
+                "since": since, "lease": lease, "unverified": unverified, "removals": removals}}),
+            );
+        }
+        let (a, b, c) = (&versions[0], &versions[1], &versions[2]);
+        let m = |x: &Value, y: &Value| merge(x, y).unwrap();
+        assert_eq!(m(a, b), m(b, a), "commutative: {a} {b}");
+        assert_eq!(m(&m(a, b), c), m(a, &m(b, c)), "associative: {a} {b} {c}");
+        let ab = m(a, b);
+        assert_eq!(m(&ab, &ab), ab, "idempotent: {ab}");
+    }
+}
+
 fn wat(entries: Value) -> Value {
     json!({"kind":"wat","schema":3,"title":{"type":"tv","id":1399},"season":1,"block":0,"seasonReset":null,"entries":entries})
 }

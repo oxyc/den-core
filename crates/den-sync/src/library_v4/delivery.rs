@@ -320,6 +320,8 @@ pub struct Account {
     pub since: Stamp,
     pub removals: Value,
     pub unverified: BTreeSet<u64>,
+    /// When the holder sent list removals for this account (ms), for the latch's 120-second window (v3 §6).
+    pub removals_sent: Vec<i64>,
 }
 
 /// The documents one pass reads, by name.
@@ -694,11 +696,18 @@ pub fn account(deliver: &Value) -> Result<Account, String> {
             .flatten()
             .filter_map(Value::as_u64)
             .collect(),
+        removals_sent: deliver["removals_sent"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_i64)
+            .collect(),
     })
 }
 
 /// `pending_targets` (§9, v3 §6) for one account. `deliver` is the account's `set:deliver` facts, read by the
-/// client: `{provider, account, since, removals?, unverified?}`.
+/// client: `{provider, account, since, removals?, unverified?, removals_sent?}`, `removals` the parsed latch object
+/// and `removals_sent` the times (ms) the holder sent list removals for the account, kept by it.
 pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result<Value, String> {
     let mut account = account(deliver)?;
     let snapshot = Snapshot::read(documents)?;
@@ -735,26 +744,47 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
             Decision::Nothing => {}
         }
     }
-    // The removals latch (v3 §6 *Accounts*): only list removals stamped after an approval count.
-    let approved = stamp(&account.removals["approved"]).ok();
-    let is_counted_removal = |c: &Value| {
-        c["kind"] == "list"
-            && c["added"] == false
-            && approved
-                .as_ref()
-                .is_none_or(|a| stamp(&c["built_from"]["stamp"]).is_ok_and(|s| s > *a))
+    // The removals latch (v3 §6 *Accounts*, v4 §9): only list removals stamped after the approval count. It is
+    // closed while its `held` stamp is later than its approval, and it closes when the removals counted now and those
+    // sent in the last 120 s come to more than 20 — a mass removal at once, or a trickle pass after pass.
+    let (approved, stored_held) =
+        crate::wire::removals_latch(&account.removals).unwrap_or_default();
+    let removal_stamp = |c: &Value| {
+        (c["kind"] == "list" && c["added"] == false)
+            .then(|| stamp(&c["built_from"]["stamp"]).ok())
+            .flatten()
     };
-    let removals = commands.iter().filter(|c| is_counted_removal(c)).count();
-    // Closed when `set:deliver` says so — v3's `"held"`, or a `held` stamp beside the approval it leaves standing —
-    // or when this pass counts more than 20. Either way it holds only removals stamped after the approval.
-    let latch = account.removals == json!("held")
-        || account.removals.get("held").is_some()
-        || removals > REMOVAL_LATCH;
-    if latch {
+    let is_counted_removal =
+        |c: &Value| removal_stamp(c).is_some_and(|s| approved.as_ref().is_none_or(|a| s > *a));
+    let counted: Vec<Stamp> = commands
+        .iter()
+        .filter(|c| is_counted_removal(c))
+        .filter_map(removal_stamp)
+        .collect();
+    let recent = account
+        .removals_sent
+        .iter()
+        .filter(|sent| **sent > now - 120_000 && **sent <= now)
+        .count();
+    let closes = !counted.is_empty() && counted.len() + recent > REMOVAL_LATCH;
+    let stored_closed = stored_held
+        .as_ref()
+        .is_some_and(|held| approved.as_ref().is_none_or(|a| held > a));
+    if closes || stored_closed {
         for c in commands.iter_mut().filter(|c| is_counted_removal(c)) {
             c["removals_held"] = json!(true);
         }
     }
+    // What the holder writes when the latch closes now: `held` at the latest removal it holds, so an approval of
+    // what was shown (below) opens it, and any removal stamped later closes it again.
+    let closing_at = counted.iter().max().filter(|_| closes).cloned();
+    // What an approval of the removals held now writes: the latest of them, never a fresh stamp, so a removal made
+    // after the person saw the list is never approved unseen.
+    let approval = commands
+        .iter()
+        .filter(|c| c["removals_held"] == json!(true))
+        .filter_map(removal_stamp)
+        .max();
     commands.sort_by(|a, b| {
         a["at"]
             .as_i64()
@@ -782,7 +812,8 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
         "commands": commands,
         "settle": settles,
         "held": held,
-        "removals": if removals > REMOVAL_LATCH { json!("held") } else { Value::Null },
+        "removals": closing_at.map_or(Value::Null, |held| json!({"held": held})),
+        "approval": approval.map_or(Value::Null, |a| json!(a)),
         "greatest_epoch": greatest_epoch,
         "unverified": account.unverified,
     }))
@@ -793,6 +824,7 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
 /// holder writes the result back to `unverified` when it differs.
 fn unverified(snapshot: &Snapshot, account: &Account) -> BTreeSet<u64> {
     let own = delivery_name(account, "");
+    // Every entry counts, intents and owed `b` entries included: any of them settled under an epoch says who held it.
     let mut devices: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
     for (_, document) in snapshot
         .delivery
