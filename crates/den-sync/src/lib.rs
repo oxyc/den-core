@@ -6,6 +6,7 @@ mod episodes;
 mod events;
 mod library_v3;
 mod library_v4;
+mod recovery;
 mod series;
 mod tilt;
 mod wire;
@@ -294,6 +295,19 @@ enum Request {
         samples: Vec<(i32, f64)>,
         current_year: i32,
     },
+    /// Recovery code §2: 22 random bytes (hex) from the platform's CSPRNG → `{code, data}`.
+    RecoveryCode {
+        random: String,
+    },
+    /// Recovery code §2: typed text → `{data}`, or `mistyped` / `checksum`, before any derivation or request.
+    RecoveryRead {
+        text: String,
+    },
+    /// Recovery code §3: data characters → `{locator, wrapKey}` (hex). One Argon2id at 64 MiB: run it off the main
+    /// thread.
+    RecoveryDerive {
+        data: String,
+    },
 }
 
 fn yes() -> bool {
@@ -508,6 +522,9 @@ pub fn evaluate(input: &str) -> String {
                 samples,
                 current_year,
             } => Ok(json!(Era::from_samples(&samples, current_year))),
+            Request::RecoveryCode { random } => recovery::code(&random),
+            Request::RecoveryRead { text } => recovery::read(&text),
+            Request::RecoveryDerive { data } => recovery::derive(&data),
             Request::Retry {
                 attempts,
                 now,

@@ -16,8 +16,20 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # Library v4 §4 pins the compressor: den-core compresses at level 9 with exactly the version in Cargo.lock.
 miniz_oxide = "=0.9.1"
+# The recovery code (den-spec `wire/recovery-code.md` §3): Argon2id, then HKDF-SHA256. `alloc` gives Argon2 its
+# 64 MiB of blocks on the heap; no randomness or password-hash features, since the op takes everything as input.
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
+hkdf = { version = "0.13.0", default-features = false }
+sha2 = { version = "0.11.0", default-features = false }
 den-sync = { path = "crates/den-sync" }
 den-store = { path = "crates/den-store" }
+
+# One Argon2id at 64 MiB, t = 3 takes seconds unoptimised; the tests run several.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
 
 [profile.release]
 lto = true

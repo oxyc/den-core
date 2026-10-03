@@ -3,7 +3,8 @@
 Shared, pure Den client policy. Not an Atlas addon, relay, daemon, or sync worker.
 
 `crates/den-sync` owns wire-v2 merges, logical-clock issuance, explicit action capture, event-to-command
-translation and supersession, provider preflight decisions, and capped retry scheduling. Every binding
+translation and supersession, provider preflight decisions, capped retry scheduling, and the recovery code's
+format, check characters and Argon2id/HKDF derivation (den-spec `wire/recovery-code.md`). Every binding
 calls the same versioned JSON API. Invalid input is an error, never an empty state or an acknowledgement.
 
 Clients retain encryption, SQLite/browser storage, credentials and account binding, provider HTTP, receipts,
