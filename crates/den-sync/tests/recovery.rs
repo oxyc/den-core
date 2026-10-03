@@ -40,7 +40,8 @@ fn den_spec_recovery_v1_vectors() {
     );
 
     let codes = v["codes"].as_array().unwrap();
-    assert_eq!(codes.len(), 9);
+    // Nine cases, ten once den-spec carries the `ſ` case (oxyc/den-spec, recovery §2 follow-up).
+    assert!(codes.len() >= 9, "{} cases", codes.len());
     for case in codes {
         let got = call(json!({"op": "recovery_read", "text": case["input"]}));
         let want = &case["parsed"];

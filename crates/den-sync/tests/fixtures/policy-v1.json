@@ -2483,6 +2483,14 @@
    "error": "mistyped"
   },
   {
+   "name": "recovery_read: a long s is not read as S (ASCII uppercase only)",
+   "request": {
+    "op": "recovery_read",
+    "text": "GEB2-LP9U-C63W-Q95U-NſLT-XMFL"
+   },
+   "error": "mistyped"
+  },
+  {
    "name": "recovery_derive: den-spec recovery-v1's first locator and wrap key",
    "request": {
     "op": "recovery_derive",

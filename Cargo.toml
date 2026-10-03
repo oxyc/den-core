@@ -16,11 +16,15 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # Library v4 §4 pins the compressor: den-core compresses at level 9 with exactly the version in Cargo.lock.
 miniz_oxide = "=0.9.1"
-# The recovery code (den-spec `wire/recovery-code.md` §3): Argon2id, then HKDF-SHA256. `alloc` gives Argon2 its
-# 64 MiB of blocks on the heap; no randomness or password-hash features, since the op takes everything as input.
-argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
+# The recovery code (den-spec `wire/recovery-code.md` §3): Argon2id, then HKDF-SHA256. No randomness or
+# password-hash features, since the op takes everything as input. `zeroize` wipes what they hold of the code's
+# derivation: Argon2's intermediate hashes and HMAC's keyed state (the HKDF PRK). Argon2's 64 MiB of blocks are
+# allocated and wiped by den-sync itself (`recovery.rs`): the crate's own allocation is freed unwiped.
+argon2 = { version = "0.6.0", default-features = false, features = ["zeroize"] }
 hkdf = { version = "0.13.0", default-features = false }
-sha2 = { version = "0.11.0", default-features = false }
+hmac = { version = "0.13.0", default-features = false, features = ["zeroize"] }
+sha2 = { version = "0.11.0", default-features = false, features = ["zeroize"] }
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
 den-sync = { path = "crates/den-sync" }
 den-store = { path = "crates/den-store" }
 

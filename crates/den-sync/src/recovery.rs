@@ -1,10 +1,11 @@
 //! The recovery code (den-spec `wire/recovery-code.md`): making a code from random bytes (§2), reading a typed one
 //! (§2), and deriving its locator and wrap key (§3). Randomness arrives as input; sealing stays in the clients.
 
-use argon2::{Algorithm, Argon2, Params, Version};
+use argon2::{Algorithm, Argon2, Block, Params, Version};
 use hkdf::Hkdf;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 const ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DATA_LEN: usize = 22;
@@ -43,15 +44,18 @@ pub fn code(random: &str) -> Result<Value, String> {
     Ok(json!({ "code": groups.join("-"), "data": data }))
 }
 
-/// §2 *Reading a typed code*: uppercased, whitespace and dashes dropped, then 24 alphabet characters whose check
-/// characters match. `mistyped` for anything else's shape, `checksum` for a check that does not match.
+/// §2 *Reading a typed code*: whitespace (Unicode `White_Space`: a pasted code may carry a newline) and dashes
+/// dropped, then ASCII uppercase, then 24 alphabet characters whose check characters match. Anything non-ASCII left is
+/// `mistyped`, before any case mapping: `ſ` must not read as `S`. `checksum` for a check that does not match.
 pub fn read(text: &str) -> Result<Value, String> {
-    let normalized: String = text
+    let kept: String = text
         .chars()
-        // Whitespace, not only spaces, as den-spec's vector tool reads it: a pasted code may carry a newline.
         .filter(|c| !c.is_whitespace() && *c != '-')
-        .flat_map(char::to_uppercase)
         .collect();
+    if !kept.is_ascii() {
+        return Err("mistyped".into());
+    }
+    let normalized = kept.to_ascii_uppercase();
     if normalized.len() != CODE_LEN || !normalized.bytes().all(|b| ALPHABET.contains(&b)) {
         return Err("mistyped".into());
     }
@@ -63,31 +67,38 @@ pub fn read(text: &str) -> Result<Value, String> {
 }
 
 /// §3: Argon2id over the data characters, then the HKDF-SHA256 locator (16 bytes) and wrap key (32 bytes).
+///
+/// `A`, Argon2's 64 MiB of blocks and the raw wrap key are wiped here before returning (§8 step 6). The wrap key still
+/// leaves as hex in the JSON answer, an immutable string in the caller's runtime that nothing can wipe: a client that
+/// zeroes its own copy has not zeroed every copy.
 pub fn derive(data: &str) -> Result<Value, String> {
     let (locator, wrap_key) = derive_bytes(data)?;
-    Ok(json!({ "locator": hex(&locator), "wrapKey": hex(&wrap_key) }))
+    Ok(json!({ "locator": hex(&locator), "wrapKey": hex(&*wrap_key) }))
 }
 
-fn argon2id(data: &str) -> Result<[u8; 32], String> {
+fn argon2id(data: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     if data.len() != DATA_LEN || !data.bytes().all(|b| ALPHABET.contains(&b)) {
         return Err("mistyped".into());
     }
     let params = Params::new(65536, 3, 1, Some(32)).map_err(|_| "kdf_failed")?;
-    let mut a = [0u8; 32];
+    let mut a = Zeroizing::new([0u8; 32]);
+    // The blocks are this crate's, so they are wiped: `hash_password_into` frees its own without wiping them.
+    let mut blocks = Zeroizing::new(vec![Block::default(); params.block_count()]);
     Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
-        .hash_password_into(data.as_bytes(), DOMAIN, &mut a)
+        .hash_password_into_with_memory(data.as_bytes(), DOMAIN, &mut *a, &mut **blocks)
         .map_err(|_| "kdf_failed")?;
     Ok(a)
 }
 
-fn derive_bytes(data: &str) -> Result<([u8; 16], [u8; 32]), String> {
+fn derive_bytes(data: &str) -> Result<([u8; 16], Zeroizing<[u8; 32]>), String> {
     let a = argon2id(data)?;
-    let hkdf = Hkdf::<Sha256>::new(Some(DOMAIN), &a);
+    let hkdf = Hkdf::<Sha256>::new(Some(DOMAIN), &*a);
+    drop(a);
     let mut locator = [0u8; 16];
-    let mut wrap_key = [0u8; 32];
+    let mut wrap_key = Zeroizing::new([0u8; 32]);
     hkdf.expand(b"locator", &mut locator)
         .map_err(|_| "kdf_failed")?;
-    hkdf.expand(b"wrap", &mut wrap_key)
+    hkdf.expand(b"wrap", &mut *wrap_key)
         .map_err(|_| "kdf_failed")?;
     Ok((locator, wrap_key))
 }
@@ -122,9 +133,10 @@ mod tests {
             .build()
             .unwrap();
         let mut tag = [0u8; 32];
+        let mut blocks = vec![Block::default(); params.block_count()];
         Argon2::new_with_secret(&[3; 8], Algorithm::Argon2id, Version::V0x13, params)
             .unwrap()
-            .hash_password_into(&[1; 32], &[2; 16], &mut tag)
+            .hash_password_into_with_memory(&[1; 32], &[2; 16], &mut tag, &mut blocks)
             .unwrap();
         assert_eq!(
             hex(&tag),
@@ -146,7 +158,7 @@ mod tests {
             ),
         ];
         for (data, a) in cases {
-            assert_eq!(hex(&argon2id(data).unwrap()), a, "{data}");
+            assert_eq!(hex(&*argon2id(data).unwrap()), a, "{data}");
         }
     }
 
@@ -173,6 +185,19 @@ mod tests {
         ] {
             assert_eq!(code(random).unwrap_err(), "invalid_random", "{random}");
         }
+    }
+
+    /// §2: whitespace of any kind is dropped, but no other non-ASCII character is mapped into the alphabet.
+    #[test]
+    fn reading_uppercases_ascii_only() {
+        let code = "GEB2-LP9U-C63W-Q95U-NSLT-XMFL";
+        let nbsp = code.replace('-', "\u{a0}");
+        assert_eq!(read(&nbsp).unwrap()["data"], "GEB2LP9UC63WQ95UNSLTXM");
+        let long_s = code.replace("NSLT", "N\u{17f}LT");
+        assert_eq!(read(&long_s).unwrap_err(), "mistyped");
+        // `ﬆ` uppercases to two letters under Unicode rules, which would change the length.
+        let ligature = code.replace("XMFL", "XMF\u{fb06}");
+        assert_eq!(read(&ligature).unwrap_err(), "mistyped");
     }
 
     #[test]

@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Argon2id at den-spec recovery §3's parameters, timed in a Worker as Den Web runs it (§12 asks for phone browsers'
+     numbers). After `bash scripts/build-bindings.sh`, serve the repository root over HTTP on the LAN, for example
+     `python3 -m http.server 8000`, and open http://<this machine>:8000/bench/argon2.html on the device. -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>den-core Argon2id</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 16px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>Argon2id, 64 MiB, t = 3, p = 1</h1>
+<p><button id="run">Run 5 derivations</button></p>
+<pre id="out">Not run yet.</pre>
+<script type="module">
+  const out = document.getElementById('out');
+  const mib = (bytes) => `${(bytes / 1048576).toFixed(1)} MiB`;
+  document.getElementById('run').onclick = () => {
+    out.textContent = 'Running…';
+    const worker = new Worker(new URL('./argon2-worker.js', import.meta.url), { type: 'module' });
+    worker.onerror = (event) => (out.textContent = `Worker failed: ${event.message}`);
+    worker.onmessage = ({ data }) => {
+      worker.terminate();
+      if (data.error) {
+        out.textContent = `Failed: ${data.error}`;
+        return;
+      }
+      const sorted = [...data.times].sort((a, b) => a - b);
+      const result = {
+        userAgent: navigator.userAgent,
+        runsMs: data.times.map((t) => Math.round(t)),
+        medianMs: Math.round(sorted[Math.floor(sorted.length / 2)]),
+        wasmMemoryBefore: mib(data.memoryBefore),
+        wasmMemoryAfter: mib(data.memoryAfter),
+      };
+      out.textContent = JSON.stringify(result, null, 2);
+      document.title = `done ${result.medianMs} ms`;
+    };
+    worker.postMessage({ runs: 5 });
+  };
+</script>
