@@ -1295,7 +1295,7 @@ fn delivery_cases() -> Vec<Case> {
             {"document": "dlv:simkl:4812736:movie:550", "key": "list", "built_from": {"key": "list", "kind": "list", "value": "out", "stamp": st(1000)}},
             {"document": "dlv:simkl:4812736:movie:550", "key": "rating", "built_from": {"key": "rating", "kind": "rating", "value": null, "stamp": [0, 0, ""]}},
             {"document": "dlv:simkl:4812736:movie:550", "key": "watch", "built_from": {"key": "watch", "kind": "film", "value": "unwatched", "stamp": st(1000), "p": 1}}
-        ], "held": [], "removals": null, "greatest_epoch": 0})),
+        ], "held": [], "removals": null, "greatest_epoch": 0, "unverified": []})),
         ),
         case(
             "no receipt: an unwatched value after since is sent",
@@ -1383,6 +1383,64 @@ fn delivery_cases() -> Vec<Case> {
             Expect::Subset(
                 json!({"commands": [{"kind": "watched", "key": "watch", "unverified": true, "baseline": true}]}),
             ),
+        ),
+        case(
+            "an epoch two devices settled under becomes unverified, and a listed epoch no receipt holds is dropped",
+            "v3 §6 Unverified receipts",
+            pending(
+                json!([
+                    title("movie", 550, json!({"status": {"value": "watchlist", "at": st(1000)}})),
+                    title("movie", 551, json!({"status": {"value": "watchlist", "at": st(1000)}})),
+                    dlv("movie", 550, None, json!({"list": ["in", st(1000), [3, 1, "aaaaaaaaaaaaaaaa"]]})),
+                    dlv("movie", 551, None, json!({"list": ["in", st(1000), [3, 1, "bbbbbbbbbbbbbbbb"]]}))
+                ]),
+                with(simkl(500), json!({"unverified": [5]})),
+                4000,
+            ),
+            Expect::Subset(json!({
+                "unverified": [3],
+                "commands": [
+                    {"kind": "list", "added": true, "document": "dlv:simkl:4812736:movie:550", "unverified": true},
+                    {"kind": "list", "added": true, "document": "dlv:simkl:4812736:movie:551", "unverified": true}
+                ]
+            })),
+        ),
+        case(
+            "a compaction removes one unreadable row, whatever the library's size",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 1, "rows": 3}),
+            Expect::Ok(json!({"compact": true})),
+        ),
+        case(
+            "a compaction removes a few unreadable rows of a large library",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 10, "rows": 100}),
+            Expect::Ok(json!({"compact": true})),
+        ),
+        case(
+            "a compaction refuses more than ten unreadable rows",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 11, "rows": 100000}),
+            Expect::Ok(json!({"compact": false, "reason": "too_many_rows"})),
+        ),
+        case(
+            "a compaction refuses unreadable rows past a tenth of the log",
+            "§4 Unreadable rows",
+            json!({"op": "compaction_guard", "unreadable": 2, "rows": 19}),
+            Expect::Ok(json!({"compact": false, "reason": "too_large_a_share"})),
+        ),
+        case(
+            "receipts at one epoch from one device stay verified",
+            "v3 §6 Unverified receipts",
+            pending(
+                json!([
+                    title("movie", 550, json!({"status": {"value": "watchlist", "at": st(1000)}})),
+                    dlv("movie", 550, None, json!({"list": ["in", st(1000), [3, 1, D]], "rating": [null, [0, 0, ""], [3, 2, D]]}))
+                ]),
+                simkl(500),
+                4000,
+            ),
+            Expect::Subset(json!({"unverified": [], "commands": []})),
         ),
         case(
             "a re-mark after a delivered un-watch sends the un-watch first",
@@ -1746,7 +1804,7 @@ fn review_cases() -> Vec<Case> {
             ),
             Expect::Ok(json!({"commands": [], "settle": [
                 {"document": "dlv:simkl:4812736:movie:550", "key": "list", "built_from": {"key": "list", "kind": "list", "value": "gone", "stamp": st(3000)}}
-            ], "held": [], "removals": null, "greatest_epoch": 0})),
+            ], "held": [], "removals": null, "greatest_epoch": 0, "unverified": []})),
         ),
         case(
             "episode imports skip a deleted series",

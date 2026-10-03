@@ -209,6 +209,12 @@ enum Request {
     DocName {
         document: Value,
     },
+    /// Library v4 §4 *Unreadable rows*: whether a compaction may remove `unreadable` rows of the `rows` read through
+    /// its base.
+    CompactionGuard {
+        unreadable: u64,
+        rows: u64,
+    },
     DocMerge {
         a: Value,
         b: Value,
@@ -433,6 +439,9 @@ pub fn evaluate(input: &str) -> String {
             )),
             Request::DocEncode { document, write } => library_v4::encode(&document, write),
             Request::DocName { document } => Ok(json!(library_v4::name(&document)?)),
+            Request::CompactionGuard { unreadable, rows } => {
+                Ok(library_v4::compaction_guard(unreadable, rows))
+            }
             Request::DocMerge { a, b } => library_v4::doc_merge(&a, &b),
             Request::TitleState { title, now } => Ok(library_v4::state::title_state(
                 &library_v4::readable(&title)?,

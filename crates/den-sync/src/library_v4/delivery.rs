@@ -700,8 +700,9 @@ pub fn account(deliver: &Value) -> Result<Account, String> {
 /// `pending_targets` (§9, v3 §6) for one account. `deliver` is the account's `set:deliver` facts, read by the
 /// client: `{provider, account, since, removals?, unverified?}`.
 pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result<Value, String> {
-    let account = account(deliver)?;
+    let mut account = account(deliver)?;
     let snapshot = Snapshot::read(documents)?;
+    account.unverified = unverified(&snapshot, &account);
     let mut commands = Vec::new();
     let mut settles = Vec::new();
     let mut held = Vec::new();
@@ -779,7 +780,43 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
         "held": held,
         "removals": if removals > REMOVAL_LATCH { json!("held") } else { Value::Null },
         "greatest_epoch": greatest_epoch,
+        "unverified": account.unverified,
     }))
+}
+
+/// The account's unverified epochs after this read (v3 §6 *Unverified receipts*): those `set:deliver` lists, and every
+/// settle epoch ≥ 2 its receipts hold from two different devices, less any epoch no receipt holds any more. The
+/// holder writes the result back to `unverified` when it differs.
+fn unverified(snapshot: &Snapshot, account: &Account) -> BTreeSet<u64> {
+    let own = delivery_name(account, "");
+    let mut devices: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
+    for (_, document) in snapshot
+        .delivery
+        .iter()
+        .filter(|(name, _)| name.starts_with(&own))
+    {
+        for entry in document
+            .get("entries")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(|entries| entries.values())
+        {
+            if let Some((epoch, _, device)) = entry_order(entry) {
+                devices.entry(epoch).or_default().insert(device);
+            }
+        }
+    }
+    let shared = devices
+        .iter()
+        .filter(|(epoch, by)| **epoch >= 2 && by.len() > 1)
+        .map(|(epoch, _)| *epoch);
+    account
+        .unverified
+        .iter()
+        .copied()
+        .chain(shared)
+        .filter(|epoch| *epoch >= 2 && devices.contains_key(epoch))
+        .collect()
 }
 
 /// Sending elements every settle and intent of a target keeps: `[-1, I]` and `[p, null, T]` (v3 §6 *Intent*).

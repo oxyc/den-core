@@ -44,6 +44,64 @@ fn shared_binding_contract() {
     }
 }
 
+#[test]
+fn deliver_settings_merge_as_a_join() {
+    let row = |device: &str, at: u64, since: u64, holder: &str, epoch: u64, unverified: Value| {
+        json!({"kind":"set","schema":2,"name":"deliver:simkl:42","values":{
+            "since":{"at":[at,0,device],"value":{"string":format!("[{since},0,\"{device}\"]")}},
+            "lease":{"at":[at,0,device],"value":{"strings":[holder, epoch.to_string()]}},
+            "unverified":{"at":[at,0,device],"value":{"ints":unverified}}}})
+    };
+    let a = row(
+        "aaaaaaaaaaaaaaaa",
+        9000,
+        3000,
+        "aaaaaaaaaaaaaaaa",
+        5,
+        json!([2]),
+    );
+    let b = row("bbbbbbbbbbbbbbbb", 7000, 1000, "", 5, json!([4]));
+    let c = row(
+        "cccccccccccccccc",
+        8000,
+        2000,
+        "cccccccccccccccc",
+        6,
+        json!([2, 3]),
+    );
+    assert_eq!(merge(&a, &b).unwrap(), merge(&b, &a).unwrap());
+    assert_eq!(merge(&a, &a).unwrap(), a);
+    let left = merge(&merge(&a, &b).unwrap(), &c).unwrap();
+    let right = merge(&a, &merge(&b, &c).unwrap()).unwrap();
+    assert_eq!(left, right);
+    let values = &left["values"];
+    // The earliest `since`, whatever its stamp; the greatest epoch; every epoch any version listed.
+    assert_eq!(
+        values["since"]["value"]["string"],
+        "[1000,0,\"bbbbbbbbbbbbbbbb\"]"
+    );
+    assert_eq!(
+        values["lease"]["value"]["strings"],
+        json!(["cccccccccccccccc", "6"])
+    );
+    assert_eq!(values["unverified"]["value"]["ints"], json!([2, 3, 4]));
+    // At one epoch an empty holder (a release) wins over a holder.
+    assert_eq!(
+        merge(&a, &b).unwrap()["values"]["lease"]["value"]["strings"],
+        json!(["", "5"])
+    );
+    // Any other settings row keeps the later stamp.
+    let other = |row: &Value| {
+        let mut row = row.clone();
+        row["name"] = json!("prefs");
+        row
+    };
+    assert_eq!(
+        merge(&other(&a), &other(&b)).unwrap()["values"]["since"]["value"]["string"],
+        "[3000,0,\"aaaaaaaaaaaaaaaa\"]"
+    );
+}
+
 fn wat(entries: Value) -> Value {
     json!({"kind":"wat","schema":3,"title":{"type":"tv","id":1399},"season":1,"block":0,"seasonReset":null,"entries":entries})
 }

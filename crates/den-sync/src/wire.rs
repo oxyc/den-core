@@ -180,6 +180,59 @@ fn later(a: &Value, b: &Value) -> Result<Value, String> {
     .clone())
 }
 
+/// A `set:deliver` setting merged by its own rule (library-v3 §6): `since` to the earlier stamp it holds, `lease` by
+/// epoch, then an empty holder, then JCS (its stamp ignored), and `unverified` as the union of its epochs at the
+/// later stamp. Any other setting, or one whose value is not in its expected form, merges by the later stamp.
+fn merge_deliver(key: &str, a: &Value, b: &Value) -> Result<Value, String> {
+    let pick = |a_wins: bool| if a_wins { a.clone() } else { b.clone() };
+    match key {
+        "since" => {
+            let held = |v: &Value| {
+                v["value"]["string"]
+                    .as_str()
+                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                    .and_then(|stamp_value| stamp(&stamp_value).ok())
+            };
+            let (Some(sa), Some(sb)) = (held(a), held(b)) else {
+                return later(a, b);
+            };
+            Ok(pick(match sa.cmp(&sb) {
+                Ordering::Less => true,
+                Ordering::Greater => false,
+                Ordering::Equal => canonical(a) >= canonical(b),
+            }))
+        }
+        "lease" => {
+            let rank = |v: &Value| {
+                let parts = v["value"]["strings"].as_array()?;
+                let holder = parts.first()?.as_str()?;
+                let epoch = parts.get(1)?.as_str()?.parse::<u64>().ok()?;
+                Some((epoch, holder.is_empty(), canonical(v)))
+            };
+            let (Some(ra), Some(rb)) = (rank(a), rank(b)) else {
+                return later(a, b);
+            };
+            Ok(pick(ra >= rb))
+        }
+        "unverified" => {
+            let epochs = |v: &Value| -> Option<Vec<u64>> {
+                v["value"]["ints"]
+                    .as_array()?
+                    .iter()
+                    .map(Value::as_u64)
+                    .collect()
+            };
+            let (Some(ea), Some(eb)) = (epochs(a), epochs(b)) else {
+                return later(a, b);
+            };
+            let union: std::collections::BTreeSet<u64> = ea.into_iter().chain(eb).collect();
+            let at = later(a, b)?["at"].clone();
+            Ok(json!({"value": {"ints": union.into_iter().collect::<Vec<_>>()}, "at": at}))
+        }
+        _ => later(a, b),
+    }
+}
+
 pub(crate) fn canonical(value: &Value) -> Vec<u8> {
     // serde_json maps are sorted without preserve_order.  All den wire numbers are integers except
     // progress, whose finite representation is already the shortest JSON form, matching JCS here.
@@ -378,9 +431,13 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
             out.insert("progress".into(), furthest(&a["progress"], &b["progress"])?);
         }
         Some("set") => {
+            let deliver = a["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("deliver:"));
             let mut values = object(&a["values"])?.clone();
             for (key, value) in object(&b["values"])? {
                 let value = match values.get(key) {
+                    Some(prior) if deliver => merge_deliver(key, prior, value)?,
                     Some(prior) => later(prior, value)?,
                     None => value.clone(),
                 };
