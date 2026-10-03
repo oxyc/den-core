@@ -2500,6 +2500,3431 @@
     "locator": "df858499eebc4d6ea5736d45e3019632",
     "wrapKey": "ab5a68f55d111a8a4fa0bf7fbfd608568c6a36359e942162ad1e7475be32839b"
    }
+  },
+  {
+   "name": "download_merge: a removal drops every value stamped before it",
+   "request": {
+    "op": "download_merge",
+    "a": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "b": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "removed": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        2000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      }
+     }
+    }
+   },
+   "ok": {
+    "kind": "set",
+    "schema": 2,
+    "name": "download:tv:1399:2:3",
+    "values": {
+     "removed": {
+      "value": {
+       "bool": true
+      },
+      "at": [
+       2000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "download_merge: a start written after a removal survives it",
+   "request": {
+    "op": "download_merge",
+    "a": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "removed": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        2000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      }
+     }
+    },
+    "b": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"label\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        3000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        3000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 3000000
+       },
+       "at": [
+        3000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      }
+     }
+    }
+   },
+   "ok": {
+    "kind": "set",
+    "schema": 2,
+    "name": "download:tv:1399:2:3",
+    "values": {
+     "release": {
+      "value": {
+       "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"label\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+      },
+      "at": [
+       3000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     },
+     "title": {
+      "value": {
+       "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+      },
+      "at": [
+       3000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     },
+     "queuedAt": {
+      "value": {
+       "int": 3000000
+      },
+      "at": [
+       3000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     },
+     "removed": {
+      "value": {
+       "bool": true
+      },
+      "at": [
+       2000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "download_merge: the same three versions merge the same in the other grouping",
+   "request": {
+    "op": "download_merge",
+    "a": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"label\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        3000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        3000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 3000000
+       },
+       "at": [
+        3000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      }
+     }
+    },
+    "b": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "removed": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        2000000,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      }
+     }
+    }
+   },
+   "ok": {
+    "kind": "set",
+    "schema": 2,
+    "name": "download:tv:1399:2:3",
+    "values": {
+     "release": {
+      "value": {
+       "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"label\":\"rebecka.s02e03.1080p.web.h264-grp.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+      },
+      "at": [
+       3000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     },
+     "title": {
+      "value": {
+       "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+      },
+      "at": [
+       3000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     },
+     "queuedAt": {
+      "value": {
+       "int": 3000000
+      },
+      "at": [
+       3000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     },
+     "removed": {
+      "value": {
+       "bool": true
+      },
+      "at": [
+       2000000,
+       0,
+       "0f1e2d3c4b5a6978"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "download_merge: each value goes to its later stamp, and one only one side has is kept",
+   "request": {
+    "op": "download_merge",
+    "a": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "tried": {
+       "value": {
+        "strings": [
+         "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+         "rebecka.s02e03.1080p.web.h264-grp.mkv"
+        ]
+       },
+       "at": [
+        1600000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "announced": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        1600000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "b": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "tried": {
+       "value": {
+        "strings": [
+         "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+        ]
+       },
+       "at": [
+        1500000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    }
+   },
+   "ok": {
+    "kind": "set",
+    "schema": 2,
+    "name": "download:tv:1399:2:3",
+    "values": {
+     "release": {
+      "value": {
+       "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+      },
+      "at": [
+       1000000,
+       0,
+       "a1b2c3d4e5f60718"
+      ]
+     },
+     "title": {
+      "value": {
+       "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+      },
+      "at": [
+       1000000,
+       0,
+       "a1b2c3d4e5f60718"
+      ]
+     },
+     "queuedAt": {
+      "value": {
+       "int": 1000000
+      },
+      "at": [
+       1000000,
+       0,
+       "a1b2c3d4e5f60718"
+      ]
+     },
+     "tried": {
+      "value": {
+       "strings": [
+        "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+        "rebecka.s02e03.1080p.web.h264-grp.mkv"
+       ]
+      },
+      "at": [
+       1600000,
+       0,
+       "a1b2c3d4e5f60718"
+      ]
+     },
+     "announced": {
+      "value": {
+       "bool": true
+      },
+      "at": [
+       1600000,
+       0,
+       "a1b2c3d4e5f60718"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "download_merge: refuses a row that is not a download",
+   "request": {
+    "op": "download_merge",
+    "a": {
+     "kind": "set",
+     "schema": 2,
+     "name": "prefs",
+     "values": {}
+    },
+    "b": {
+     "kind": "set",
+     "schema": 2,
+     "name": "prefs",
+     "values": {}
+    }
+   },
+   "error": "not_a_download_row"
+  },
+  {
+   "name": "merge: the download lease row merges its lease by epoch, as set:deliver does",
+   "request": {
+    "op": "merge",
+    "a": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download-lease",
+     "values": {
+      "lease": {
+       "value": {
+        "strings": [
+         "0f1e2d3c4b5a6978",
+         "2"
+        ]
+       },
+       "at": [
+        9,
+        0,
+        "0f1e2d3c4b5a6978"
+       ]
+      }
+     }
+    },
+    "b": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download-lease",
+     "values": {
+      "lease": {
+       "value": {
+        "strings": [
+         "a1b2c3d4e5f60718",
+         "3"
+        ]
+       },
+       "at": [
+        5,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    }
+   },
+   "ok": {
+    "kind": "set",
+    "schema": 2,
+    "name": "download-lease",
+    "values": {
+     "lease": {
+      "value": {
+       "strings": [
+        "a1b2c3d4e5f60718",
+        "3"
+       ]
+      },
+      "at": [
+       5,
+       0,
+       "a1b2c3d4e5f60718"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "download_status: before any answer a download is starting",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1000000
+   },
+   "ok": {
+    "state": "starting",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a held-back download is paused until its time, with no answer yet",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "resumeAt": {
+       "value": {
+        "int": 2800000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000
+   },
+   "ok": {
+    "state": "paused",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false,
+    "until": 2800000
+   }
+  },
+  {
+   "name": "download_status: progress restarts the stall clock and is written the first time",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0.25,
+     "bytesPerSecond": 0
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.25,
+     "progressAt": 1060000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": true,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a download that moved nothing for 20 minutes has stalled",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 2200000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0,
+     "bytesPerSecond": 0
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": true,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a minute short of 20 it has not",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 2140000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0,
+     "bytesPerSecond": 0
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: failed at the debrid is stalled at once",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0.3,
+     "bytesPerSecond": 0,
+     "fetch": {
+      "state": "failed",
+      "service": "torbox"
+     }
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": true,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: an empty swarm never restarts the clock, whatever stray rate is reported",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 2200000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0.0001,
+     "bytesPerSecond": 500,
+     "fetch": {
+      "state": "stalled",
+      "seeds": 0,
+      "peers": 0
+     }
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": true,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: an empty swarm at half the stall time is reannounced once",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1600000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0,
+     "bytesPerSecond": 0,
+     "fetch": {
+      "state": "stalled",
+      "seeds": 0,
+      "peers": 0
+     }
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": true,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: and never a second time",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "reannounced": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        1600000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1660000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0,
+     "bytesPerSecond": 0,
+     "fetch": {
+      "state": "stalled",
+      "seeds": 0,
+      "peers": 0
+     }
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a swarm nobody reported is not reannounced",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1600000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0,
+     "bytesPerSecond": 0
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: no such download inside the start grace is still starting",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1120000,
+    "answer": {
+     "kind": "not_queued"
+    }
+   },
+   "ok": {
+    "state": "starting",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: and past it, not started",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1240000,
+    "answer": {
+     "kind": "not_queued"
+    }
+   },
+   "ok": {
+    "state": "not_started",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a 404 counts toward the stall clock",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 2200000,
+    "answer": {
+     "kind": "dead"
+    }
+   },
+   "ok": {
+    "state": "not_started",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": true,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: an addon that can't be reached past the grace is unreachable, never a verdict",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1240000,
+    "answer": {
+     "kind": "unknown"
+    }
+   },
+   "ok": {
+    "state": "unreachable",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a refusal names the service",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000,
+    "answer": {
+     "kind": "service_unavailable",
+     "service": "torbox"
+    }
+   },
+   "ok": {
+    "state": "refused",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false,
+    "service": "torbox"
+   }
+  },
+  {
+   "name": "download_status: held back for Play is paused until the time den-scout named",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000,
+    "answer": {
+     "kind": "reserved_for_play",
+     "until": 3400000
+    }
+   },
+   "ok": {
+    "state": "paused",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false,
+    "until": 3400000
+   }
+  },
+  {
+   "name": "download_status: a lapsed ticket leaves the state alone and asks for a renewal",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000,
+    "answer": {
+     "kind": "ticket_expired"
+    }
+   },
+   "ok": {
+    "state": null,
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false,
+    "renew": true
+   }
+  },
+  {
+   "name": "download_status: ready is announced once",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000,
+    "answer": {
+     "kind": "ready"
+    }
+   },
+   "ok": {
+    "state": "ready",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": true
+   }
+  },
+  {
+   "name": "download_status: a download already announced is not announced again",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "announced": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        1060000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "reported": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        1060000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1120000,
+    "answer": {
+     "kind": "ready"
+    }
+   },
+   "ok": {
+    "state": "ready",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a download with no working release left says so",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        2800000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 2860000,
+    "answer": {
+     "kind": "unknown"
+    }
+   },
+   "ok": {
+    "state": "no_working_release",
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 1000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: the caller's own clock, ahead of the coarse one in the row, holds off a stall",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "progress": {
+       "value": {
+        "string": "{\"lastProgress\":0.1,\"progressAt\":1100000}"
+       },
+       "at": [
+        1100000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 2300000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0.3,
+     "bytesPerSecond": 0
+    },
+    "clock": {
+     "lastProgress": 0.3,
+     "progressAt": 1500000
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.3,
+     "progressAt": 1500000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: progress is not written again within five minutes of the last write",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "progress": {
+       "value": {
+        "string": "{\"lastProgress\":0.1,\"progressAt\":1100000}"
+       },
+       "at": [
+        1100000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1200000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0.2,
+     "bytesPerSecond": 0
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.2,
+     "progressAt": 1200000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: and is once five minutes have passed",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "progress": {
+       "value": {
+        "string": "{\"lastProgress\":0.1,\"progressAt\":1100000}"
+       },
+       "at": [
+        1100000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1400000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0.2,
+     "bytesPerSecond": 0
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.2,
+     "progressAt": 1400000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": true,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: an answer of an unknown kind is an error, not a state",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 1060000,
+    "answer": {
+     "kind": "maybe"
+    }
+   },
+   "error": "invalid_answer"
+  },
+  {
+   "name": "download_next: a stalled download moves to the best release not yet tried",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.720p.hdtv.x264-other.mkv",
+      "resolution": "720p",
+      "cached": false,
+      "seeders": 20
+     }
+    ],
+    "resolution": "streams",
+    "complete": true
+   },
+   "ok": {
+    "decision": "next",
+    "index": 1,
+    "candidates": 3,
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_next: a cached release comes before a better uncached one",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.720p.hdtv.x264-other.mkv",
+      "resolution": "720p",
+      "cached": true,
+      "seeders": 20
+     }
+    ],
+    "resolution": "streams",
+    "complete": true
+   },
+   "ok": {
+    "decision": "next",
+    "index": 2,
+    "candidates": 3,
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_next: every release tried is exhausted",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.720p.hdtv.x264-other.mkv\",\"label\":\"rebecka.s02e03.720p.hdtv.x264-other.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "tried": {
+       "value": {
+        "strings": [
+         "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+         "rebecka.s02e03.1080p.web.h264-grp.mkv"
+        ]
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.720p.hdtv.x264-other.mkv",
+      "resolution": "720p",
+      "cached": false,
+      "seeders": 20
+     }
+    ],
+    "resolution": "streams",
+    "complete": true
+   },
+   "ok": {
+    "decision": "exhausted",
+    "candidates": 3,
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+     "rebecka.s02e03.1080p.web.h264-grp.mkv",
+     "rebecka.s02e03.720p.hdtv.x264-other.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_next: a list a source didn't answer leaves it undecided",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.720p.hdtv.x264-other.mkv\",\"label\":\"rebecka.s02e03.720p.hdtv.x264-other.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "tried": {
+       "value": {
+        "strings": [
+         "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+         "rebecka.s02e03.1080p.web.h264-grp.mkv"
+        ]
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.720p.hdtv.x264-other.mkv",
+      "resolution": "720p",
+      "cached": false,
+      "seeders": 20
+     }
+    ],
+    "resolution": "streams",
+    "complete": false
+   },
+   "ok": {
+    "decision": "undecided",
+    "candidates": 3,
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+     "rebecka.s02e03.1080p.web.h264-grp.mkv",
+     "rebecka.s02e03.720p.hdtv.x264-other.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_next: a release nobody seeds is never moved to",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 0
+     }
+    ],
+    "resolution": "streams",
+    "complete": true
+   },
+   "ok": {
+    "decision": "exhausted",
+    "candidates": 1,
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_next: no sources at all is exhausted",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "resolution": "none"
+   },
+   "ok": {
+    "decision": "exhausted",
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_next: an unreachable addon decides nothing",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "resolution": "undecided"
+   },
+   "ok": {
+    "decision": "undecided",
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_next: the next release passes the dub rule the first did",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"old.release\",\"label\":\"old.release\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"originalLanguage\":\"sv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "ita",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20,
+      "probed": true,
+      "audioLanguages": [
+       "it"
+      ]
+     },
+     {
+      "identity": "swe",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20,
+      "probed": true,
+      "audioLanguages": [
+       "swe"
+      ]
+     }
+    ],
+    "resolution": "streams",
+    "complete": true
+   },
+   "ok": {
+    "decision": "next",
+    "index": 1,
+    "candidates": 2,
+    "tried": [
+     "old.release"
+    ]
+   }
+  },
+  {
+   "name": "download_prune: the three lifetimes, from queuedAt",
+   "request": {
+    "op": "download_prune",
+    "now": 200000000,
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:movie:1:-1:-1",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"movie:1:-1:-1\",\"label\":\"movie:1:-1:-1\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         0,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         0,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 0
+        },
+        "at": [
+         0,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "announced": {
+        "value": {
+         "bool": true
+        },
+        "at": [
+         1000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     },
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:movie:2:-1:-1",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"movie:2:-1:-1\",\"label\":\"movie:2:-1:-1\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         199040000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         199040000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 199040000
+        },
+        "at": [
+         199040000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     },
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:movie:3:-1:-1",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"movie:3:-1:-1\",\"label\":\"movie:3:-1:-1\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         199040000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         199040000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 199040000
+        },
+        "at": [
+         199040000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "reported": {
+        "value": {
+         "bool": true
+        },
+        "at": [
+         199100000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     },
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:movie:4:-1:-1",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"movie:4:-1:-1\",\"label\":\"movie:4:-1:-1\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         0,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         0,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 0
+        },
+        "at": [
+         0,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     },
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:movie:5:-1:-1",
+      "values": {
+       "removed": {
+        "value": {
+         "bool": true
+        },
+        "at": [
+         5,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ],
+    "states": {
+     "download:movie:2:-1:-1": "not_started",
+     "download:movie:3:-1:-1": "not_started",
+     "download:movie:4:-1:-1": "fetching"
+    }
+   },
+   "ok": {
+    "remove": [
+     "download:movie:1:-1:-1",
+     "download:movie:2:-1:-1"
+    ]
+   }
+  },
+  {
+   "name": "download_prune: a ready download is kept two days",
+   "request": {
+    "op": "download_prune",
+    "now": 200000000,
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:movie:6:-1:-1",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"movie:6:-1:-1\",\"label\":\"movie:6:-1:-1\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         30800000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         30800000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 30800000
+        },
+        "at": [
+         30800000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ],
+    "states": {
+     "download:movie:6:-1:-1": "ready"
+    }
+   },
+   "ok": {
+    "remove": []
+   }
+  },
+  {
+   "name": "rank_releases: the badge names what Play gets — a cached 1080p over an uncached 4K",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "a",
+      "resolution": "1080p",
+      "cached": true
+     },
+     {
+      "identity": "b",
+      "resolution": "2160p",
+      "cached": false
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 0
+   }
+  },
+  {
+   "name": "rank_releases: with nothing cached the whole set stands",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "c",
+      "resolution": "720p",
+      "cached": false
+     },
+     {
+      "identity": "d",
+      "resolution": "2160p",
+      "cached": false
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: unreported readiness is never read as slow",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "e",
+      "resolution": "720p"
+     },
+     {
+      "identity": "f",
+      "resolution": "2160p"
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: a runt a fraction of its siblings' size sinks",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "runt-4k",
+      "resolution": "2160p",
+      "cached": false,
+      "sizeBytes": 125000000
+     },
+     {
+      "identity": "full-a",
+      "resolution": "1080p",
+      "cached": false,
+      "sizeBytes": 2000000000
+     },
+     {
+      "identity": "full-b",
+      "resolution": "1080p",
+      "cached": false,
+      "sizeBytes": 2000000000
+     },
+     {
+      "identity": "full-c",
+      "resolution": "1080p",
+      "cached": false,
+      "sizeBytes": 3000000000
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     1,
+     2,
+     3,
+     0
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: an unseeded release is neither the badge nor the download",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "dead-4k",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 0
+     },
+     {
+      "identity": "alive-1080",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 8
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     1,
+     0
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: a proven dub sinks below the title's own language",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "ita-4k",
+      "resolution": "2160p",
+      "cached": false,
+      "probed": true,
+      "audioLanguages": [
+       "it"
+      ]
+     },
+     {
+      "identity": "swe-1080",
+      "resolution": "1080p",
+      "cached": false,
+      "probed": true,
+      "audioLanguages": [
+       "sv"
+      ]
+     }
+    ],
+    "original": "sv"
+   },
+   "ok": {
+    "order": [
+     1,
+     0
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: with no language to judge against nothing is a dub",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "ita-4k",
+      "resolution": "2160p",
+      "cached": false,
+      "probed": true,
+      "audioLanguages": [
+       "it"
+      ]
+     },
+     {
+      "identity": "swe-1080",
+      "resolution": "1080p",
+      "cached": false,
+      "probed": true,
+      "audioLanguages": [
+       "sv"
+      ]
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 0
+   }
+  },
+  {
+   "name": "rank_releases: the viewer's own language is wanted too, and untagged audio is the original",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "ita",
+      "resolution": "2160p",
+      "cached": false,
+      "probed": true,
+      "audioLanguages": [
+       "ita"
+      ]
+     },
+     {
+      "identity": "untagged",
+      "resolution": "2160p",
+      "cached": false,
+      "probed": true,
+      "audioLanguages": [
+       "ru"
+      ],
+      "untaggedAudioTracks": 1
+     },
+     {
+      "identity": "unprobed",
+      "resolution": "2160p",
+      "cached": false,
+      "audioLanguages": [
+       "ru"
+      ]
+     }
+    ],
+    "original": "sv",
+    "preferred": "it"
+   },
+   "ok": {
+    "order": [
+     0,
+     1,
+     2
+    ],
+    "best": 0,
+    "pick": 0
+   }
+  },
+  {
+   "name": "rank_releases: within one tier the best picture wins",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "hd",
+      "resolution": "1080p",
+      "cached": true
+     },
+     {
+      "identity": "uhd",
+      "resolution": "2160p",
+      "cached": true
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: Dolby Vision over HDR over neither, at one resolution",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "sdr",
+      "resolution": "2160p",
+      "cached": true
+     },
+     {
+      "identity": "hdr",
+      "resolution": "2160p",
+      "cached": true,
+      "hdr": true
+     },
+     {
+      "identity": "dv",
+      "resolution": "2160p",
+      "cached": true,
+      "dolbyVision": true
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1,
+     2
+    ],
+    "best": 2,
+    "pick": 2
+   }
+  },
+  {
+   "name": "rank_releases: software decode and 3D sink, and the addon's order holds within a tier",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "av1",
+      "resolution": "2160p",
+      "cached": true,
+      "codec": "AV1"
+     },
+     {
+      "identity": "hevc",
+      "resolution": "1080p",
+      "cached": true,
+      "codec": "x265"
+     },
+     {
+      "identity": "3d",
+      "resolution": "1080p",
+      "cached": true,
+      "threeD": true
+     },
+     {
+      "identity": "h264",
+      "resolution": "1080p",
+      "cached": true,
+      "codec": "h264"
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     1,
+     3,
+     2,
+     0
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: a download's first pick takes a cached release over a higher-ranked uncached one",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.720p.hdtv.x264-other.mkv",
+      "resolution": "720p",
+      "cached": true,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     1,
+     0
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: an addon that reports no readiness doesn't outrank a cached release for a download",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.720p.hdtv.x264-other.mkv",
+      "resolution": "720p",
+      "cached": true,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: with nothing cached a download's pick is the badge's release",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.720p.hdtv.x264-other.mkv",
+      "resolution": "720p",
+      "cached": false,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1,
+     2
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: a tried release is never a download's pick",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20
+     }
+    ],
+    "tried": [
+     "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: an empty list picks nothing",
+   "request": {
+    "op": "rank_releases",
+    "releases": []
+   },
+   "ok": {
+    "order": [],
+    "best": null,
+    "pick": null
+   }
   }
  ]
 }
