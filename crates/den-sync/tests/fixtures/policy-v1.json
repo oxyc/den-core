@@ -2444,6 +2444,62 @@
     "center": 1999.0,
     "spread": 8.0
    }
+  },
+  {
+   "name": "recovery_code: 22 random bytes make den-spec recovery-v1's first code",
+   "request": {
+    "op": "recovery_code",
+    "random": "e6e4a1588a2d3f12c25c19744e5f3bd2ccb0cad1954b"
+   },
+   "ok": {
+    "code": "GEB2-LP9U-C63W-Q95U-NSLT-XMFL",
+    "data": "GEB2LP9UC63WQ95UNSLTXM"
+   }
+  },
+  {
+   "name": "recovery_read: lowercase with spaces reads as the data characters",
+   "request": {
+    "op": "recovery_read",
+    "text": " geb2 lp9u c63w q95u nslt xmfl "
+   },
+   "ok": {
+    "data": "GEB2LP9UC63WQ95UNSLTXM"
+   }
+  },
+  {
+   "name": "recovery_read: a wrong check character is a typo",
+   "request": {
+    "op": "recovery_read",
+    "text": "GEB2-LP9U-C63W-Q95U-NSLT-XMFA"
+   },
+   "error": "checksum"
+  },
+  {
+   "name": "recovery_read: a lowercase o is outside the alphabet",
+   "request": {
+    "op": "recovery_read",
+    "text": "GEB2-oP9U-C63W-Q95U-NSLT-XMFL"
+   },
+   "error": "mistyped"
+  },
+  {
+   "name": "recovery_read: a long s is not read as S (ASCII uppercase only)",
+   "request": {
+    "op": "recovery_read",
+    "text": "GEB2-LP9U-C63W-Q95U-NſLT-XMFL"
+   },
+   "error": "mistyped"
+  },
+  {
+   "name": "recovery_derive: den-spec recovery-v1's first locator and wrap key",
+   "request": {
+    "op": "recovery_derive",
+    "data": "GEB2LP9UC63WQ95UNSLTXM"
+   },
+   "ok": {
+    "locator": "df858499eebc4d6ea5736d45e3019632",
+    "wrapKey": "ab5a68f55d111a8a4fa0bf7fbfd608568c6a36359e942162ad1e7475be32839b"
+   }
   }
  ]
 }
