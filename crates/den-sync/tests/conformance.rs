@@ -103,7 +103,7 @@ fn deliver_settings_merge_as_a_join() {
 }
 
 /// The `set:deliver` merges as a property: random versions of `since`, `lease`, `unverified` and `removals` from three
-/// devices — equal stamps, equal epochs, empty holders and malformed values among them — merge commutatively,
+/// devices — equal stamps, equal `at`s, equal epochs, empty holders and malformed values among them — merge commutatively,
 /// associatively and idempotently.
 #[test]
 fn deliver_settings_merge_laws_hold_over_random_versions() {
@@ -118,7 +118,9 @@ fn deliver_settings_merge_laws_hold_over_random_versions() {
     for _ in 0..500 {
         let mut versions = Vec::new();
         for device in devices {
-            let at = json!([1000 + next(4) * 1000, 0, device]);
+            // One in three versions carries the first device's `at`, so two versions can tie on `at` exactly.
+            let at_device = if next(3) == 0 { devices[0] } else { device };
+            let at = json!([1000 + next(4) * 1000, 0, at_device]);
             let stamp = |t: u64| json!([t * 1000, 0, devices[(t % 3) as usize]]);
             let since = if next(5) == 0 {
                 json!({"value": {"string": "nope"}, "at": at})

@@ -706,9 +706,15 @@ pub fn account(deliver: &Value) -> Result<Account, String> {
 }
 
 /// `pending_targets` (§9, v3 §6) for one account. `deliver` is the account's `set:deliver` facts, read by the
-/// client: `{provider, account, since, removals?, unverified?, removals_sent?}`, `removals` the parsed latch object
-/// and `removals_sent` the times (ms) the holder sent list removals for the account, kept by it.
+/// client: `{provider, account, since, removals?, unverified?, removals_sent}`, `removals` the parsed latch object
+/// and `removals_sent` the times (ms) the holder sent list removals for the account, kept by it across restarts.
+/// `removals_sent` is required, so a binding that forgets it fails instead of turning the 120 s rule off. A send
+/// time after `now` is not counted, so the client passes a send it still counts as recent on another clock (after its
+/// wall clock stepped back) as `now`.
 pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result<Value, String> {
+    if !deliver["removals_sent"].is_array() {
+        return Err("invalid_account".into());
+    }
     let mut account = account(deliver)?;
     let snapshot = Snapshot::read(documents)?;
     account.unverified = unverified(&snapshot, &account);
@@ -744,47 +750,75 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
             Decision::Nothing => {}
         }
     }
-    // The removals latch (v3 §6 *Accounts*, v4 §9): only list removals stamped after the approval count. It is
-    // closed while its `held` stamp is later than its approval, and it closes when the removals counted now and those
-    // sent in the last 120 s come to more than 20 — a mass removal at once, or a trickle pass after pass.
-    let (approved, stored_held) =
-        crate::wire::removals_latch(&account.removals).unwrap_or_default();
+    // The removals latch (v3 §6 *Accounts*, v4 §9). List removals stamped after the approval are counted. The latch
+    // is closed while its `held` stamp is later than its approval, or its value is malformed (a safety latch fails
+    // closed). It closes when the counted removals pending now and the list removals sent since the approval in the
+    // last 120 s come to more than 20, and it also closes when more than 20 were sent in that window and any list
+    // removal is pending, whatever its stamp: an approval covers every removal stamped at or before it, so this is
+    // what stops a late batch stamped before it (an offline device's) once 20 have gone.
+    let (approved, stored_held, malformed) = match &account.removals {
+        Value::Null => (None, None, false),
+        value => match crate::wire::removals_latch(value) {
+            Some((approved, held)) => (approved, held, false),
+            None => (None, None, true),
+        },
+    };
     let removal_stamp = |c: &Value| {
         (c["kind"] == "list" && c["added"] == false)
             .then(|| stamp(&c["built_from"]["stamp"]).ok())
             .flatten()
     };
-    let is_counted_removal =
-        |c: &Value| removal_stamp(c).is_some_and(|s| approved.as_ref().is_none_or(|a| s > *a));
-    let counted: Vec<Stamp> = commands
-        .iter()
-        .filter(|c| is_counted_removal(c))
-        .filter_map(removal_stamp)
-        .collect();
+    let is_counted = |s: &Stamp| approved.as_ref().is_none_or(|a| s > a);
+    let removals: Vec<Stamp> = commands.iter().filter_map(removal_stamp).collect();
+    let counted: Vec<&Stamp> = removals.iter().filter(|s| is_counted(s)).collect();
+    // Sends before the approval are what the person approved past, so only later ones count.
     let recent = account
         .removals_sent
         .iter()
         .filter(|sent| **sent > now - 120_000 && **sent <= now)
+        .filter(|sent| approved.as_ref().is_none_or(|a| **sent > a.0))
         .count();
-    let closes = !counted.is_empty() && counted.len() + recent > REMOVAL_LATCH;
-    let stored_closed = stored_held
-        .as_ref()
-        .is_some_and(|held| approved.as_ref().is_none_or(|a| held > a));
-    if closes || stored_closed {
-        for c in commands.iter_mut().filter(|c| is_counted_removal(c)) {
+    let closes_by_count = !counted.is_empty() && counted.len() + recent > REMOVAL_LATCH;
+    let closes_by_rate = recent > REMOVAL_LATCH && removals.len() > counted.len();
+    let stored_closed = malformed
+        || stored_held
+            .as_ref()
+            .is_some_and(|held| approved.as_ref().is_none_or(|a| held > a));
+    let closed = closes_by_count || closes_by_rate || stored_closed;
+    for c in commands.iter_mut() {
+        let held = removal_stamp(c).is_some_and(|s| (closed && is_counted(&s)) || closes_by_rate);
+        if held {
             c["removals_held"] = json!(true);
         }
     }
     // What the holder writes when the latch closes now: `held` at the latest removal it holds, so an approval of
-    // what was shown (below) opens it, and any removal stamped later closes it again.
-    let closing_at = counted.iter().max().filter(|_| closes).cloned();
-    // What an approval of the removals held now writes: the latest of them, never a fresh stamp, so a removal made
-    // after the person saw the list is never approved unseen.
+    // what was shown (below) opens it, and any removal stamped later closes it again. Closed by rate over removals
+    // at or before the approval, `held` must still pass the approval: the later of `now` and the approval's next
+    // counter, under the approval's device, which is also past every send counted, so approving it doesn't re-close.
+    let past_approval = approved
+        .as_ref()
+        .filter(|_| closes_by_rate)
+        .map(|a| std::cmp::max(Stamp(now, 0, a.2.clone()), Stamp(a.0, a.1 + 1, a.2.clone())));
+    let closing_at = counted
+        .iter()
+        .map(|s| (*s).clone())
+        .filter(|_| closes_by_count || closes_by_rate)
+        .chain(past_approval)
+        .max();
+    // What an approval of the removals held now writes: the latest of them, or the latch's `held` (stored, or
+    // closing now) when that is later — never a fresh stamp. A removal stamped before that `held` and still pending is
+    // itself held, so listed: nothing stamped after the list was shown is approved unseen.
     let approval = commands
         .iter()
         .filter(|c| c["removals_held"] == json!(true))
         .filter_map(removal_stamp)
-        .max();
+        .max()
+        .map(|latest| {
+            [stored_held.clone(), closing_at.clone()]
+                .into_iter()
+                .flatten()
+                .fold(latest, std::cmp::max)
+        });
     commands.sort_by(|a, b| {
         a["at"]
             .as_i64()

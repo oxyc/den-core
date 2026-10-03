@@ -535,7 +535,7 @@ fn malformed_cases() -> Vec<Case> {
         case(
             "its target is decided as having no receipt, and delivery is not paused",
             "§4 Malformed parts",
-            json!({"op": "pending_targets_v4", "documents": [read, kept], "deliver": {"provider": "simkl", "account": "4812736", "since": st(500)}, "now": 2000}),
+            json!({"op": "pending_targets_v4", "documents": [read, kept], "deliver": {"provider": "simkl", "account": "4812736", "since": st(500), "removals_sent": []}, "now": 2000}),
             Expect::Subset(
                 json!({"commands": [{"kind": "watched", "key": "1", "baseline": false}], "held": []}),
             ),
@@ -1239,7 +1239,7 @@ fn since_value(t: i64, at: i64) -> Value {
 }
 
 fn simkl(since: i64) -> Value {
-    json!({"provider": "simkl", "account": "4812736", "since": st(since)})
+    json!({"provider": "simkl", "account": "4812736", "since": st(since), "removals_sent": []})
 }
 
 fn pending(documents: Value, deliver: Value, now: i64) -> Value {
@@ -1864,6 +1864,24 @@ fn review_cases() -> Vec<Case> {
             ], "held": [], "removals": null, "approval": null, "greatest_epoch": 0, "unverified": []})),
         ),
         case(
+            "an approval reaches the stored held when the removal that closed the latch was undone",
+            "§9 Approving",
+            pending(
+                json!([
+                    title("movie", 550, json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000)}})),
+                    dlv("movie", 550, None, json!({"list": ["in", st(1000), [2, 1, D]]}))
+                ]),
+                with(simkl(500), json!({"removals": {"held": st(3500)}})),
+                4000,
+            ),
+            Expect::Ok(json!({"commands": [{
+                "added": false, "at": 3000, "baseline": false,
+                "built_from": {"key": "list", "kind": "list", "stamp": st(3000), "value": "gone"},
+                "current": true, "document": "dlv:simkl:4812736:movie:550", "episode": false, "key": "list",
+                "kind": "list", "rating": null, "removals_held": true, "title": "title:movie:550"
+            }], "settle": [], "held": [], "removals": null, "approval": st(3500), "greatest_epoch": 2, "unverified": []})),
+        ),
+        case(
             "episode imports skip a deleted series",
             "v3 §7 Title imports",
             write(
@@ -2394,8 +2412,94 @@ fn a_latch_closed_after_an_approval_holds_only_the_later_removals() {
     // Approving what was shown opens it: `approved` reaches `held`, and nothing stamped at or before it counts.
     let opened = json!({"approved": st(6000), "held": st(6000)});
     assert!(held_ids(&documents, opened).is_empty());
-    // A value that isn't an object of stamps is no latch: v3's bare "held" closes nothing by itself.
-    assert!(held_ids(&batch(101, 5, 6000), json!("held")).is_empty());
+    // A value that isn't an object of stamps is a closed latch with no approval: v3's bare "held", or a garbage stamp.
+    let five = (101..106).collect::<Vec<_>>();
+    assert_eq!(held_ids(&batch(101, 5, 6000), json!("held")), five);
+    assert_eq!(held_ids(&batch(101, 5, 6000), json!({"held": "x"})), five);
+}
+
+/// The latch closed at the stamp of its latest removal, and that title was then re-added: the approval of what is
+/// left must still reach the stored `held`, or the same list comes back after every approval.
+#[test]
+fn an_approval_reaches_the_stored_held_when_the_closing_removal_was_undone() {
+    // 25 removals closed it at 3025; the 25th title is back on the watchlist, so 24 are pending.
+    let documents: Vec<Value> = (1..=24u64)
+        .flat_map(|id| {
+            [
+                title(
+                    "movie",
+                    id,
+                    json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000 + id as i64)}}),
+                ),
+                dlv("movie", id, None, json!({"list": ["in", st(1000), [2, id, D]]})),
+            ]
+        })
+        .collect();
+    let answer = |removals: Value| -> Value {
+        call(&json!({"op": "pending_targets_v4", "documents": documents,
+            "deliver": with(simkl(500), json!({"removals": removals})), "now": 8000}))["ok"]
+            .clone()
+    };
+    let closed = answer(json!({"held": st(3025)}));
+    let held = closed["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["removals_held"] == json!(true))
+        .count();
+    assert_eq!(held, 24);
+    assert_eq!(closed["approval"], st(3025));
+    // Approving it opens the latch: none of the 24 is held.
+    let opened = answer(json!({"approved": st(3025), "held": st(3025)}));
+    assert!(opened["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|c| c["removals_held"] != json!(true)));
+    assert_eq!(opened["approval"], Value::Null);
+}
+
+/// An approval covers every removal stamped at or before it, including ones that arrive after it. 21 approved
+/// removals go out; a batch of 300 an offline device stamped earlier, read within 120 s of those sends, is held and
+/// closes the latch past the approval, so the person sees it before it goes.
+#[test]
+fn a_late_batch_stamped_before_the_approval_is_held_once_more_than_20_were_sent() {
+    let documents: Vec<Value> = (1..=300u64)
+        .flat_map(|id| {
+            [
+                title(
+                    "movie",
+                    id,
+                    json!({"status": {"value": "watchlist", "at": st(1000)}, "deleted": {"value": true, "at": st(3000)}}),
+                ),
+                dlv("movie", id, None, json!({"list": ["in", st(1000), [2, id, D]]})),
+            ]
+        })
+        .collect();
+    let answer = |removals: Value, sent: Vec<i64>| -> Value {
+        call(&json!({"op": "pending_targets_v4", "documents": documents,
+            "deliver": with(simkl(500), json!({"removals": removals, "removals_sent": sent})), "now": 200_000}))["ok"]
+            .clone()
+    };
+    let held = |answer: &Value| {
+        answer["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["removals_held"] == json!(true))
+            .count()
+    };
+    let approved = json!({"approved": st(4000), "held": st(4000)});
+    // The 21 approved removals were sent at 150 000: all 300 are held, and the latch closes past the approval.
+    let after_21 = answer(approved.clone(), vec![150_000; 21]);
+    assert_eq!(held(&after_21), 300);
+    assert_eq!(after_21["removals"], json!({"held": st(200_000)}));
+    assert_eq!(after_21["approval"], st(200_000));
+    // Approving that opens it: the sends before the approval no longer count, so nothing re-closes it.
+    let opened = json!({"approved": st(200_000), "held": st(200_000)});
+    assert_eq!(held(&answer(opened, vec![150_000; 21])), 0);
+    // The known limit: with no more than 20 sent in the window, an approval covers a late batch unseen.
+    assert_eq!(held(&answer(approved, vec![150_000; 20])), 0);
 }
 
 /// v3 §6: the latch also closes when more than 20 list removals were sent in 120 s, so a trickle of a few removals a
@@ -2431,6 +2535,12 @@ fn removals_sent_in_the_last_two_minutes_close_the_latch() {
     assert_eq!(held(vec![150_000; 15]), 0);
     // Sends older than 120 s don't count.
     assert_eq!(held(vec![50_000; 30]), 0);
+    // `removals_sent` is required: a binding that forgets it fails rather than turning the rule off.
+    let missing = json!({"provider": "simkl", "account": "4812736", "since": st(500)});
+    let refused = call(
+        &json!({"op": "pending_targets_v4", "documents": documents, "deliver": missing, "now": 1}),
+    );
+    assert_eq!(refused["error"], "invalid_account");
 }
 
 /// Blocker 5 of den-core#24: progress on a watched film, with no status from the client, moved to a new viewing on
