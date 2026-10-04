@@ -729,6 +729,19 @@ fn write_cases() -> Vec<Case> {
             )])),
         ),
         case(
+            "a finished episode's next finishing tick stays in its viewing",
+            "§8 Playback",
+            write(
+                json!({"kind": "progress", "episode": [1, 1], "value": 0.97, "at": st(3000)}),
+                tv(),
+                Value::Null,
+                one(json!({"1": finished})),
+            ),
+            docs(json!([ep(
+                json!({"1": with(finished.clone(), json!({"progress": progress(0.97, 3000, 0)}))})
+            )])),
+        ),
+        case(
             "playback never writes 0 in a new viewing",
             "§8 Playback",
             write(
@@ -752,6 +765,25 @@ fn write_cases() -> Vec<Case> {
                 "movie",
                 550,
                 json!({"resume": progress(0.97, 2000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
+            )])),
+        ),
+        case(
+            "a finished film's next finishing tick stays in its viewing",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0.98, "at": st(3000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"resume": progress(0.97, 2000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({"resume": progress(0.98, 3000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
             )])),
         ),
         case(

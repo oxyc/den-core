@@ -153,9 +153,13 @@ fn episode_progress(
         .and_then(|p| safe_u64(&p["viewing"]))
         .unwrap_or(0);
     let state = library_v3::episode_state(&Value::Object(register.clone()), resets, now)?;
-    let finished = stored
-        .as_ref()
-        .is_some_and(|p| p["value"].as_f64().unwrap_or(0.0) >= 0.95);
+    let value = write["value"].as_f64().ok_or("invalid_progress")?;
+    // A finished viewing ends when playback goes back below 0.95, not on its next finishing tick: the player keeps
+    // writing through the credits, and each of those ticks would otherwise be another play.
+    let finished = value < 0.95
+        && stored
+            .as_ref()
+            .is_some_and(|p| p["value"].as_f64().unwrap_or(0.0) >= 0.95);
     let hidden = stored
         .as_ref()
         .is_some_and(|p| stamp(&p["at"]).is_ok_and(|s| effective_t(&s, now) <= reset));
@@ -167,7 +171,6 @@ fn episode_progress(
     } else {
         viewing
     };
-    let value = write["value"].as_f64().ok_or("invalid_progress")?;
     let new_viewing = stored.is_none() || next != viewing;
     if new_viewing && value <= 0.0 {
         return Ok(());
@@ -394,7 +397,10 @@ fn film_progress(
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    let next = if resumed >= 0.95 || (watched && resumed < 0.95) || hidden_play(&watch, viewing, 0)
+    // As for an episode, a finished resume starts the next viewing only once playback is back below 0.95.
+    let next = if (resumed >= 0.95 && value < 0.95)
+        || (watched && resumed < 0.95)
+        || hidden_play(&watch, viewing, 0)
     {
         viewing + 1
     } else {
