@@ -227,7 +227,13 @@ fn download_prune_caps_live_rows() {
                 "queuedAt": {"value": {"int": 1000 + i}, "at": at}}})
         })
         .collect();
-    let pruned = den_sync::download_prune(&rows, &serde_json::Map::new(), 10_000).unwrap();
+    let pruned = den_sync::download_prune(
+        &rows,
+        &serde_json::Map::new(),
+        &serde_json::Map::new(),
+        10_000,
+    )
+    .unwrap();
     assert_eq!(
         pruned["remove"],
         json!([
@@ -236,6 +242,44 @@ fn download_prune_caps_live_rows() {
             "download:movie:3:-1:-1"
         ])
     );
+}
+
+/// A ready row outlives any age at all once it has no watched state behind it — den#202's owner-reported
+/// bug was `download_prune` aging a ready row out on a timer, which clears it from the Downloads page before
+/// anyone has actually watched the episode or film it fetched.
+#[test]
+fn download_prune_keeps_a_ready_unwatched_row_at_any_age() {
+    let at = json!([0, 0, "aaaaaaaaaaaaaaaa"]);
+    let row = json!({"kind": "set", "schema": 2, "name": "download:movie:1:-1:-1", "values": {
+        "release": {"value": {"string": "{\"identity\":\"x\"}"}, "at": at},
+        "queuedAt": {"value": {"int": 0}, "at": at},
+        "announced": {"value": {"bool": true}, "at": at}}});
+    // A hundred years past queuedAt: the old two-day ready TTL would have pruned this long ago.
+    let now = 100 * 365 * 86_400_000;
+    let pruned = den_sync::download_prune(
+        &[row],
+        &serde_json::Map::new(),
+        &serde_json::Map::new(),
+        now,
+    )
+    .unwrap();
+    assert_eq!(pruned["remove"], json!([]));
+}
+
+/// The same row is pruned the moment `watched` says its own episode or film was watched — regardless of age,
+/// and never on the series' standing (the caller's job, not this op's: `watched` must already be per-episode).
+#[test]
+fn download_prune_drops_a_ready_row_once_watched() {
+    let at = json!([0, 0, "aaaaaaaaaaaaaaaa"]);
+    let row = json!({"kind": "set", "schema": 2, "name": "download:tv:1399:2:3", "values": {
+        "release": {"value": {"string": "{\"identity\":\"x\"}"}, "at": at},
+        "queuedAt": {"value": {"int": 0}, "at": at},
+        "announced": {"value": {"bool": true}, "at": at}}});
+    let mut watched = serde_json::Map::new();
+    watched.insert("download:tv:1399:2:3".into(), json!(true));
+    let pruned =
+        den_sync::download_prune(&[row], &serde_json::Map::new(), &watched, 60_000).unwrap();
+    assert_eq!(pruned["remove"], json!(["download:tv:1399:2:3"]));
 }
 
 fn wat(entries: Value) -> Value {
