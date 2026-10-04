@@ -5800,6 +5800,9 @@
      "download:movie:2:-1:-1": "not_started",
      "download:movie:3:-1:-1": "not_started",
      "download:movie:4:-1:-1": "fetching"
+    },
+    "watched": {
+     "download:movie:1:-1:-1": true
     }
    },
    "ok": {
@@ -5810,7 +5813,7 @@
    }
   },
   {
-   "name": "download_prune: a ready download is kept two days",
+   "name": "download_prune: a ready, unwatched download outlives the old two-day limit",
    "request": {
     "op": "download_prune",
     "now": 200000000,
@@ -5825,7 +5828,7 @@
          "string": "{\"cached\":false,\"identity\":\"movie:6:-1:-1\",\"label\":\"movie:6:-1:-1\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
         },
         "at": [
-         30800000,
+         0,
          0,
          "a1b2c3d4e5f60718"
         ]
@@ -5835,17 +5838,17 @@
          "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
         },
         "at": [
-         30800000,
+         0,
          0,
          "a1b2c3d4e5f60718"
         ]
        },
        "queuedAt": {
         "value": {
-         "int": 30800000
+         "int": 0
         },
         "at": [
-         30800000,
+         0,
          0,
          "a1b2c3d4e5f60718"
         ]
@@ -5859,6 +5862,63 @@
    },
    "ok": {
     "remove": []
+   }
+  },
+  {
+   "name": "download_prune: a ready download is pruned once watched, not on age",
+   "request": {
+    "op": "download_prune",
+    "now": 200000000,
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:1399:2:3",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"tv:1399:2:3\",\"label\":\"tv:1399:2:3\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         199990000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         199990000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 199990000
+        },
+        "at": [
+         199990000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ],
+    "states": {
+     "download:tv:1399:2:3": "ready"
+    },
+    "watched": {
+     "download:tv:1399:2:3": true
+    }
+   },
+   "ok": {
+    "remove": [
+     "download:tv:1399:2:3"
+    ]
    }
   },
   {

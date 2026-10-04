@@ -301,6 +301,10 @@ enum Request {
         rows: Vec<Value>,
         #[serde(default)]
         states: serde_json::Map<String, Value>,
+        /// By row name: whether the caller's own library holds that row's episode or film as watched — never
+        /// the series' standing, which says nothing about one episode.
+        #[serde(default)]
+        watched: serde_json::Map<String, Value>,
         now: i64,
     },
     /// Library v4 §17: the TV's release ranking — play order, the quality badge's release, and a download's pick.
@@ -557,7 +561,12 @@ pub fn evaluate(input: &str) -> String {
                 complete,
             } => download_next(&row, &releases, &resolution, complete),
             Request::DownloadCancelSafe { row, rows } => download_cancel_safe(&row, &rows),
-            Request::DownloadPrune { rows, states, now } => download_prune(&rows, &states, now),
+            Request::DownloadPrune {
+                rows,
+                states,
+                watched,
+                now,
+            } => download_prune(&rows, &states, &watched, now),
             Request::RankReleases {
                 releases,
                 original,
