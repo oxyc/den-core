@@ -256,9 +256,13 @@ fn download_prune_keeps_a_ready_unwatched_row_at_any_age() {
         "announced": {"value": {"bool": true}, "at": at}}});
     // A hundred years past queuedAt: the old two-day ready TTL would have pruned this long ago.
     let now = 100 * 365 * 86_400_000;
-    let pruned =
-        den_sync::download_prune(&[row], &serde_json::Map::new(), &serde_json::Map::new(), now)
-            .unwrap();
+    let pruned = den_sync::download_prune(
+        &[row],
+        &serde_json::Map::new(),
+        &serde_json::Map::new(),
+        now,
+    )
+    .unwrap();
     assert_eq!(pruned["remove"], json!([]));
 }
 
