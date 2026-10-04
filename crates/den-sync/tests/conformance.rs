@@ -165,6 +165,79 @@ fn deliver_settings_merge_laws_hold_over_random_versions() {
     }
 }
 
+/// A download row's merge (library-v4 §17) as a property: random versions from three devices, each holding some of
+/// the values, a removal among them, and starts stamped before and after it, merge commutatively, associatively and
+/// idempotently — so a removal can't be undone by the order rows arrive in.
+#[test]
+fn download_rows_merge_as_a_join() {
+    let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let devices = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"];
+    for _ in 0..500 {
+        let mut versions = Vec::new();
+        for device in devices {
+            let mut values = serde_json::Map::new();
+            for key in ["release", "queuedAt", "tried", "announced", "removed"] {
+                if next(2) == 0 {
+                    continue;
+                }
+                let at = json!([1000 * (1 + next(5)), 0, device]);
+                let value = match key {
+                    "release" => json!({"string": format!("{{\"identity\":\"r{}\"}}", next(3))}),
+                    "queuedAt" => json!({"int": 1000 * next(5)}),
+                    "tried" => {
+                        json!({"strings": (0..next(3)).map(|i| format!("r{i}")).collect::<Vec<_>>()})
+                    }
+                    _ => json!({"bool": true}),
+                };
+                values.insert(key.into(), json!({"value": value, "at": at}));
+            }
+            versions.push(json!({"kind": "set", "schema": 2, "name": "download:movie:550:-1:-1", "values": values}));
+        }
+        let (a, b, c) = (&versions[0], &versions[1], &versions[2]);
+        let m = |x: &Value, y: &Value| den_sync::download_merge(x, y).unwrap();
+        assert_eq!(m(a, b), m(b, a), "commutative: {a} {b}");
+        assert_eq!(m(&m(a, b), c), m(a, &m(b, c)), "associative: {a} {b} {c}");
+        let ab = m(a, b);
+        assert_eq!(m(&ab, &ab), ab, "idempotent: {ab}");
+        if let Some(removed) = ab["values"]["removed"]["at"][0].as_u64() {
+            for (key, value) in ab["values"].as_object().unwrap() {
+                assert!(
+                    value["at"][0].as_u64().unwrap() >= removed,
+                    "{key} older than the removal survived: {ab}"
+                );
+            }
+        }
+    }
+}
+
+/// Past 100 live downloads the oldest are pruned, whatever their state.
+#[test]
+fn download_prune_caps_live_rows() {
+    let rows: Vec<Value> = (0..103)
+        .map(|i: i64| {
+            let at = json!([1000 + i, 0, "aaaaaaaaaaaaaaaa"]);
+            json!({"kind": "set", "schema": 2, "name": format!("download:movie:{}:-1:-1", i + 1), "values": {
+                "release": {"value": {"string": "{\"identity\":\"x\"}"}, "at": at},
+                "queuedAt": {"value": {"int": 1000 + i}, "at": at}}})
+        })
+        .collect();
+    let pruned = den_sync::download_prune(&rows, &serde_json::Map::new(), 10_000).unwrap();
+    assert_eq!(
+        pruned["remove"],
+        json!([
+            "download:movie:1:-1:-1",
+            "download:movie:2:-1:-1",
+            "download:movie:3:-1:-1"
+        ])
+    );
+}
+
 fn wat(entries: Value) -> Value {
     json!({"kind":"wat","schema":3,"title":{"type":"tv","id":1399},"season":1,"block":0,"seasonReset":null,"entries":entries})
 }
