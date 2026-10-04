@@ -493,9 +493,9 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
             out.insert("progress".into(), furthest(&a["progress"], &b["progress"])?);
         }
         Some("set") => {
-            let deliver = a["name"]
-                .as_str()
-                .is_some_and(|name| name.starts_with("deliver:"));
+            let row_name = a["name"].as_str().unwrap_or_default();
+            // The download lease row (library-v4 §17) holds one `lease`, merged as `set:deliver`'s is.
+            let deliver = row_name.starts_with("deliver:") || row_name == "download-lease";
             let mut values = object(&a["values"])?.clone();
             for (key, value) in object(&b["values"])? {
                 let value = match values.get(key) {
@@ -504,6 +504,9 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
                     None => value.clone(),
                 };
                 values.insert(key.clone(), value);
+            }
+            if crate::downloads::is_download(row_name) {
+                crate::downloads::clean(&mut values)?;
             }
             out.insert("values".into(), Value::Object(values));
         }
