@@ -121,13 +121,15 @@ impl<'a> Row<'a> {
             .map(str::to_owned)
     }
 
-    /// The stall clock as the row holds it: `{lastProgress, progressAt}`, else nothing moved since `queuedAt`.
+    /// The stall clock as the row holds it: `{lastProgress, progressAt}`, else nothing moved since `queuedAt`. A
+    /// `queuedAt` later than `progressAt` is an add made again (a re-press of the same release, a resumed add), and
+    /// the clock starts from it: a download asked for again a minute ago hasn't stalled for an hour.
     fn clock(&self) -> Clock {
         let queued = self.queued_at().unwrap_or(0);
         match self.object("progress") {
             Some(p) => Clock {
                 last: p["lastProgress"].as_f64().unwrap_or(0.0),
-                at: p["progressAt"].as_i64().unwrap_or(queued),
+                at: p["progressAt"].as_i64().unwrap_or(queued).max(queued),
             },
             None => Clock {
                 last: 0.0,
@@ -316,6 +318,32 @@ pub fn download_next(
     let mut out = decision;
     out["tried"] = json!(tried);
     Ok(out)
+}
+
+// ---- download_cancel_safe ---------------------------------------------------------------------------------------
+
+/// `download_cancel_safe`: whether the release a row names may be cancelled at the debrid. Not while any other live,
+/// non-exhausted row names the same `release.identity`: one season pack is one torrent across every episode, and a
+/// sibling that reads "not started", "unreachable" or "ready" may still be fetching or playing it. Only a client sees
+/// the whole queue, so this is the one check a client makes before den-scout's own (§17 *Cancelling*).
+pub fn download_cancel_safe(row: &Value, rows: &[Value]) -> Result<Value, String> {
+    let name = row["name"].as_str().unwrap_or_default();
+    let Some(identity) = Row::new(row)?.identity() else {
+        return Ok(json!(true));
+    };
+    for other in rows {
+        if other["name"].as_str() == Some(name) {
+            continue;
+        }
+        let sibling = Row::new(other)?;
+        if sibling.live()
+            && !sibling.flag("exhausted")
+            && sibling.identity().as_ref() == Some(&identity)
+        {
+            return Ok(json!(false));
+        }
+    }
+    Ok(json!(true))
 }
 
 // ---- download_prune ---------------------------------------------------------------------------------------------

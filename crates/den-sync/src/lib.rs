@@ -21,7 +21,8 @@ const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
 pub use downloads::{
-    download_merge, download_next, download_prune, download_status, rank_releases,
+    download_cancel_safe, download_merge, download_next, download_prune, download_status,
+    rank_releases,
 };
 pub use episodes::episode_mark;
 pub use events::commands;
@@ -289,6 +290,12 @@ enum Request {
         #[serde(default)]
         complete: bool,
     },
+    /// Library v4 §17: whether a row's release may be cancelled at the debrid, given every other download row.
+    DownloadCancelSafe {
+        row: Value,
+        #[serde(default)]
+        rows: Vec<Value>,
+    },
     /// Library v4 §17: the live download rows to tombstone now.
     DownloadPrune {
         rows: Vec<Value>,
@@ -549,6 +556,7 @@ pub fn evaluate(input: &str) -> String {
                 resolution,
                 complete,
             } => download_next(&row, &releases, &resolution, complete),
+            Request::DownloadCancelSafe { row, rows } => download_cancel_safe(&row, &rows),
             Request::DownloadPrune { rows, states, now } => download_prune(&rows, &states, now),
             Request::RankReleases {
                 releases,

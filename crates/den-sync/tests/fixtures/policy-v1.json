@@ -4565,6 +4565,77 @@
    }
   },
   {
+   "name": "download_status: a release asked for again starts its stall clock at the new add, not at old progress",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"label\":\"rebecka.s02e03.2160p.amzn.web-dl.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 4600000
+       },
+       "at": [
+        4600000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "progress": {
+       "value": {
+        "string": "{\"lastProgress\":0.4,\"progressAt\":1100000}"
+       },
+       "at": [
+        1100000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 4660000,
+    "answer": {
+     "kind": "preparing",
+     "progress": 0.4,
+     "bytesPerSecond": 0
+    }
+   },
+   "ok": {
+    "state": "fetching",
+    "clock": {
+     "lastProgress": 0.4,
+     "progressAt": 4600000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": true,
+    "announce": false
+   }
+  },
+  {
    "name": "download_status: an answer of an unknown kind is an error, not a state",
    "request": {
     "op": "download_status",
@@ -5172,6 +5243,366 @@
      "old.release"
     ]
    }
+  },
+  {
+   "name": "download_cancel_safe: a release no other download names may be cancelled",
+   "request": {
+    "op": "download_cancel_safe",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"show.s02.1080p.mkv\",\"label\":\"show.s02.1080p.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:1399:2:3",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"show.s02.1080p.mkv\",\"label\":\"show.s02.1080p.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 1000000
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     },
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:1399:2:4",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"show.s02e04.mkv\",\"label\":\"show.s02e04.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":4,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 1000000
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "ok": true
+  },
+  {
+   "name": "download_cancel_safe: a sibling episode of the same pack blocks it, whatever its state",
+   "request": {
+    "op": "download_cancel_safe",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"show.s02.1080p.mkv\",\"label\":\"show.s02.1080p.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:1399:2:3",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"show.s02.1080p.mkv\",\"label\":\"show.s02.1080p.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 1000000
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     },
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:1399:2:4",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"show.s02.1080p.mkv\",\"label\":\"show.s02.1080p.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":4,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 1000000
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "announced": {
+        "value": {
+         "bool": true
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "ok": false
+  },
+  {
+   "name": "download_cancel_safe: a sibling that ran out of releases, or was removed, does not",
+   "request": {
+    "op": "download_cancel_safe",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:1399:2:3",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"show.s02.1080p.mkv\",\"label\":\"show.s02.1080p.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":3,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:1399:2:4",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"cached\":false,\"identity\":\"show.s02.1080p.mkv\",\"label\":\"show.s02.1080p.mkv\",\"sizeBytes\":4000000000,\"url\":\"/scout/p/t1\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":4,\"mediaId\":1399,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Show\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 1000000
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "exhausted": {
+        "value": {
+         "bool": true
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     },
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:1399:2:5",
+      "values": {
+       "removed": {
+        "value": {
+         "bool": true
+        },
+        "at": [
+         1000001,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "ok": true
   },
   {
    "name": "download_prune: the three lifetimes, from queuedAt",
