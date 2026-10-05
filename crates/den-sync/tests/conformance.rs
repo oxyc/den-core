@@ -278,7 +278,7 @@ fn download_prune_keeps_recent_ready_history_then_drops_it() {
     let mut watched = serde_json::Map::new();
     watched.insert("download:tv:1399:2:3".into(), json!(true));
     let recent = den_sync::download_prune(
-        &[row.clone()],
+        std::slice::from_ref(&row),
         &serde_json::Map::new(),
         &watched,
         2 * 86_400_000,
