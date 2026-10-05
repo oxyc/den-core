@@ -662,7 +662,8 @@ pub fn rank_releases(
 
 #[cfg(test)]
 mod tests {
-    use super::canonical;
+    use super::{canonical, rank_releases};
+    use serde_json::json;
 
     #[test]
     fn languages_match_across_code_forms() {
@@ -672,5 +673,38 @@ mod tests {
         assert_eq!(canonical("pob"), "pt");
         assert_eq!(canonical("no"), "nb");
         assert_eq!(canonical("hrv"), "hrv");
+    }
+
+    /// The runt threshold is a quarter of the MEDIAN size among the candidates — so one release whose
+    /// `sizeBytes` is actually a season pack's total (den-scout, before it probes the resolved file, may
+    /// still send that) would drag every genuine episode beside it below the bar and demote them all as
+    /// "samples". den-scout corrects `sizeBytes` to the file's own size once it has probed it and carries
+    /// the pack's original number separately as `packSizeBytes` for exactly this reason — so this asserts
+    /// `rank_releases` never reads that field, and three ordinarily-sized episodes rank normally even with
+    /// one sitting right beside them.
+    #[test]
+    fn rank_releases_ignores_pack_size_bytes() {
+        let episode = |id: &str, size: i64, pack: i64| {
+            json!({
+                "identity": id,
+                "cached": true,
+                "seeders": 10,
+                "sizeBytes": size,
+                "packSizeBytes": pack,
+                "resolution": "1080p",
+            })
+        };
+        let releases = vec![
+            episode("a", 1_136_580_921, 68_000_000_000),
+            episode("b", 1_200_000_000, 70_000_000_000),
+            episode("c", 1_100_000_000, 69_000_000_000),
+        ];
+        let out = rank_releases(&releases, None, None, &[]);
+        // None of the three is a "runt" relative to the others: every tier is the same (0), so `order`
+        // keeps the input order and `best`/`pick` are free to pick on picture quality alone (the first,
+        // since all three tie there) — not pushed around by a pack size that never entered the ranking.
+        assert_eq!(out["order"], json!([0, 1, 2]));
+        assert_eq!(out["best"], json!(0));
+        assert_eq!(out["pick"], json!(0));
     }
 }
