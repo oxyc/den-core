@@ -2,8 +2,12 @@
 //! All time and provider facts arrive as inputs; bindings return the same versioned JSON envelope.
 
 mod delivery;
+mod downloads;
 mod episodes;
 mod events;
+mod library_v3;
+mod library_v4;
+mod recovery;
 mod series;
 mod tilt;
 mod wire;
@@ -11,9 +15,21 @@ mod wire;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+// `v3_form`, `v3_compact`, `write_back`, `v4_form` and `v4_dry_run` receive a whole library. Keep the boundary bounded, but
+// large enough for den-edge's 32 MiB stored-library limit plus JSON field names and request framing.
+const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
+pub use downloads::{
+    download_cancel_safe, download_merge, download_next, download_prune, download_status,
+    rank_releases,
+};
 pub use episodes::episode_mark;
 pub use events::commands;
+pub use library_v3::{
+    episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
+    switch_ready, v2_reading, v3_compact, v3_form, v3_form_with_context, write_back,
+};
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
@@ -24,6 +40,12 @@ pub use wire::{capture, merge, Stamp};
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum Request {
+    Name {
+        row: Value,
+    },
+    Newest {
+        row: Value,
+    },
     Merge {
         a: Value,
         b: Value,
@@ -78,6 +100,234 @@ enum Request {
         command: Command,
         remote: Remote,
     },
+    // The ops v3 and v4 both define take a name per version: the v3 name keeps exactly v3's shape, and the v4 shape
+    // is `<name>_v4`. A shape chosen by which fields are present would turn a v4 request whose optional field a
+    // client's encoder omitted into a v3 one.
+    EpisodeState {
+        register: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    /// Library v4 §7: an episode's state from its series title and season documents.
+    EpisodeStateV4 {
+        #[serde(default)]
+        title: Option<Value>,
+        #[serde(default)]
+        season: Option<Value>,
+        episode: Value,
+        now: i64,
+    },
+    FilmState {
+        rec: Value,
+        register: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    /// Library v4 §7: a film's state from its title document.
+    FilmStateV4 {
+        title: Value,
+        now: i64,
+    },
+    RegisterWrite {
+        action: Value,
+        current: Option<Value>,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    ImportWrite {
+        register: Option<Value>,
+        item: Value,
+        #[serde(default)]
+        resets: Vec<Stamp>,
+        now: i64,
+    },
+    PendingTargets {
+        targets: Vec<Value>,
+        receipts: Value,
+        since: Stamp,
+        now: i64,
+    },
+    /// Library v4 §9: the documents, delivery documents included, and the account's `set:deliver` facts.
+    PendingTargetsV4 {
+        documents: Vec<Value>,
+        deliver: Value,
+        now: i64,
+    },
+    Settle {
+        outcome: Value,
+        built_from: Value,
+        order: Value,
+    },
+    /// Library v4 §9: also the entry it replaces (absent or null for none), whose lasting elements it keeps.
+    SettleV4 {
+        outcome: Value,
+        built_from: Value,
+        order: Value,
+        #[serde(default)]
+        entry: Option<Value>,
+    },
+    Lease {
+        input: Value,
+    },
+    V2Reading {
+        rows: Vec<Value>,
+        now: i64,
+    },
+    V3Form {
+        rows: Vec<Value>,
+        now: i64,
+        #[serde(default)]
+        context: Option<Value>,
+    },
+    /// Library v3 §9's compaction of a v3 log: stray `ep` and v1 tracker-event rows folded and dropped.
+    V3Compact {
+        rows: Vec<Value>,
+        now: i64,
+    },
+    WriteBack {
+        held: Vec<Value>,
+        log: Vec<Value>,
+        now: i64,
+    },
+    /// Library v4 §11: held documents and kept ops on the new log.
+    WriteBackV4 {
+        documents: Vec<Value>,
+        #[serde(default)]
+        kept: Vec<Value>,
+        log: Vec<Value>,
+        now: i64,
+    },
+    /// Library v4 §4: a row's opened plaintext (base64) → document, JSON row, unreadable or newer.
+    DocDecode {
+        plaintext: String,
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// Library v4 §4: document → plaintext (base64url), or `too_large` (224 KiB for a §8 write, else 256 KiB).
+    DocEncode {
+        document: Value,
+        #[serde(default)]
+        write: bool,
+    },
+    DocName {
+        document: Value,
+    },
+    /// Library v4 §4 *Unreadable rows*: whether a compaction may remove `unreadable` rows of the `rows` read through
+    /// its base.
+    CompactionGuard {
+        unreadable: u64,
+        rows: u64,
+    },
+    DocMerge {
+        a: Value,
+        b: Value,
+    },
+    TitleState {
+        title: Value,
+        now: i64,
+    },
+    /// Library v4 §8: one write on the documents it touches → the documents to write.
+    ApplyWrite {
+        write: Value,
+        target: Value,
+        #[serde(default)]
+        title: Option<Value>,
+        #[serde(default)]
+        seasons: Vec<Value>,
+        #[serde(default)]
+        receipts: Vec<Value>,
+        now: i64,
+    },
+    /// Library v4 §9 *Fit before sending*.
+    DeliveryWrite {
+        #[serde(default)]
+        document: Option<Value>,
+        #[serde(default)]
+        identity: Value,
+        commands: Vec<Value>,
+    },
+    /// Library v4 §10: every row through `base` → the switch's rows.
+    V4Form {
+        rows: Vec<Value>,
+        base: u64,
+        performer: String,
+        now: i64,
+        #[serde(default)]
+        stored_cap: Option<u64>,
+    },
+    /// Library v4 §10 step 2: the log through `base` + `v4_form`'s output → pass or abort.
+    V4DryRun {
+        rows: Vec<Value>,
+        form: Value,
+        now: i64,
+    },
+    SwitchReady {
+        input: Value,
+    },
+    /// Library v4 §17: two versions of one `set:download:<content>` row.
+    DownloadMerge {
+        a: Value,
+        b: Value,
+    },
+    /// Library v4 §17: one den-scout answer (or none yet) for a download row.
+    DownloadStatus {
+        row: Value,
+        #[serde(default)]
+        answer: Option<Value>,
+        #[serde(default)]
+        clock: Option<Value>,
+        now: i64,
+    },
+    /// Library v4 §17: the release a stalled download moves on to, from a fresh resolve.
+    DownloadNext {
+        row: Value,
+        #[serde(default)]
+        releases: Vec<Value>,
+        resolution: String,
+        #[serde(default)]
+        complete: bool,
+    },
+    /// Library v4 §17: whether a row's release may be cancelled at the debrid, given every other download row.
+    DownloadCancelSafe {
+        row: Value,
+        #[serde(default)]
+        rows: Vec<Value>,
+    },
+    /// Library v4 §17: the live download rows to tombstone now.
+    DownloadPrune {
+        rows: Vec<Value>,
+        #[serde(default)]
+        states: serde_json::Map<String, Value>,
+        /// By row name: whether the caller's own library holds that row's episode or film as watched — never
+        /// the series' standing, which says nothing about one episode.
+        #[serde(default)]
+        watched: serde_json::Map<String, Value>,
+        now: i64,
+    },
+    /// Library v4 §17: the TV's release ranking — play order, the quality badge's release, and a download's pick.
+    RankReleases {
+        releases: Vec<Value>,
+        #[serde(default)]
+        original: Option<String>,
+        #[serde(default)]
+        preferred: Option<String>,
+        #[serde(default)]
+        tried: Vec<String>,
+    },
+    WatchName {
+        media: String,
+        id: u64,
+        season: u64,
+        episode: u64,
+    },
+    ReceiptName {
+        provider: String,
+        account: String,
+        target: String,
+    },
     Retry {
         attempts: u32,
         now: u64,
@@ -100,6 +350,19 @@ enum Request {
         samples: Vec<(i32, f64)>,
         current_year: i32,
     },
+    /// Recovery code §2: 22 random bytes (hex) from the platform's CSPRNG → `{code, data}`.
+    RecoveryCode {
+        random: String,
+    },
+    /// Recovery code §2: typed text → `{data}`, or `mistyped` / `checksum`, before any derivation or request.
+    RecoveryRead {
+        text: String,
+    },
+    /// Recovery code §3: data characters → `{locator, wrapKey}` (hex). One Argon2id at 64 MiB: run it off the main
+    /// thread.
+    RecoveryDerive {
+        data: String,
+    },
 }
 
 fn yes() -> bool {
@@ -109,11 +372,13 @@ fn yes() -> bool {
 /// Versioned, non-throwing FFI boundary. An error is never an empty snapshot or an acknowledgement.
 pub fn evaluate(input: &str) -> String {
     fn run(input: &str) -> Result<Value, String> {
-        if input.len() > 1024 * 1024 {
+        if input.len() > MAX_REQUEST_BYTES {
             return Err("request_too_large".into());
         }
         let request: Request = serde_json::from_str(input).map_err(|_| "invalid_request")?;
         match request {
+            Request::Name { row } => Ok(json!(wire::name(&row)?)),
+            Request::Newest { row } => Ok(json!(wire::newest(&row)?)),
             Request::Merge { a, b } => merge(&a, &b),
             Request::Capture {
                 before,
@@ -157,6 +422,177 @@ pub fn evaluate(input: &str) -> String {
                 Ok(json!(last.issue(now, device)?))
             }
             Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
+            Request::EpisodeState {
+                register,
+                resets,
+                now,
+            } => library_v3::episode_state(&register, &resets, now),
+            Request::EpisodeStateV4 {
+                title,
+                season,
+                episode,
+                now,
+            } => {
+                let title = title.as_ref().map(library_v4::readable).transpose()?;
+                let season = season.as_ref().map(library_v4::readable).transpose()?;
+                let episode = match &episode {
+                    Value::String(key) => key.clone(),
+                    other => other.to_string(),
+                };
+                library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, now)
+            }
+            Request::FilmState {
+                rec,
+                register,
+                resets,
+                now,
+            } => library_v3::film_state(&rec, &register, &resets, now),
+            Request::FilmStateV4 { title, now } => {
+                library_v4::state::film_state(&library_v4::readable(&title)?, now)
+            }
+            Request::RegisterWrite {
+                action,
+                current,
+                resets,
+                now,
+            } => library_v3::register_write(&action, current.as_ref(), &resets, now),
+            Request::ImportWrite {
+                register,
+                item,
+                resets,
+                now,
+            } => library_v3::import_write(register.as_ref(), &item, &resets, now),
+            Request::PendingTargets {
+                targets,
+                receipts,
+                since,
+                now,
+            } => library_v3::pending_targets(&targets, &receipts, &since, now),
+            Request::PendingTargetsV4 {
+                documents,
+                deliver,
+                now,
+            } => library_v4::delivery::pending_targets(&documents, &deliver, now),
+            Request::Settle {
+                outcome,
+                built_from,
+                order,
+            } => library_v3::settle(&outcome, &built_from, &order),
+            Request::SettleV4 {
+                outcome,
+                built_from,
+                order,
+                entry,
+            } => library_v4::delivery::settle(
+                &outcome,
+                &built_from,
+                &order,
+                entry.as_ref().filter(|e| !e.is_null()),
+            ),
+            Request::Lease { input } => library_v3::lease(&input),
+            Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
+            Request::V3Form { rows, now, context } => {
+                library_v3::v3_form_with_context(&rows, now, context.as_ref())
+            }
+            Request::V3Compact { rows, now } => library_v3::v3_compact(&rows, now),
+            Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
+            Request::WriteBackV4 {
+                documents,
+                kept,
+                log,
+                now,
+            } => library_v4::write_back(&documents, &kept, &log, now),
+            Request::DocDecode { plaintext, name } => Ok(library_v4::decode(
+                &library_v4::codec::unbase64(&plaintext)?,
+                name.as_deref(),
+            )),
+            Request::DocEncode { document, write } => library_v4::encode(&document, write),
+            Request::DocName { document } => Ok(json!(library_v4::name(&document)?)),
+            Request::CompactionGuard { unreadable, rows } => {
+                Ok(library_v4::compaction_guard(unreadable, rows))
+            }
+            Request::DocMerge { a, b } => library_v4::doc_merge(&a, &b),
+            Request::TitleState { title, now } => Ok(library_v4::state::title_state(
+                &library_v4::readable(&title)?,
+                now,
+            )),
+            Request::ApplyWrite {
+                write,
+                target,
+                title,
+                seasons,
+                receipts,
+                now,
+            } => library_v4::write::apply_write(
+                &write,
+                &target,
+                title.as_ref(),
+                &seasons,
+                &receipts,
+                now,
+            ),
+            Request::DeliveryWrite {
+                document,
+                identity,
+                commands,
+            } => library_v4::delivery::delivery_write(document.as_ref(), &identity, &commands),
+            Request::V4Form {
+                rows,
+                base,
+                performer,
+                now,
+                stored_cap,
+            } => library_v4::switch::v4_form(&rows, base, &performer, now, stored_cap),
+            Request::V4DryRun { rows, form, now } => {
+                library_v4::switch::v4_dry_run(&rows, &form, now)
+            }
+            Request::SwitchReady { input } => library_v3::switch_ready(&input),
+            Request::DownloadMerge { a, b } => download_merge(&a, &b),
+            Request::DownloadStatus {
+                row,
+                answer,
+                clock,
+                now,
+            } => download_status(&row, answer.as_ref(), clock.as_ref(), now),
+            Request::DownloadNext {
+                row,
+                releases,
+                resolution,
+                complete,
+            } => download_next(&row, &releases, &resolution, complete),
+            Request::DownloadCancelSafe { row, rows } => download_cancel_safe(&row, &rows),
+            Request::DownloadPrune {
+                rows,
+                states,
+                watched,
+                now,
+            } => download_prune(&rows, &states, &watched, now),
+            Request::RankReleases {
+                releases,
+                original,
+                preferred,
+                tried,
+            } => Ok(rank_releases(
+                &releases,
+                original.as_deref(),
+                preferred.as_deref(),
+                &tried,
+            )),
+            Request::WatchName {
+                media,
+                id,
+                season,
+                episode,
+            } => Ok(json!(library_v3::watch_row_name(
+                &media, id, season, episode
+            )?)),
+            Request::ReceiptName {
+                provider,
+                account,
+                target,
+            } => Ok(json!(library_v3::receipt_row_name(
+                &provider, &account, &target
+            )?)),
             Request::Tilt {
                 signals,
                 weights,
@@ -172,6 +608,9 @@ pub fn evaluate(input: &str) -> String {
                 samples,
                 current_year,
             } => Ok(json!(Era::from_samples(&samples, current_year))),
+            Request::RecoveryCode { random } => recovery::code(&random),
+            Request::RecoveryRead { text } => recovery::read(&text),
+            Request::RecoveryDerive { data } => recovery::derive(&data),
             Request::Retry {
                 attempts,
                 now,
@@ -193,5 +632,25 @@ pub fn evaluate(input: &str) -> String {
     match run(input) {
         Ok(value) => json!({ "version": 1, "ok": value }).to_string(),
         Err(error) => json!({ "version": 1, "error": error }).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::evaluate;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn whole_library_operations_are_not_limited_to_one_megabyte() {
+        // serde ignores the framing field, just as the boundary ignores future request fields. This
+        // pins the transport limit without making the policy test construct thousands of real rows.
+        let request = json!({
+            "op": "v3_form",
+            "rows": [],
+            "now": 0,
+            "framing": "x".repeat(2 * 1024 * 1024),
+        });
+        let response: Value = serde_json::from_str(&evaluate(&request.to_string())).unwrap();
+        assert!(response.get("ok").is_some(), "{response}");
     }
 }

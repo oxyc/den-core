@@ -3,7 +3,8 @@
 Shared, pure Den client policy. Not an Atlas addon, relay, daemon, or sync worker.
 
 `crates/den-sync` owns wire-v2 merges, logical-clock issuance, explicit action capture, event-to-command
-translation and supersession, provider preflight decisions, and capped retry scheduling. Every binding
+translation and supersession, provider preflight decisions, capped retry scheduling, and the recovery code's
+format, check characters and Argon2id/HKDF derivation (den-spec `wire/recovery-code.md`). Every binding
 calls the same versioned JSON API. Invalid input is an error, never an empty state or an acknowledgement.
 
 Clients retain encryption, SQLite/browser storage, credentials and account binding, provider HTTP, receipts,
@@ -12,7 +13,7 @@ receipts. Provider APIs have no atomic compare-and-set: the final read/write rac
 
 ## Packages and builds
 
-Rust 1.95.0, UniFFI 0.29.5, wasm-bindgen/CLI 0.2.128; dependency resolution is pinned in Cargo.lock.
+Rust 1.95.0, UniFFI 0.32.2, wasm-bindgen/CLI 0.2.128; dependency resolution is pinned in Cargo.lock.
 On macOS with Xcode, install Rust targets `aarch64-apple-darwin`, `aarch64-apple-tvos`,
 `aarch64-apple-tvos-sim`, `aarch64-apple-ios`, `aarch64-apple-ios-sim`, and `wasm32-unknown-unknown`.
 Install `wasm-bindgen-cli --version 0.2.128 --locked`, then run:
