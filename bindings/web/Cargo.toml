@@ -10,5 +10,5 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 den-sync.workspace = true
-wasm-bindgen = "=0.2.128"
+wasm-bindgen = "=0.2.129"
 

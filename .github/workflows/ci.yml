@@ -30,7 +30,7 @@ jobs:
       # every run (over two minutes). The version must match the `wasm-bindgen` crate in Cargo.lock.
       - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
-          tool: wasm-bindgen@0.2.128
+          tool: wasm-bindgen@0.2.129
       # Its `cargo test -p den-sync` replays den-spec's library-v4 vectors, so it needs den-spec too.
       - run: bash scripts/build-bindings.sh
         env:
