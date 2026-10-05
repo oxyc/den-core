@@ -729,6 +729,19 @@ fn write_cases() -> Vec<Case> {
             )])),
         ),
         case(
+            "a finished episode's next finishing tick stays in its viewing",
+            "§8 Playback",
+            write(
+                json!({"kind": "progress", "episode": [1, 1], "value": 0.97, "at": st(3000)}),
+                tv(),
+                Value::Null,
+                one(json!({"1": finished})),
+            ),
+            docs(json!([ep(
+                json!({"1": with(finished.clone(), json!({"progress": progress(0.97, 3000, 0)}))})
+            )])),
+        ),
+        case(
             "playback never writes 0 in a new viewing",
             "§8 Playback",
             write(
@@ -752,6 +765,25 @@ fn write_cases() -> Vec<Case> {
                 "movie",
                 550,
                 json!({"resume": progress(0.97, 2000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
+            )])),
+        ),
+        case(
+            "a finished film's next finishing tick stays in its viewing",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0.98, "at": st(3000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"resume": progress(0.97, 2000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({"resume": progress(0.98, 3000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
             )])),
         ),
         case(
@@ -3070,4 +3102,46 @@ fn den_spec_library_v4_vectors() {
         count += 1;
     }
     assert!(count > 100, "only {count} vectors");
+}
+
+/// den-spec's download queue vectors (library-v4 §17) are the `download_*`, `rank_releases` and download-lease cases of
+/// `fixtures/policy-v1.json`, case for case: the spec and the binding contract can't drift apart.
+#[test]
+fn den_spec_download_vectors() {
+    let Some(dir) = spec_dir() else {
+        if std::env::var("DEN_SPEC_OPTIONAL").as_deref() == Ok("1") {
+            eprintln!("SKIP: den-spec absent and DEN_SPEC_OPTIONAL=1");
+            return;
+        }
+        panic!("den-spec/vectors not found — check out den-spec beside this repo, set DEN_SPEC_DIR, or set DEN_SPEC_OPTIONAL=1 to skip deliberately.");
+    };
+    let text = std::fs::read_to_string(dir.join("library-v4-downloads.json"))
+        .expect("den-spec/vectors/library-v4-downloads.json");
+    let file: Value = serde_json::from_str(&text).unwrap();
+    let spec = file["cases"].as_array().unwrap();
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/policy-v1.json")).unwrap();
+    let ours: Vec<&Value> = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| {
+            let op = case["request"]["op"].as_str().unwrap_or_default();
+            op.starts_with("download_")
+                || op == "rank_releases"
+                || case["request"]["a"]["name"] == json!("download-lease")
+        })
+        .collect();
+    assert_eq!(
+        spec.len(),
+        ours.len(),
+        "den-spec and the fixture hold different cases"
+    );
+    for (spec, ours) in spec.iter().zip(ours) {
+        assert_eq!(spec, ours, "{}", spec["name"]);
+        let result = call(&spec["request"]);
+        match spec.get("error") {
+            Some(error) => assert_eq!(&result["error"], error, "{}", spec["name"]),
+            None => assert_eq!(result["ok"], spec["ok"], "{}", spec["name"]),
+        }
+    }
 }

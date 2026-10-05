@@ -2,6 +2,7 @@
 //! All time and provider facts arrive as inputs; bindings return the same versioned JSON envelope.
 
 mod delivery;
+mod downloads;
 mod episodes;
 mod events;
 mod library_v3;
@@ -19,6 +20,10 @@ use serde_json::{json, Value};
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
+pub use downloads::{
+    download_cancel_safe, download_merge, download_next, download_prune, download_status,
+    rank_releases,
+};
 pub use episodes::episode_mark;
 pub use events::commands;
 pub use library_v3::{
@@ -262,6 +267,56 @@ enum Request {
     SwitchReady {
         input: Value,
     },
+    /// Library v4 §17: two versions of one `set:download:<content>` row.
+    DownloadMerge {
+        a: Value,
+        b: Value,
+    },
+    /// Library v4 §17: one den-scout answer (or none yet) for a download row.
+    DownloadStatus {
+        row: Value,
+        #[serde(default)]
+        answer: Option<Value>,
+        #[serde(default)]
+        clock: Option<Value>,
+        now: i64,
+    },
+    /// Library v4 §17: the release a stalled download moves on to, from a fresh resolve.
+    DownloadNext {
+        row: Value,
+        #[serde(default)]
+        releases: Vec<Value>,
+        resolution: String,
+        #[serde(default)]
+        complete: bool,
+    },
+    /// Library v4 §17: whether a row's release may be cancelled at the debrid, given every other download row.
+    DownloadCancelSafe {
+        row: Value,
+        #[serde(default)]
+        rows: Vec<Value>,
+    },
+    /// Library v4 §17: the live download rows to tombstone now.
+    DownloadPrune {
+        rows: Vec<Value>,
+        #[serde(default)]
+        states: serde_json::Map<String, Value>,
+        /// By row name: whether the caller's own library holds that row's episode or film as watched — never
+        /// the series' standing, which says nothing about one episode.
+        #[serde(default)]
+        watched: serde_json::Map<String, Value>,
+        now: i64,
+    },
+    /// Library v4 §17: the TV's release ranking — play order, the quality badge's release, and a download's pick.
+    RankReleases {
+        releases: Vec<Value>,
+        #[serde(default)]
+        original: Option<String>,
+        #[serde(default)]
+        preferred: Option<String>,
+        #[serde(default)]
+        tried: Vec<String>,
+    },
     WatchName {
         media: String,
         id: u64,
@@ -492,6 +547,37 @@ pub fn evaluate(input: &str) -> String {
                 library_v4::switch::v4_dry_run(&rows, &form, now)
             }
             Request::SwitchReady { input } => library_v3::switch_ready(&input),
+            Request::DownloadMerge { a, b } => download_merge(&a, &b),
+            Request::DownloadStatus {
+                row,
+                answer,
+                clock,
+                now,
+            } => download_status(&row, answer.as_ref(), clock.as_ref(), now),
+            Request::DownloadNext {
+                row,
+                releases,
+                resolution,
+                complete,
+            } => download_next(&row, &releases, &resolution, complete),
+            Request::DownloadCancelSafe { row, rows } => download_cancel_safe(&row, &rows),
+            Request::DownloadPrune {
+                rows,
+                states,
+                watched,
+                now,
+            } => download_prune(&rows, &states, &watched, now),
+            Request::RankReleases {
+                releases,
+                original,
+                preferred,
+                tried,
+            } => Ok(rank_releases(
+                &releases,
+                original.as_deref(),
+                preferred.as_deref(),
+                &tried,
+            )),
             Request::WatchName {
                 media,
                 id,
