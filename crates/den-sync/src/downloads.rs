@@ -14,8 +14,8 @@ const STALL_LIMIT: i64 = 20 * 60_000;
 const START_GRACE: i64 = 3 * 60_000;
 /// The stall clock is written to the row at most this often while a download moves.
 const PROGRESS_WRITE_EVERY: i64 = 5 * 60_000;
-const PENDING_TTL: i64 = 7 * 86_400_000;
-const NEVER_STARTED_TTL: i64 = 15 * 60_000;
+/// Once watched, a landed download remains visible long enough to confirm that it finished.
+const WATCHED_READY_TTL: i64 = 2 * 86_400_000;
 /// Live rows kept at most; the oldest past it are pruned.
 const LIVE_CAP: usize = 100;
 
@@ -347,12 +347,11 @@ pub fn download_cancel_safe(row: &Value, rows: &[Value]) -> Result<Value, String
 
 // ---- download_prune ---------------------------------------------------------------------------------------------
 
-/// `download_prune`: the live rows to tombstone now. A ready row (`announced`, or last read as `ready`) is never
-/// aged out by time — it stays until `watched` says its content has been watched, or the caller removes it by
-/// hand (not this op's job). Everything else keeps its lifetime from `queuedAt`: one den-scout never once
-/// described (`reported`) and that last read as never started fifteen minutes, anything else seven days — then the
-/// oldest past the cap of 100. `states` is the caller's last state per row name; `watched` is the caller's own
-/// watched state for the row's episode or film, never the series' (den-spec library-v4 §17 *Pruning*).
+/// `download_prune`: the live rows to tombstone now. Pending and exhausted requests do not expire: they are a
+/// user's request, not a cache entry, and remain available for later source retries. A ready row also remains while
+/// unwatched. Once its own episode or film is watched it stays for two more days from the ready announcement, so
+/// Downloads still confirms what landed instead of deleting it at the moment it succeeds. The caller may always
+/// remove a row by hand (not this op's job). Past the cap of 100, the oldest live rows go.
 pub fn download_prune(
     rows: &[Value],
     states: &Map<String, Value>,
@@ -370,23 +369,17 @@ pub fn download_prune(
         let queued = row.queued_at().unwrap_or(0);
         let state = states.get(&name).and_then(Value::as_str);
         if row.flag("announced") || state == Some("ready") {
-            if watched.get(&name).and_then(Value::as_bool).unwrap_or(false) {
+            let ready_at = row.at("announced").map(|at| at.0).unwrap_or(queued);
+            if watched.get(&name).and_then(Value::as_bool).unwrap_or(false)
+                && now - ready_at > WATCHED_READY_TTL
+            {
                 remove.push(name);
             } else {
                 live.push((queued, name));
             }
             continue;
         }
-        let ttl = if matches!(state, Some("not_started" | "refused")) && !row.flag("reported") {
-            NEVER_STARTED_TTL
-        } else {
-            PENDING_TTL
-        };
-        if now - queued > ttl {
-            remove.push(name);
-        } else {
-            live.push((queued, name));
-        }
+        live.push((queued, name));
     }
     if live.len() > LIVE_CAP {
         live.sort();
