@@ -1585,7 +1585,7 @@ fn blake2b64(input: &[u8]) -> u64 {
     h[0] ^= 0x0101_0000 ^ 8; // no key, 8-byte digest
     let mut counter: u128 = 0;
 
-    let mut compress = |h: &mut [u64; 8], block: &[u8; 128], counter: u128, last: bool| {
+    let compress = |h: &mut [u64; 8], block: &[u8; 128], counter: u128, last: bool| {
         let mut m = [0u64; 16];
         for (i, word) in m.iter_mut().enumerate() {
             *word = u64::from_le_bytes(block[i * 8..i * 8 + 8].try_into().unwrap());
