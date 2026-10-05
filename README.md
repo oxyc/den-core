@@ -13,7 +13,7 @@ receipts. Provider APIs have no atomic compare-and-set: the final read/write rac
 
 ## Packages and builds
 
-Rust 1.95.0, UniFFI 0.29.5, wasm-bindgen/CLI 0.2.128; dependency resolution is pinned in Cargo.lock.
+Rust 1.95.0, UniFFI 0.32.2, wasm-bindgen/CLI 0.2.128; dependency resolution is pinned in Cargo.lock.
 On macOS with Xcode, install Rust targets `aarch64-apple-darwin`, `aarch64-apple-tvos`,
 `aarch64-apple-tvos-sim`, `aarch64-apple-ios`, `aarch64-apple-ios-sim`, and `wasm32-unknown-unknown`.
 Install `wasm-bindgen-cli --version 0.2.128 --locked`, then run:
