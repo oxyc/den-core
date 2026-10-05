@@ -266,10 +266,10 @@ fn download_prune_keeps_a_ready_unwatched_row_at_any_age() {
     assert_eq!(pruned["remove"], json!([]));
 }
 
-/// The same row is pruned the moment `watched` says its own episode or film was watched — regardless of age,
-/// and never on the series' standing (the caller's job, not this op's: `watched` must already be per-episode).
+/// The same row remains for two days after landing once watched, so Downloads confirms what completed, then ages
+/// out. `watched` is its own episode or film, never the series' standing (the caller's job).
 #[test]
-fn download_prune_drops_a_ready_row_once_watched() {
+fn download_prune_keeps_recent_ready_history_then_drops_it() {
     let at = json!([0, 0, "aaaaaaaaaaaaaaaa"]);
     let row = json!({"kind": "set", "schema": 2, "name": "download:tv:1399:2:3", "values": {
         "release": {"value": {"string": "{\"identity\":\"x\"}"}, "at": at},
@@ -277,9 +277,41 @@ fn download_prune_drops_a_ready_row_once_watched() {
         "announced": {"value": {"bool": true}, "at": at}}});
     let mut watched = serde_json::Map::new();
     watched.insert("download:tv:1399:2:3".into(), json!(true));
-    let pruned =
-        den_sync::download_prune(&[row], &serde_json::Map::new(), &watched, 60_000).unwrap();
+    let recent = den_sync::download_prune(
+        &[row.clone()],
+        &serde_json::Map::new(),
+        &watched,
+        2 * 86_400_000,
+    )
+    .unwrap();
+    assert_eq!(recent["remove"], json!([]));
+    let pruned = den_sync::download_prune(
+        &[row],
+        &serde_json::Map::new(),
+        &watched,
+        2 * 86_400_000 + 1,
+    )
+    .unwrap();
     assert_eq!(pruned["remove"], json!(["download:tv:1399:2:3"]));
+}
+
+#[test]
+fn download_prune_never_expires_an_unfinished_request() {
+    let at = json!([0, 0, "aaaaaaaaaaaaaaaa"]);
+    let row = json!({"kind": "set", "schema": 2, "name": "download:tv:1399:2:1", "values": {
+        "release": {"value": {"string": "{\"identity\":\"x\"}"}, "at": at},
+        "queuedAt": {"value": {"int": 0}, "at": at},
+        "exhausted": {"value": {"bool": true}, "at": at}}});
+    let states =
+        serde_json::Map::from_iter([("download:tv:1399:2:1".into(), json!("no_working_release"))]);
+    let pruned = den_sync::download_prune(
+        &[row],
+        &states,
+        &serde_json::Map::new(),
+        100 * 365 * 86_400_000,
+    )
+    .unwrap();
+    assert_eq!(pruned["remove"], json!([]));
 }
 
 fn wat(entries: Value) -> Value {
