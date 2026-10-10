@@ -88,6 +88,7 @@ fn den_spec_assistant_v1_fixed() {
             ops: vec!["seen".into()],
             cap: 1,
             revoked: false,
+            expires: now + 1,
         },
     )]);
     let accepted = check(

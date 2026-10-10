@@ -25,13 +25,13 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use zeroize::Zeroizing;
 
-/// HPKE `info` of a request sealed to a library's drop-box key (§3).
+/// HPKE `info` of a request sealed to a library's drop-box key (§4).
 pub const REQUEST_INFO: &[u8] = b"den/assistant/v1";
-/// HPKE `info` of the grant key sealed into an access token for den-mcp (§6).
+/// HPKE `info` of the grant key sealed into an access token for den-mcp (§7).
 pub const TOKEN_INFO: &[u8] = b"den/assistant/token/v1";
-/// HKDF `info` of the key a grant key is wrapped under at rest (§7).
+/// HKDF `info` of the key a grant key is wrapped under at rest (§8).
 pub const WRAP_INFO: &[u8] = b"den/assistant/wrap/v1";
-/// What a grant signs before a request's message bytes (§3): this, then a zero byte.
+/// What a grant signs before a request's message bytes (§4): this, then a zero byte.
 pub const SIGN_CONTEXT: &[u8] = b"den/assistant/sig/v1\0";
 
 /// An X-Wing private key (a drop-box key, den-mcp's token key): 32 bytes, X-Wing's seed.
@@ -54,14 +54,17 @@ pub const MAX_SEALED: usize = 4096;
 const GRANT_BLOB_LEN: usize = 48;
 
 const DAY_MS: u64 = 86_400_000;
-/// A request older than this is `stale` (§5).
+/// A request older than this is `stale` (§6).
 pub const STALE_MS: u64 = 7 * DAY_MS;
-/// A request further ahead than this is `from_future` (§5).
+/// A request further ahead than this is `from_future` (§6).
 pub const FUTURE_MS: u64 = 5 * 60_000;
-/// The window the daily cap counts over (§5).
+/// The window the daily cap counts over (§6).
 pub const CAP_WINDOW_MS: u64 = DAY_MS;
-/// An applied entry whose request is older than this may be pruned (§4).
-pub const PRUNE_MS: u64 = 8 * DAY_MS;
+/// An applied entry may be pruned once both its request's `at` and its `applied` are older than this (§5): twice the
+/// stale window, so a skewed clock on either side never drops an entry that still guards a request.
+pub const PRUNE_MS: u64 = 14 * DAY_MS;
+/// How long a grant lasts from consent or its last renewal (§5): den-edge's idle limit for a session.
+pub const GRANT_TTL_MS: u64 = 30 * DAY_MS;
 /// The largest daily cap a grant may carry.
 pub const MAX_CAP: u64 = 1000;
 /// JavaScript's largest safe integer, the bound on every number on the wire.
@@ -78,7 +81,7 @@ pub const OPS: [&str; 4] = ["rate", "seen", "watchlist_add", "watchlist_remove"]
 pub enum Error {
     /// A key of the wrong length, or an X-Wing public key that does not decode.
     InvalidKey,
-    /// A request that would not pass §3's rules, or that names another grant than the key signing it.
+    /// A request that would not pass §4's rules, or that names another grant than the key signing it.
     InvalidRequest,
     /// Randomness of the wrong length.
     InvalidRandomness,
@@ -105,7 +108,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Why a device does not act on a request (§5), in the order the checks run.
+/// Why a device does not act on a request (§6), in the order the checks run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reject {
     DoesNotOpen,
@@ -114,6 +117,7 @@ pub enum Reject {
     BadSignature,
     WrongLibrary,
     Revoked,
+    Expired,
     FromFuture,
     Stale,
     Replay,
@@ -130,6 +134,7 @@ impl Reject {
             Reject::BadSignature => "bad_signature",
             Reject::WrongLibrary => "wrong_library",
             Reject::Revoked => "revoked",
+            Reject::Expired => "expired",
             Reject::FromFuture => "from_future",
             Reject::Stale => "stale",
             Reject::Replay => "replay",
@@ -372,7 +377,7 @@ pub fn hpke_open(
 
 // ---- requests
 
-/// A request's fields (§3). `args` is the op's own object.
+/// A request's fields (§4). `args` is the op's own object.
 pub struct Request<'a> {
     pub library: &'a str,
     pub grant: &'a str,
@@ -382,7 +387,7 @@ pub struct Request<'a> {
     pub args: &'a Value,
 }
 
-/// A request's message as §3 checks it.
+/// A request's message as §4 checks it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub library: String,
@@ -394,7 +399,7 @@ pub struct Message {
 }
 
 /// The message bytes of a request: the JCS (RFC 8785) of its object, which every member of a valid message keeps
-/// ASCII and integral, so it is serde_json's sorted, compact output. Refused when the request breaks §3.
+/// ASCII and integral, so it is serde_json's sorted, compact output. Refused when the request breaks §4.
 pub fn message(request: &Request) -> Result<Vec<u8>, Error> {
     let bytes = serde_json::to_vec(&json!({
         "v": 1,
@@ -423,7 +428,9 @@ pub fn sign(secret: &[u8; 32], message: &[u8]) -> [u8; SIG_LEN] {
 }
 
 /// A request, signed with `grant` and sealed to the drop-box `public` key with the library id as the additional
-/// data: unpadded base64url of `enc ‖ ct`, where the plaintext is `signature ‖ message`.
+/// data: unpadded base64url of `enc ‖ ct`, where the plaintext is `signature ‖ message`. The `eseed` is an argument
+/// for the vectors; production code calls [`seal_request_with_rng`].
+#[doc(hidden)]
 pub fn seal_request(
     public: &[u8],
     grant: &GrantKey,
@@ -471,7 +478,7 @@ fn title(value: &Value) -> Option<&str> {
         .filter(|t| matches!(*t, "movie" | "tv"))
 }
 
-/// §3 *Ops*: whether `args` is a valid argument object for `op`.
+/// §4 *Message*: whether `args` is a valid argument object for `op`.
 fn valid_args(op: &str, args: &Value) -> bool {
     let Some(object) = args.as_object() else {
         return false;
@@ -509,7 +516,7 @@ fn valid_args(op: &str, args: &Value) -> bool {
     }
 }
 
-/// §3: the message bytes, checked. `None` for anything that is not exactly a valid message's JCS.
+/// §4: the message bytes, checked. `None` for anything that is not exactly a valid message's JCS.
 pub fn parse_message(bytes: &[u8]) -> Option<Message> {
     if bytes.len() > MAX_MESSAGE {
         return None;
@@ -547,17 +554,20 @@ pub fn parse_message(bytes: &[u8]) -> Option<Message> {
 
 // ---- the accept rules
 
-/// A grant as the library's grants row holds it (§4), read for the checks.
+/// A grant as the library's grants row holds it (§5), read for the checks. `revoked` is the row's `revokedAt` or the
+/// device's own record of a revocation (§6).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grant {
     pub public: [u8; 32],
     pub ops: Vec<String>,
     pub cap: u64,
     pub revoked: bool,
+    /// `expiresAt`: from this time on, the grant accepts nothing.
+    pub expires: u64,
 }
 
-/// An applied request as the library's applied row holds it (§4): its grant, its own `at`, and when the device that
-/// applied it did.
+/// An applied request as the library's applied row holds it (§5): its grant, its own `at`, and when the device that
+/// applied it did. A reader keeps `applied` at least `at` (§5), so neither clock alone can age an entry early.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Applied {
     pub grant: String,
@@ -575,7 +585,7 @@ pub struct Accepted {
     pub args: Value,
 }
 
-/// §5: open a sealed request with any of the library's drop-box keys and check it against the grants and the applied
+/// §6: open a sealed request with any of the library's drop-box keys and check it against the grants and the applied
 /// requests, at `now`.
 pub fn check(
     dropbox: &[[u8; KEM_SECRET_LEN]],
@@ -613,6 +623,9 @@ pub fn check(
     if grant.revoked {
         return Err(Reject::Revoked);
     }
+    if now >= grant.expires {
+        return Err(Reject::Expired);
+    }
     if message.at > now.saturating_add(FUTURE_MS) {
         return Err(Reject::FromFuture);
     }
@@ -638,28 +651,32 @@ pub fn check(
 }
 
 /// The requests of `grant` applied in the 24 hours up to `now` (by when they were applied, not by their own `at`,
-/// which the signer chooses).
+/// which the signer chooses). An entry applied "later" than `now` (another device's clock ahead) counts: the cap
+/// fails closed.
 pub fn applied_today(applied: &BTreeMap<String, Applied>, grant: &str, now: u64) -> u64 {
     applied
         .values()
-        .filter(|a| a.grant == grant && a.applied > now.saturating_sub(CAP_WINDOW_MS))
+        .filter(|a| a.grant == grant && a.applied.max(a.at) > now.saturating_sub(CAP_WINDOW_MS))
         .count() as u64
 }
 
-/// §4: the applied entries a device may drop at `now` — those whose request is older than 8 days, which §5 refuses
-/// as `stale` anyway — by id, in order.
+/// §5: the applied entries a device may drop at `now` — those whose request's `at` and whose `applied` are both
+/// more than 14 days before `now`, twice the window in which §6 accepts a request at all — by id, in order.
 pub fn prune(applied: &BTreeMap<String, Applied>, now: u64) -> Vec<String> {
+    let cutoff = now.saturating_sub(PRUNE_MS);
     applied
         .iter()
-        .filter(|(_, a)| a.at < now.saturating_sub(PRUNE_MS))
+        .filter(|(_, a)| a.at < cutoff && a.applied.max(a.at) < cutoff)
         .map(|(id, _)| id.clone())
         .collect()
 }
 
 // ---- the token claim
 
-/// §6: a grant key sealed to den-mcp's X-Wing public key, bound to the access token's `sub`: unpadded base64url of
-/// `enc ‖ ct`, the plaintext the grant id's 16 bytes and the grant's seed.
+/// §7: a grant key sealed to den-mcp's X-Wing public key, bound to the access token's `sub`: unpadded base64url of
+/// `enc ‖ ct`, the plaintext the grant id's 16 bytes and the grant's seed. For the vectors; production code calls
+/// [`seal_claim_with_rng`].
+#[doc(hidden)]
 pub fn seal_claim(
     public: &[u8],
     sub: &str,
@@ -675,7 +692,7 @@ pub fn seal_claim(
     )?))
 }
 
-/// §6: den-mcp's side of [`seal_claim`].
+/// §7: den-mcp's side of [`seal_claim`].
 pub fn open_claim(
     secret: &[u8; KEM_SECRET_LEN],
     sub: &str,
@@ -690,7 +707,7 @@ pub fn open_claim(
 
 // ---- the wrap at rest
 
-/// §7: K = HKDF-SHA256(ikm = the refresh secret's bytes, salt = the session id, info = [`WRAP_INFO`]), 32 bytes.
+/// §8: K = HKDF-SHA256(ikm = the refresh secret's bytes, salt = the session id, info = [`WRAP_INFO`]), 32 bytes.
 pub fn wrap_key(refresh_secret: &[u8], session: &str) -> Zeroizing<[u8; 32]> {
     let mut key = Zeroizing::new([0u8; 32]);
     Hkdf::<Sha256>::new(Some(session.as_bytes()), refresh_secret)
@@ -699,8 +716,9 @@ pub fn wrap_key(refresh_secret: &[u8], session: &str) -> Zeroizing<[u8; 32]> {
     key
 }
 
-/// §7: the grant key under [`wrap_key`], AES-256-GCM with the session id as additional data: unpadded base64url of
-/// `nonce ‖ ct ‖ tag`.
+/// §8: the grant key under [`wrap_key`], AES-256-GCM with the session id as additional data: unpadded base64url of
+/// `nonce ‖ ct ‖ tag`. For the vectors; production code calls [`wrap_with_rng`].
+#[doc(hidden)]
 pub fn wrap(refresh_secret: &[u8], session: &str, grant: &GrantKey, nonce: &[u8; 12]) -> String {
     let key = wrap_key(refresh_secret, session);
     let cipher = Aes256Gcm::new((&*key).into());
@@ -716,7 +734,52 @@ pub fn wrap(refresh_secret: &[u8], session: &str, grant: &GrantKey, nonce: &[u8;
     b64url(&[&nonce[..], &ct].concat())
 }
 
-/// §7: den-edge's side of [`wrap`].
+// ---- the same, drawing their randomness from a CSPRNG
+
+/// [`seal_request`] with a fresh `eseed` from `rng`. What den-mcp calls.
+pub fn seal_request_with_rng(
+    public: &[u8],
+    grant: &GrantKey,
+    request: &Request,
+    rng: &mut impl rand_core::CryptoRng,
+) -> Result<String, Error> {
+    let mut eseed = Zeroizing::new([0u8; ESEED_LEN]);
+    rng.fill_bytes(&mut *eseed);
+    seal_request(public, grant, request, &*eseed)
+}
+
+/// [`seal_claim`] with a fresh `eseed` from `rng`. What den-edge calls for every access token.
+pub fn seal_claim_with_rng(
+    public: &[u8],
+    sub: &str,
+    grant: &GrantKey,
+    rng: &mut impl rand_core::CryptoRng,
+) -> Result<String, Error> {
+    let mut eseed = Zeroizing::new([0u8; ESEED_LEN]);
+    rng.fill_bytes(&mut *eseed);
+    seal_claim(public, sub, grant, &*eseed)
+}
+
+/// [`wrap`] with a fresh nonce from `rng`. What den-edge calls at every exchange and refresh.
+pub fn wrap_with_rng(
+    refresh_secret: &[u8],
+    session: &str,
+    grant: &GrantKey,
+    rng: &mut impl rand_core::CryptoRng,
+) -> String {
+    let mut nonce = [0u8; 12];
+    rng.fill_bytes(&mut nonce);
+    wrap(refresh_secret, session, grant, &nonce)
+}
+
+/// A request id (§4): 16 bytes from `rng`, as hex.
+pub fn request_id_with_rng(rng: &mut impl rand_core::CryptoRng) -> String {
+    let mut id = [0u8; 16];
+    rng.fill_bytes(&mut id);
+    hex(&id)
+}
+
+/// §8: den-edge's side of [`wrap`].
 pub fn unwrap(refresh_secret: &[u8], session: &str, wrapped: &str) -> Result<GrantKey, Error> {
     let bytes = b64url_decode(wrapped).ok_or(Error::DoesNotOpen)?;
     if bytes.len() != 12 + GRANT_BLOB_LEN + TAG_LEN {

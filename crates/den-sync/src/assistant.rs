@@ -1,5 +1,5 @@
 //! Assistant writes (den-spec `wire/assistant-v1.md`) as the clients call them: the library's three settings rows
-//! (`set:assistant`, `set:assistant-grants`, `set:assistant-applied`, §4) read into what `den_assistant` checks, and
+//! (`set:assistant`, `set:assistant-grants`, `set:assistant-applied`, §5) read into what `den_assistant` checks, and
 //! the values a client writes back. The crypto and the accept rules are `den_assistant`'s; this module only reads and
 //! writes rows.
 
@@ -131,10 +131,22 @@ fn valid_ops(ops: &Value) -> Option<Vec<String>> {
     (!list.is_empty() && list.windows(2).all(|w| w[0] < w[1])).then_some(list)
 }
 
-/// A grant value (§4) checked against the grant id it is stored under: `None` when malformed.
+/// A grant value (§5) checked against the grant id it is stored under: `None` when malformed.
 fn grant_of(id: &str, value: &Value) -> Option<(Grant, Option<u64>)> {
-    let object = held(value)?;
-    let keys = ["cap", "client", "createdAt", "ops", "pk", "revokedAt", "v"];
+    grant_in(id, &held(value)?)
+}
+
+fn grant_in(id: &str, object: &Map<String, Value>) -> Option<(Grant, Option<u64>)> {
+    let keys = [
+        "cap",
+        "client",
+        "createdAt",
+        "expiresAt",
+        "ops",
+        "pk",
+        "revokedAt",
+        "v",
+    ];
     if object.len() != keys.len()
         || !keys.iter().all(|k| object.contains_key(*k))
         || object["v"] != 1
@@ -156,6 +168,7 @@ fn grant_of(id: &str, value: &Value) -> Option<(Grant, Option<u64>)> {
         other => Some(safe(other)?),
     };
     safe(&object["createdAt"])?;
+    let expires = safe(&object["expiresAt"])?;
     if !clean_client(client) {
         return None;
     }
@@ -166,9 +179,67 @@ fn grant_of(id: &str, value: &Value) -> Option<(Grant, Option<u64>)> {
             ops,
             cap,
             revoked: revoked.is_some(),
+            expires,
         },
         revoked,
     ))
+}
+
+/// The `revokedAt` a grant value holds, when it is a time: honoured whatever else the value holds (§5).
+fn revoked_in(object: &Map<String, Value>) -> Option<u64> {
+    object.get("revokedAt").and_then(safe)
+}
+
+/// How a grant setting ranks in a merge (§5): not a JSON object, a malformed object, a v1 grant, a newer version.
+/// Read with `revokedAt` set aside, so writing a revocation into a value never changes its rank.
+fn rank(id: &str, value: &Value) -> (u8, Option<Map<String, Value>>) {
+    let Some(object) = held(value) else {
+        return (0, None);
+    };
+    if object
+        .get("v")
+        .and_then(Value::as_u64)
+        .is_some_and(|v| v > 1)
+    {
+        return (3, Some(object));
+    }
+    let mut cleared = object.clone();
+    cleared.insert("revokedAt".into(), Value::Null);
+    let rank = if grant_in(id, &cleared).is_some() {
+        2
+    } else {
+        1
+    };
+    (rank, Some(object))
+}
+
+/// A value's `revokedAt` as the merge joins it: absent, then anything that is not a time (by JCS), then `null`, then
+/// a time — the earlier the greater, since an earlier revocation stands.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Revocation {
+    Absent,
+    Other(Vec<u8>),
+    Null,
+    At(std::cmp::Reverse<u64>),
+}
+
+fn revocation(object: &Map<String, Value>) -> Revocation {
+    match object.get("revokedAt") {
+        None => Revocation::Absent,
+        Some(Value::Null) => Revocation::Null,
+        Some(value) => match safe(value) {
+            Some(t) => Revocation::At(std::cmp::Reverse(t)),
+            None => Revocation::Other(canonical(value)),
+        },
+    }
+}
+
+fn without(object: &Map<String, Value>, keys: &[&str]) -> Vec<u8> {
+    let mut object = object.clone();
+    for key in keys {
+        object.remove(*key);
+    }
+    canonical(&Value::Object(object))
 }
 
 /// `assistant_keygen_grant`: 32 random bytes and what the person consented to → the grant key (its secret goes to
@@ -193,9 +264,10 @@ pub fn keygen_grant(
     if !(1..=MAX_CAP).contains(&cap) {
         return Err("invalid_cap".into());
     }
-    if now > MAX_SAFE_INTEGER {
-        return Err("invalid_time".into());
-    }
+    let expires = now
+        .checked_add(den_assistant::GRANT_TTL_MS)
+        .filter(|t| *t <= MAX_SAFE_INTEGER)
+        .ok_or("invalid_time")?;
     let key = den_assistant::GrantKey::from_secret(&secret);
     let grant = json!({
         "v": 1,
@@ -204,6 +276,7 @@ pub fn keygen_grant(
         "ops": ops,
         "cap": cap,
         "createdAt": now,
+        "expiresAt": expires,
         "revokedAt": null,
     });
     Ok(json!({
@@ -215,112 +288,225 @@ pub fn keygen_grant(
     }))
 }
 
-/// `assistant_revoke`: a grant value with `revokedAt` set — kept at the earlier time when it already was.
+/// `assistant_revoke`: a grant value with `revokedAt` set — kept at the earlier time when it already was. Any value
+/// that is a JSON object can be revoked, a newer version's or a malformed one's included, so Settings can revoke
+/// every grant it lists.
 pub fn revoke(id: &str, value: &Value, now: u64) -> Result<Value, String> {
-    let stamped = json!({ "value": value, "at": [0, 0, ""] });
-    let (_, revoked) = grant_of(id, &stamped).ok_or("invalid_grant")?;
     if now > MAX_SAFE_INTEGER {
         return Err("invalid_time".into());
     }
-    let mut object = held(&stamped).expect("checked");
-    object.insert(
-        "revokedAt".into(),
-        json!(revoked.map_or(now, |r| r.min(now))),
-    );
+    let (rank, object) = rank(id, &json!({ "value": value }));
+    let mut object = object.filter(|_| rank > 0).ok_or("invalid_grant")?;
+    let at = revoked_in(&object).map_or(now, |r| r.min(now));
+    object.insert("revokedAt".into(), json!(at));
     Ok(json!({ "value": jcs_string(&Value::Object(object)) }))
 }
 
-/// One grant setting merged (§4): a well-formed version beats a malformed one, and two malformed ones go by the later
-/// stamp. Two well-formed ones keep the byte-greater JCS of everything but `revokedAt` (the versions agree on it,
-/// since a grant is written once), the earlier non-null `revokedAt` (a revocation is never undone), and the later
-/// stamp. Each part is a join, so the merge is commutative, associative and idempotent.
-pub fn merge_grant(id: &str, a: &Value, b: &Value) -> Result<Value, String> {
-    let later = |a: &Value, b: &Value| -> Result<Value, String> {
-        Ok(match stamp(&b["at"])?.cmp(&stamp(&a["at"])?) {
-            Ordering::Greater => b.clone(),
-            Ordering::Less => a.clone(),
-            Ordering::Equal if canonical(b) > canonical(a) => b.clone(),
-            Ordering::Equal => a.clone(),
-        })
-    };
-    let (ga, gb) = (grant_of(id, a), grant_of(id, b));
-    let ((_, ra), (_, rb)) = match (ga, gb) {
-        (Some(ga), Some(gb)) => (ga, gb),
-        (Some(_), None) => return Ok(a.clone()),
-        (None, Some(_)) => return Ok(b.clone()),
-        (None, None) => return later(a, b),
-    };
-    let fixed = |v: &Value| {
-        let mut object = held(v).expect("checked");
-        object.remove("revokedAt");
-        object
-    };
-    let (fa, fb) = (fixed(a), fixed(b));
-    let mut object =
-        if canonical(&Value::Object(fb.clone())) > canonical(&Value::Object(fa.clone())) {
-            fb
-        } else {
-            fa
-        };
-    let revoked = match (ra, rb) {
-        (Some(x), Some(y)) => Some(x.min(y)),
-        (x, y) => x.or(y),
-    };
-    object.insert("revokedAt".into(), json!(revoked));
-    let at = if stamp(&a["at"])? >= stamp(&b["at"])? {
-        a["at"].clone()
-    } else {
-        b["at"].clone()
-    };
-    Ok(json!({ "value": jcs_string(&Value::Object(object)), "at": at }))
+/// `assistant_renew`: a v1 grant value whose `expiresAt` is `now` + 30 days, or kept when it is later. A revoked grant
+/// stays revoked.
+pub fn renew(id: &str, value: &Value, now: u64) -> Result<Value, String> {
+    let until = now
+        .checked_add(den_assistant::GRANT_TTL_MS)
+        .filter(|t| *t <= MAX_SAFE_INTEGER)
+        .ok_or("invalid_time")?;
+    let stamped = json!({ "value": value });
+    let (grant, _) = grant_of(id, &stamped).ok_or("invalid_grant")?;
+    let mut object = held(&stamped).expect("checked");
+    object.insert("expiresAt".into(), json!(grant.expires.max(until)));
+    Ok(json!({ "value": jcs_string(&Value::Object(object)) }))
 }
 
-fn grants(row: Option<&Value>) -> Result<BTreeMap<String, Grant>, String> {
+/// `assistant_grants`: every grant the row holds, for Settings to list and revoke — with its state at `now`, a
+/// device's own record of revocations (§6) counting as revoked.
+pub fn list(row: Option<&Value>, local_revoked: &[String], now: u64) -> Result<Value, String> {
+    let mut out = Vec::new();
+    for (id, value) in settings(row, GRANTS_ROW)?.into_iter().flatten() {
+        let (rank, object) = rank(id, value);
+        let mut entry = json!({ "grant": id });
+        if let Some(object) = &object {
+            for key in [
+                "client",
+                "ops",
+                "cap",
+                "createdAt",
+                "expiresAt",
+                "revokedAt",
+            ] {
+                if let Some(member) = object.get(key) {
+                    entry[key] = member.clone();
+                }
+            }
+        }
+        let revoked = local_revoked.contains(id) || object.as_ref().and_then(revoked_in).is_some();
+        entry["state"] = json!(match (rank, grant_of(id, value)) {
+            _ if revoked => "revoked",
+            (3, _) => "newer",
+            (_, Some((grant, _))) if now >= grant.expires => "expired",
+            (_, Some(_)) => "active",
+            _ => "malformed",
+        });
+        out.push(entry);
+    }
+    Ok(json!({ "grants": out }))
+}
+
+/// One grant setting merged (§5). The higher rank wins (`rank`): a newer version over a v1 grant over a malformed
+/// value over one that is not an object. Two v1 grants keep the byte-greater JCS of every member but `revokedAt` and
+/// `expiresAt` (a grant is written once, so they agree), the later `expiresAt` (a renewal), and the later stamp. Two
+/// values of another rank: the later stamp, then the byte-greater JCS without `revokedAt`. Then, whatever won, its
+/// `revokedAt` is the join of both sides' (`Revocation`): a revocation either side holds is kept, even one in a value
+/// that lost, and an earlier one stands. Each part is a join, so the merge is commutative, associative and
+/// idempotent.
+pub fn merge_grant(id: &str, a: &Value, b: &Value) -> Result<Value, String> {
+    if a == b {
+        return Ok(a.clone());
+    }
+    let (sa, sb) = (stamp(&a["at"])?, stamp(&b["at"])?);
+    let ((ra, oa), (rb, ob)) = (rank(id, a), rank(id, b));
+    let revoked = [&oa, &ob]
+        .into_iter()
+        .flatten()
+        .map(revocation)
+        .max()
+        .unwrap_or(Revocation::Absent);
+    let key = |v: &Value, o: &Option<Map<String, Value>>| match o {
+        Some(object) => without(object, &["revokedAt"]),
+        None => canonical(&v["value"]),
+    };
+    let (mut value, at) = match ra.cmp(&rb) {
+        Ordering::Greater => (a.clone(), sa),
+        Ordering::Less => (b.clone(), sb),
+        Ordering::Equal if ra == 2 => {
+            let (oa, ob) = (oa.clone().expect("ranked"), ob.clone().expect("ranked"));
+            let fixed = |o: &Map<String, Value>| without(o, &["revokedAt", "expiresAt"]);
+            let mut object = if fixed(&ob) > fixed(&oa) {
+                ob.clone()
+            } else {
+                oa.clone()
+            };
+            let expires = safe(&oa["expiresAt"]).max(safe(&ob["expiresAt"]));
+            object.insert("expiresAt".into(), json!(expires));
+            (
+                json!({"value": jcs_string(&Value::Object(object))}),
+                sa.clone().max(sb.clone()),
+            )
+        }
+        Ordering::Equal => {
+            if (sb.clone(), key(b, &ob)) > (sa.clone(), key(a, &oa)) {
+                (b.clone(), sb)
+            } else {
+                (a.clone(), sa)
+            }
+        }
+    };
+    // Rewritten as JCS whenever it is an object, so both orders give the same bytes.
+    if let Some(mut object) = held(&value) {
+        match revoked {
+            Revocation::Absent => {
+                object.remove("revokedAt");
+            }
+            Revocation::Other(bytes) => {
+                let other = serde_json::from_slice(&bytes).expect("canonical JSON");
+                object.insert("revokedAt".into(), other);
+            }
+            Revocation::Null => {
+                object.insert("revokedAt".into(), Value::Null);
+            }
+            Revocation::At(std::cmp::Reverse(t)) => {
+                object.insert("revokedAt".into(), json!(t));
+            }
+        }
+        value["value"] = jcs_string(&Value::Object(object));
+    }
+    value["at"] = json!(at);
+    Ok(value)
+}
+
+/// Every v1 grant the row holds, a grant in the device's own record of revocations (§6) counting as revoked.
+fn grants(
+    row: Option<&Value>,
+    local_revoked: &[String],
+) -> Result<BTreeMap<String, Grant>, String> {
     Ok(settings(row, GRANTS_ROW)?
         .into_iter()
         .flatten()
-        .filter_map(|(id, value)| Some((id.clone(), grant_of(id, value)?.0)))
+        .filter_map(|(id, value)| {
+            let (mut grant, _) = grant_of(id, value)?;
+            grant.revoked |= local_revoked.contains(id);
+            Some((id.clone(), grant))
+        })
         .collect())
 }
 
 // ---- set:assistant-applied
 
-/// Every applied entry. A malformed value still names an id already applied (so it still refuses a replay), counts
-/// for no grant's cap, and is pruned at once.
-fn applied(row: Option<&Value>) -> Result<BTreeMap<String, Applied>, String> {
-    let mut out = BTreeMap::new();
-    for (id, value) in settings(row, APPLIED_ROW)?.into_iter().flatten() {
-        if value["value"].is_null() {
+/// One applied entry from its tagged value. A malformed value still names an id already applied (so it still refuses
+/// a replay), counts for no grant's cap, and is pruned at once. `applied` is read as at least `at`.
+fn applied_entry(value: &Value) -> Applied {
+    held(&json!({ "value": value }))
+        .filter(|o| o.len() == 3)
+        .and_then(|o| {
+            let at = safe(o.get("at")?)?;
+            Some(Applied {
+                grant: o.get("grant")?.as_str()?.to_owned(),
+                at,
+                applied: safe(o.get("applied")?)?.max(at),
+            })
+        })
+        .unwrap_or(Applied {
+            grant: String::new(),
+            at: 0,
+            applied: 0,
+        })
+}
+
+/// Every applied entry: the row's, and the device's own record (§6) — id → the tagged value it recorded. An id in
+/// both counts once, at the later `applied`.
+fn applied(
+    row: Option<&Value>,
+    local: &Map<String, Value>,
+) -> Result<BTreeMap<String, Applied>, String> {
+    let mut out: BTreeMap<String, Applied> = BTreeMap::new();
+    let row_entries = settings(row, APPLIED_ROW)?
+        .into_iter()
+        .flatten()
+        .map(|(id, setting)| (id, &setting["value"]));
+    for (id, value) in row_entries.chain(local.iter()) {
+        if value.is_null() {
             continue;
         }
-        let entry = held(value)
-            .filter(|o| o.len() == 3)
-            .and_then(|o| {
-                Some(Applied {
-                    grant: o.get("grant")?.as_str()?.to_owned(),
-                    at: safe(o.get("at")?)?,
-                    applied: safe(o.get("applied")?)?,
-                })
-            })
-            .unwrap_or(Applied {
-                grant: String::new(),
-                at: 0,
-                applied: 0,
-            });
-        out.insert(id.clone(), entry);
+        let entry = applied_entry(value);
+        match out.get(id) {
+            Some(prior) if prior.applied >= entry.applied => {}
+            _ => {
+                out.insert(id.clone(), entry);
+            }
+        }
     }
     Ok(out)
 }
 
-/// `assistant_open` (§5): the request, accepted with the applied entry to record, or the reason it is refused.
-pub fn open(
-    library: &str,
-    sealed: &str,
-    dropbox_row: Option<&Value>,
-    grants_row: Option<&Value>,
-    applied_row: Option<&Value>,
-    now: u64,
-) -> Result<Value, String> {
+fn device(text: &str) -> Result<&str, String> {
+    (text.len() == 16 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+        .then_some(text)
+        .ok_or_else(|| "invalid_device".into())
+}
+
+/// What `assistant_open` reads besides the request: the three rows and the device's own records.
+pub struct Library<'a> {
+    pub library: &'a str,
+    pub device: &'a str,
+    pub dropbox: Option<&'a Value>,
+    pub grants: Option<&'a Value>,
+    pub applied: Option<&'a Value>,
+    pub local_revoked: &'a [String],
+    pub local_applied: &'a Map<String, Value>,
+}
+
+/// `assistant_open` (§6): the request, accepted with the stamp to write it at and the applied entry to record, or the
+/// reason it is refused.
+pub fn open(sealed: &str, lib: &Library, now: u64) -> Result<Value, String> {
+    let library = lib.library;
     if library.len() != 32
         || !library
             .bytes()
@@ -328,15 +514,16 @@ pub fn open(
     {
         return Err("invalid_library".into());
     }
+    let device = device(lib.device)?;
     if now > MAX_SAFE_INTEGER {
         return Err("invalid_time".into());
     }
-    let keys: Vec<[u8; 32]> = dropbox_keys(dropbox_row)?
+    let keys: Vec<[u8; 32]> = dropbox_keys(lib.dropbox)?
         .into_iter()
         .map(|k| k.1)
         .collect();
-    let grants = grants(grants_row)?;
-    let applied = applied(applied_row)?;
+    let grants = grants(lib.grants, lib.local_revoked)?;
+    let applied = applied(lib.applied, lib.local_applied)?;
     Ok(
         match den_assistant::check(&keys, library, sealed, &grants, &applied, now) {
             Ok(accepted) => json!({"accept": {
@@ -345,6 +532,9 @@ pub fn open(
                 "at": accepted.at,
                 "op": accepted.op,
                 "args": accepted.args,
+                // §6 *Performing*: the write is stamped at the request's own time, so `apply_write`'s replay rule
+                // keeps any change the library already holds from later.
+                "stamp": [accepted.at, 0, device],
                 "setting": accepted.id,
                 "value": jcs_string(&json!({"grant": accepted.grant, "at": accepted.at, "applied": now})),
             }}),
@@ -353,7 +543,11 @@ pub fn open(
     )
 }
 
-/// `assistant_prune` (§4): the applied entries to drop.
-pub fn prune(applied_row: Option<&Value>, now: u64) -> Result<Value, String> {
-    Ok(json!({ "remove": den_assistant::prune(&applied(applied_row)?, now) }))
+/// `assistant_prune` (§5): the applied entries to drop, from the row and from the device's own record alike.
+pub fn prune(
+    applied_row: Option<&Value>,
+    local: &Map<String, Value>,
+    now: u64,
+) -> Result<Value, String> {
+    Ok(json!({ "remove": den_assistant::prune(&applied(applied_row, local)?, now) }))
 }
