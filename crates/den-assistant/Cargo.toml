@@ -1,0 +1,23 @@
+[package]
+name = "den-assistant"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Assistant writes (den-spec wire/assistant-v1.md): keys, sealed requests, token claims, wraps and the accept rules. Pure: randomness and time arrive as inputs."
+
+[dependencies]
+serde_json.workspace = true
+hpke.workspace = true
+ed25519-dalek.workspace = true
+aes-gcm.workspace = true
+hkdf.workspace = true
+sha2.workspace = true
+zeroize.workspace = true
+rand_core.workspace = true
+
+[dev-dependencies]
+# The official X-Wing and HPKE-PQ vectors: X-Wing's own, and HPKE's for X-Wing with HKDF-SHA256, whose only published
+# AEAD is ChaCha20-Poly1305.
+x-wing.workspace = true
+hpke = { workspace = true, features = ["chacha"] }

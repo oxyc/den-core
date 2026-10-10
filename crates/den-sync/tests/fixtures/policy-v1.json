@@ -6413,6 +6413,538 @@
     "best": null,
     "pick": null
    }
+  },
+  {
+   "name": "assistant_keygen_dropbox: the seed is the X-Wing private key",
+   "ok": {
+    "kid": "9c264deea898d78a0a218143b016a672",
+    "public": "3vxtkzqRoihESFF0m9SE5EM45vE40fB-LKggpNsLPzO7ycCyDrJlCFZ253dDpHopUABtiGIkWex2n5GnwSd8pRtPb5Orv9tuO_G-s-g1b6gr6GGnzGhGXnTEIJwXSPdMG4ixiaC0ZtJ1bbQoy-Gs16wYErCcvLMe_XQZp9FkvglxwGR6hpJfRfEaxvILKswd6LpOIINb4ziqKnNjGsk2TUqoItB1myeAkUNDRQGaDSOgksdvg-wsq5AieHuzUBETBTg0QoK8OFaKqFCwoPmfW6aKJzVIueAa-QU_xNQHNFQ_rDA4qsMBUwEF-udfXeguq7MjpuzF7fCyiXhkmfSkw3i4shOAw8F6JFKHynM0BosNF3qcFEkL-jDH6dNHg9MMNPyQOvwlQQPC7wuToIoA1NJC6fqEHngocBtCW4ZMpjgOVKtntKxMttKBcjsVO3gWPJSVRUHGmOsZJ1mVFCvNbxpuDyGot6RE7jpQAyqPQdRiotXD2zZC4JSeC3AbyZuOTravCZxF6eRYiscUIiiM_ix_OKZUEBjEu3UB0_wZtHWdI_ihZbVhdZUoNtlc6Mu-jNg__9GxbKvC34lgFet3A-WSGMkdj2jB_9N_LvlNSFwsSCNM5QFN_OBmDrmn9ly83SU6e3o6EtcK-zApf_q80GmtJKmyrWgBvqCyJSCtPUM5oBc7dmYDqjKI5DE_VjY8ASyzvAyiJ4OVt8XIm5ytE2NaVpY7z5JAmiRxYajGB_lwBShPd7mahoYzmsx61ZGYjKYh45WElXIxQYuBoEI3zuKWgaxz-XBnamBj8skz1WdfWKEmhdlUifQA9byqfskZ48YMCNqOabeR1OjICGjMLREq-_ez4WUtz0BEZ4MOXUSwOzwB05CaohdXhycuqPOD76HCumBCcjBX3ZcnFqZ6rQgAhgTLBrKkBehctyxix0sJa1VvOBU3udhKhki9kNxiWZpc3aQJmneyZMvD2ze3u4B50VLK7FY1XlA4cZe75-cCkhG73oUiF6bBFrdCFhaZu0cRSpM4u2VLspc1-9Orp8oFgRh_jYG7YnITBidh6EZWmJKivEBvh2hfuyQuTjZVF2YkP1LPxNNkoZumz7Uy1ukkdYy7gOoRBwNyt3sJDOdqY9GFmLifNUgqiou4hyFePmBvCXc9i7JlDzx3V8eyfIIiQtuYdABvv4YVMwRNBwTLL3Ev2BuOt_ePhgBv09BRqAId9rGTRJkWlIM6O4djtRFe8ORwMeJl1eKouHuY_7IMHCKzGjB6_jq5CyxFQ6VQphsjLUAty8lwOGG7uUhxm6CRRCiwh2yeRrwULEyD0nQGYHO7eSOy7taPoimiOmPEuSO3ZuwCu8dYMbBRLQRX8Hh60nZyEOphQGGFN8QmjgMTAXLJ1qJb42yRvGoDdwAYnpY12PeAaVerKQBwDvpdVTOkLNp-c1zGVqAZC9CcovV_cWF97UrE_xtZVCMoq7O1xRiZDsZkhMyZinaunpGYgeBLGprA5Ma7ifa41vszRQxKmFkdzeV1g-u2-NJfTKS9rTLClsdvx-IM9-pj-jhEmN7HVwCOBsCGEjfX0PwMIjnKhPeHatgY4Aw9krRI062odi8Hyg5CTCkv_HHrP419Sw",
+    "setting": "dropbox.9c264deea898d78a0a218143b016a672",
+    "value": {
+     "string": "IpCMX3-h3Ti7zzcK6fh6wyalHeS6EnLhRPjJfHQbgwo"
+    }
+   },
+   "request": {
+    "op": "assistant_keygen_dropbox",
+    "random": "22908c5f7fa1dd38bbcf370ae9f87ac326a51de4ba1272e144f8c97c741b830a"
+   }
+  },
+  {
+   "name": "assistant_dropbox: the key with the latest stamp",
+   "ok": {
+    "kid": "6a370b0c8f654388999a147f5ffe2c88",
+    "public": "PoOfx-QrHFdQSqYdE2BsLOIbIJy1YPFvf7VveUskeSWmz6nMiRAa23Qe2bTDuuweuEHL1kuhAMmimGVR7OCnL2J0yjtl55l4qoUYTEFTCIR_HERpcjc2x5of5nM9srSKKLVv7AN_epGVxxibk3Gt1tkIlhWJgPo_h9StEsSZfGdSG3pGmOAo0wR7SlqNZBdw4EFuE0I6EFOdTLdY6myxuShioGl1KGJGSqecOzWWS_cQnwexqYsy35XH5EbNn8s2MDZq_BQo2cMeVkg6xrCSmFSLr9qpvXrL5-RI_jp1fnWJdMAJyoce76EG2DVZa6NYTVGLpNYTqBgADoNNUQoS6bVQ-giTwgi7ogOGZjVk2Gc7NUOya5YxHLw4Flu79ZQzmax79DCQxYRa5ujN2sJSo1MKiRJfW9IznRpqnCRuMSRjJ_Yzbem1ZLrOcaQj6mKneEMo99SrT9AYLAkCPmfL3blq8_iT68ZeQOoa2wyU67oluKMPNvMU0EN7TsVDoECag8hnhNItBqClkNdwBdU6pbZFtSYERqcMl4uL-vN6TIImhyuARAZqxEbKCeG-vcJaGSTMgekGmoxKHhc-xfVug5sjKdQsnwBLc4u7_8cnxYhgypvES2ksEpgFHKm2UhGXx8KCTwppHqaqaLVLhvSt8EsuaRsxyIQ_jVdqE4BWtRBZ6bd6eEGPfmFtXeAob3F-9zTJy2QKnTkR1ZGdfxh_XMlB-MUn9htB-gvCD6diMXS8a8M6TALErkjPZcISGlgTWbdQ8DhYC6l5h-ZPjqZR3htp7aqIfri8fMw9_ymmAsB9HSGTSuTI_gjJ1UqQRBok5YkpZPhrS0TD8MYTF7czV6AXBAq32MNW0hEdZzkIB7ZZREwEoUqSnDBCiLOaFLCbVpSKmIZSY1JSoMa558QdfUJbSbCFIWMo_nBrSMiZd6KHrmHAqJJCL8CJqwwHBGhkNtOKZ8xuY3Vhe3xoscVJt0AReOO3lWEdhRpHNwiNQmUDm0fKZ_QgaEx8mHC-fSYWg1Q4sahQH4NyPEgCrdCoA-RC9bilX-JJYsFN1oqJZPEH-qBXhzFPIsS0dep4NotpnmZ_wVxgGkNHgvBQCblgZSpIfodLKrkn52ceSoQF83zNneEwn_fD9qt8WRzGjHkxz4puaPFuOLJrVZE7rqEnZDUqxMhkOfPKd-UokhlsMtkJ64BM5cCniNrKpdJoPYSL4xGrWDSommLIk5Bjl3IZJba1u2FK8dfOvbaRyRlpJbsvAky0DvMZw4GFxaKP5Vi-ujWXzYV3PyXNORcw8HdjUTcosZoR4eGbERgmXLRKrQgAcjdG64cT2CtFtWqOmeYkRzCUicKYDwIKlYGWVCmTMTU2bYbMLcSSqLgN0gsFCqoJ9rq2x5CIaATNH3dhhQRzV8si4ZoKpihlxhwIR4SyqEcU_IAeR0K3lENT65HFDwZBEks1fMq7_GUxwRcT8rqtSRCQPllTgYkjGoYpGrMnnvwkdOR1S4pScxpQLBOmS7uQICIIXmm8TPqVaDsTAOuWvtq2liWd1FEeUeJupfhkNXnFKwEPodGm5RPppxHdtyOT6yXzjiLWwWgZiJOJCWVgagj-HTAjO_H845Jd-TdrBg"
+   },
+   "request": {
+    "assistant": {
+     "kind": "set",
+     "name": "assistant",
+     "schema": 2,
+     "values": {
+      "dropbox.6a370b0c8f654388999a147f5ffe2c88": {
+       "at": [
+        1786544000001,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "HL0S5FoHsbZNFXGWb8Hir-_q5any9fCr2nQbKZ2nSoo"
+       }
+      },
+      "dropbox.9c264deea898d78a0a218143b016a672": {
+       "at": [
+        1786544000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "IpCMX3-h3Ti7zzcK6fh6wyalHeS6EnLhRPjJfHQbgwo"
+       }
+      }
+     }
+    },
+    "op": "assistant_dropbox"
+   }
+  },
+  {
+   "name": "assistant_keygen_grant: ops sorted and deduplicated",
+   "ok": {
+    "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
+    "public": "jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0",
+    "secret": "JGYTiPC5L6x-kuOb8CAxkAY9vspXKoQtHHpC3rKwCFM",
+    "setting": "d7047d7faa4c6f77e1919c132bb6bd9f",
+    "value": {
+     "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":null,\"v\":1}"
+    }
+   },
+   "request": {
+    "cap": 3,
+    "client": "Claude",
+    "now": 1787408000000,
+    "op": "assistant_keygen_grant",
+    "ops": [
+     "watchlist_add",
+     "watchlist_remove",
+     "seen",
+     "rate",
+     "seen"
+    ],
+    "random": "24661388f0b92fac7e92e39bf0203190063dbeca572a842d1c7a42deb2b00853"
+   }
+  },
+  {
+   "error": "invalid_cap",
+   "name": "assistant_keygen_grant: a cap over 1000",
+   "request": {
+    "cap": 1001,
+    "client": "Claude",
+    "now": 1790000000000,
+    "op": "assistant_keygen_grant",
+    "ops": [
+     "seen"
+    ],
+    "random": "24661388f0b92fac7e92e39bf0203190063dbeca572a842d1c7a42deb2b00853"
+   }
+  },
+  {
+   "name": "assistant_revoke: sets revokedAt",
+   "ok": {
+    "value": {
+     "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":1790000000000,\"v\":1}"
+    }
+   },
+   "request": {
+    "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
+    "now": 1790000000000,
+    "op": "assistant_revoke",
+    "value": {
+     "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":null,\"v\":1}"
+    }
+   }
+  },
+  {
+   "name": "merge: assistant grants keep the earliest revocation and the latest stamp",
+   "ok": {
+    "kind": "set",
+    "name": "assistant-grants",
+    "schema": 2,
+    "values": {
+     "d7047d7faa4c6f77e1919c132bb6bd9f": {
+      "at": [
+       7,
+       0,
+       "a1b2c3d4e5f60718"
+      ],
+      "value": {
+       "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":1500,\"v\":1}"
+      }
+     }
+    }
+   },
+   "request": {
+    "a": {
+     "kind": "set",
+     "name": "assistant-grants",
+     "schema": 2,
+     "values": {
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        7,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":2000,\"v\":1}"
+       }
+      }
+     }
+    },
+    "b": {
+     "kind": "set",
+     "name": "assistant-grants",
+     "schema": 2,
+     "values": {
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        6,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":1500,\"v\":1}"
+       }
+      }
+     }
+    },
+    "op": "merge"
+   }
+  },
+  {
+   "name": "assistant_prune: requests over 8 days old, and malformed entries",
+   "ok": {
+    "remove": [
+     "373e0431e42eccad12c238eb38de6362",
+     "9b12341b0fd57ef9a91a79f285db0d66"
+    ]
+   },
+   "request": {
+    "applied": {
+     "kind": "set",
+     "name": "assistant-applied",
+     "schema": 2,
+     "values": {
+      "373e0431e42eccad12c238eb38de6362": {
+       "at": [
+        1790000000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "not json"
+       }
+      },
+      "9b12341b0fd57ef9a91a79f285db0d66": {
+       "at": [
+        1789827200000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789827200000,\"at\":1789308799999,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      },
+      "fd33912e4b5b6efdbf9e6ca4868014ef": {
+       "at": [
+        1789827200000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789827200000,\"at\":1789308800000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      }
+     }
+    },
+    "now": 1790000000000,
+    "op": "assistant_prune"
+   }
+  },
+  {
+   "name": "assistant_open: an episode marked unseen",
+   "ok": {
+    "accept": {
+     "args": {
+      "episode": 2,
+      "season": 1,
+      "title": {
+       "id": 1399,
+       "type": "tv"
+      },
+      "value": false
+     },
+     "at": 1789999940000,
+     "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
+     "id": "43d118724ec23633211146a8a6431c45",
+     "op": "seen",
+     "setting": "43d118724ec23633211146a8a6431c45",
+     "value": {
+      "string": "{\"applied\":1790000000000,\"at\":1789999940000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+     }
+    }
+   },
+   "request": {
+    "applied": {
+     "kind": "set",
+     "name": "assistant-applied",
+     "schema": 2,
+     "values": {
+      "982887bc1d545b5d3926e7538c997fb8": {
+       "at": [
+        1789992800000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789992800000,\"at\":1789989200000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      },
+      "cccbf13a6a02c308ff66246eb6bef40d": {
+       "at": [
+        1789827200000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789827200000,\"at\":1789827200000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      }
+     }
+    },
+    "assistant": {
+     "kind": "set",
+     "name": "assistant",
+     "schema": 2,
+     "values": {
+      "dropbox.9c264deea898d78a0a218143b016a672": {
+       "at": [
+        1786544000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "IpCMX3-h3Ti7zzcK6fh6wyalHeS6EnLhRPjJfHQbgwo"
+       }
+      }
+     }
+    },
+    "grants": {
+     "kind": "set",
+     "name": "assistant-grants",
+     "schema": 2,
+     "values": {
+      "0ad714db3029f1b328e84e1179ecf55e": {
+       "at": [
+        1787408000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"ChatGPT\",\"createdAt\":1787408000000,\"ops\":[\"seen\",\"watchlist_add\"],\"pk\":\"_TnKJLgVq12UdAbQ0imPsV7mszV50f0_2cg2e4QKVM4\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        1787408000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "fee3c42b428a8786487289d6d6ad544d": {
+       "at": [
+        1789996400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"l2YsPJsOJOLBjjcMzL2nBcAR4PvpUKTr611TcMNJC-0\",\"revokedAt\":1789996400000,\"v\":1}"
+       }
+      }
+     }
+    },
+    "library": "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e",
+    "now": 1790000000000,
+    "op": "assistant_open",
+    "sealed": "FC-KUEZzgKyL4aJAL3kbjSeCn18RdULIJEK0FF1pm9mD-vVHd8JZ6M-opHVlrMguoVzlukuGNIi6lYeZX5-DezVx-Z55rNb4fxgoXH6tjxZIy5wrsyGCj__i_-xSCnbRkcbh75yG2fWzyQTyGYjiYJ11I6TNkE3cHzInX_Q4hjXUccNxdw2v4gGXthf4zacGY8lvOyReChycNJEp5d5WV1b4fw9jGI5LGcVJ8U2A6oiTJn3AT7RI-txVB60-VQ8rbzUToDQC2hczU5iVnHTCZDzjxydYTjMKB61M4AtmtBUKgoNlmn6_nx7WvLWfq0MATCJbmFgQeOxgl8ZQvrq8ZpJa8haTKNNqOeOgaATUde-Nmp917GuXLIe1NDbzt8rIBi0clpq16qdHFsbVVRo_jNj3QqE4L2f7PhDe9oDnrbYbioGqt0wlkHswEAIPvGMludL8wBdCxqIWrh09ozHy6DSTf6yDz-HIWxSzU17s3iSTRFNf1IyZHjMhzS7VP7hnI6HCEO7wSIxWh_XeJElkmwiC7bba7ri_QCEZFzCHkL_avLBfUJrEn-XFehg1Qtg89QNRKLFX4HkXxehH8QuiV3iTrbws0iGDt9S4edqT1YidmT0yv-7R2ZUQtpazxFKp0JV45qNxKdGD26cyn3TiT_4s3ogEUDIakU0yFDByWku4b2XiaALFYUjmiwAHA1MzRdkqUo3s4EbCy5N4KmN1FSfvc7bfCd2YmT2RisTWHXjVdv6VHJ5n27e3mpVAKbaxSCkbOgUal34zpnNo4QaZQMHefDtxrpOrTDySuw3CCWpueGR6IFQ0f_-UQ_3-Uv1jyBTnrB-3QVOfp6kbn1tjC_AMKhka2dcf_13QLm3uPepx-QBusntJlmoYptfLfLrsffCiatRAxsAAzn2Iswi_50YMXwis5niKEtdeatkKdVaQ7G5djFRGYYAg3KanI8dL_EBXb0SvOXCwq_1nPoHu_hKQdDiFmFKSpAvYL5K2_ulUgdYxJKz-JZsJg2C9ljS_oC5NBehefily7DXOnF_gYFJ9MuPxoSAHKTlwcd397sZibsWYD572H2tmYcJWlf-7jsrjyoDWFdixEs2CPvSfJFqdHS61Q9B2EH5Ioaw6g36vbSQmv9N5OfYcNnC-lOm1O3oMbu3PGkb1vbBP1B41cMAIESprd6DTew4DrIrg3tgKP4vGbhb8XUkN5KIDo-rPQjSaoOpo--hCoitZk-GZAm6prY_jG6wNYbiMpdkXwvDLfiTEbdezPFuZrdcOPUvxHlbXFeTVcm1fBIN6EXphF7KqfBgec1RsWHoFJfkVPQabH3IzbwR5BogtMl88vbXuhGCKoK9_55jfPKzdfLdr1E_glBXroWwD7-eq1LWvFaQ80Y61FYUC7R1JbxhINELiaCvmZwCmY8K4DGe3uvNl4WG_exSJVatXfKRPj8PMHNlHwiR25AN_30pXTEadbVxgsMS1LnkRl7uVtoSCEZRbOSY4a4T7tzqbUezLnHGSRUW5fxq8R0nkRSvhHqnXmxLQga1vGDSQVnj2zI1mPo7jnz1-3G0Pncz35U9USXldNsZZzUyUtdo9BE54Ao-A3vzlHiHxgycASPSPzpaGEetXWedDCpwORqBOiYiQXYSSV7wu662H_FCMs05g6oItQSCjTPJSi9HcDR1Bz9fFvN4rsrcaiIKOBzW6W1r41Z6qTZzsCBahlX5o8u8raWTXJvObSvzCjXfzY3nx5LWkibvn_3ZcHXfVeod0ak2ABYWV76AtDYHMXeoPEB7b0cfI7Q2TJ1T15mr98ZVO9ArNI9G6CRUhXvylyUvEL00ae9_HP_MGCbLJjhTEoFxLpQbpOcdLvneZO0Ay0L11c7-iFU_90MkBx2EFQ_AL7yKPH4OZe4mpSAGOquuPaHAlBNMLI9BiSw_D9A"
+   }
+  },
+  {
+   "name": "assistant_open: an id already applied",
+   "ok": {
+    "reject": "replay"
+   },
+   "request": {
+    "applied": {
+     "kind": "set",
+     "name": "assistant-applied",
+     "schema": 2,
+     "values": {
+      "982887bc1d545b5d3926e7538c997fb8": {
+       "at": [
+        1789992800000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789992800000,\"at\":1789989200000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      },
+      "cccbf13a6a02c308ff66246eb6bef40d": {
+       "at": [
+        1789827200000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789827200000,\"at\":1789827200000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      }
+     }
+    },
+    "assistant": {
+     "kind": "set",
+     "name": "assistant",
+     "schema": 2,
+     "values": {
+      "dropbox.9c264deea898d78a0a218143b016a672": {
+       "at": [
+        1786544000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "IpCMX3-h3Ti7zzcK6fh6wyalHeS6EnLhRPjJfHQbgwo"
+       }
+      }
+     }
+    },
+    "grants": {
+     "kind": "set",
+     "name": "assistant-grants",
+     "schema": 2,
+     "values": {
+      "0ad714db3029f1b328e84e1179ecf55e": {
+       "at": [
+        1787408000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"ChatGPT\",\"createdAt\":1787408000000,\"ops\":[\"seen\",\"watchlist_add\"],\"pk\":\"_TnKJLgVq12UdAbQ0imPsV7mszV50f0_2cg2e4QKVM4\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        1787408000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "fee3c42b428a8786487289d6d6ad544d": {
+       "at": [
+        1789996400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"l2YsPJsOJOLBjjcMzL2nBcAR4PvpUKTr611TcMNJC-0\",\"revokedAt\":1789996400000,\"v\":1}"
+       }
+      }
+     }
+    },
+    "library": "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e",
+    "now": 1790000000000,
+    "op": "assistant_open",
+    "sealed": "wDS3Sxot-p9WpcrZ7x5A8eOZfAEE-6zQQdMM-EThYYdFWxZ8xZowqTd8MUr9A1GeI206fAHO41kf1sJrl-HPPH72SFS8bL5cU4quLTfsVcAAs0FZIAeAdGJNFIEUerj0qHbGaBKRGI2S1tMich0N-yPlJqeK6T-qchp24_FhzL7r72uKXQanJqYi4QZBIjhI2hBMAXTZlO_17AjQVkbw1gN1SIpjaj8UBYzh7_Jvcr3vJbt-_ubc8dox7Wd-3hR5H78b8xd7EsYNCe8TsnYIkLijR7uiSO32tqow4qax0QVyuu2GXSIaGoZ2kORdBphVR0qCLbAWyNuw9aSWoiTG10FGgorlWfd1Mnpfa775tNgpU_WhnOZTMM4FIExgiiRfBpLSRl1AOuBlZwQHbTU7kDibL_R8kMSdy-0Fs-L6JtmkW8_20K08AdfJFAa2w9QiZsHRrv2INXGqQgcK-cevEXbekZ5HJ19vNujVlfAbqAd0Gu7FqaxZXK4HJ3xruTIfAIytZq-EMffW9ChD2xGLzircAY3ajQKHR9uK8uVhyfrc7Day4QHNsNBVhT2JvsONFJCIzJkD_JrBS13V7ITlqViyI5nnowS_EJp74wEDagKyNGrjA8dyFOSAyuJTV_sgLoghXeiHXnoHBMeIjUCMAnM3X_eA2ctxLvQTpusURfMIitBe_upyJgfhBbwWSkwtlNu9AXcSUZaF-0gouYHYqblbefvS2PYqwYtz7zH9u0mIi7KI3SD6LGGQqbc0vhWnEZXt1iN-mzWKbCcVacYfAufwfdkDKd2WaAfWnjE0PdCHw1zzPXNJHQ4siFSjY2jxFVIdixaORIlcZVhdJyBKmrBjl6FX6Tb5nc-EtIJNLKGktVCp41aQneCnrBzyB0ED2K9KNtDifXNdZsuCIbSZ6zkuTwL26C_D0tkbxbcq5jj5W7tQl3rqubHwxz8xsbDV14_Gk_Vuiab_nBTrSrG0xBrheIXzu8g6hVSG51RPp2rOQnITnEMgmrNn1WjqorLqHx62M2f446At_aTIbPGozMrbl4ALkEnJqi8APjRJojkBL_LTUD8Kib7c0WsXDsjbFp_VQ8C_IlGHWPQuvdON28QA6zM2GAKH7cC0RsaB5L5V5y1IWReGPAiDlVelNfC0nbtDhR0_WO672bS-TmliysjznqQ626tPFtw9fwcqBDqqi1UxLH119bzA3jKCSg-o8MkqMg6BXU8AwrFpLQcPJN5fMfpWkwc_eAHQFSCJSeBNvD8lSQVNvpxGd_XDJv1aAb0i-tNIwnAATajEjLIuQjDgqMgpxPj9p-4trtKyDpzCnaXmmtkic5HOinJeVPnG9Gk7ANOyiDN31h0IkGbiJQsf2kPpCF6mlbcY6COMqK6E_PoPvvmL8rHDh2QN97JwM1pu7N7OBRnNl166kNfWYpqTa3c2g3ZwM_JQMtUI6Vb0ruLtL-BH8A2U7LhbI1MINA2C-brp3pFi3Pfq_cxfO4_fdMyaGhidFOi5kPi_B-pS2gdiz1SFGZKaKaqC9yuqQAG4Vdcsn-erOfc0CwruIG7ZYJJIay0gnsASPPPjGCiKf0Lou_gI8miaBtLge8MyMFimhnZ2uZI7siAVKpJCdeS1m7dVqlLk22jYUR1zj_voktfxOSKucY_WGmQy2eQ6vM37BfAYIv35x2Bh-UXBcENbtV5kwsLIAa__PPPDfzhefOTvhPowq-3nfiWhBbiJN415jGqnGuQYCc_EjIwMD2Kp4D6Qp_5iu4ZMoqnPYI6tGO6RJQOphnCpUARv4n4zU1Qzp3wtpWojUKgAmbK5Na5hLbWdcuVxzd9NJSSu_VDgR5ngfobcJUG7167tIVWo6Sqq_91yhSQFCn1mQ4KiZ868fWAHvDleBY8"
+   }
+  },
+  {
+   "name": "assistant_open: the fourth of a cap of 3 in a day",
+   "ok": {
+    "reject": "over_daily_cap"
+   },
+   "request": {
+    "applied": {
+     "kind": "set",
+     "name": "assistant-applied",
+     "schema": 2,
+     "values": {
+      "982887bc1d545b5d3926e7538c997fb8": {
+       "at": [
+        1789992800000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789992800000,\"at\":1789989200000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      },
+      "b25ca4c4167fa263e861c07a47fb3331": {
+       "at": [
+        1789996400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789996400000,\"at\":1789996400000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      },
+      "cccbf13a6a02c308ff66246eb6bef40d": {
+       "at": [
+        1789827200000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789827200000,\"at\":1789827200000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      },
+      "e4a358ea3414b3b5210bd849de64335b": {
+       "at": [
+        1789999940000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"applied\":1789999940000,\"at\":1789999940000,\"grant\":\"d7047d7faa4c6f77e1919c132bb6bd9f\"}"
+       }
+      }
+     }
+    },
+    "assistant": {
+     "kind": "set",
+     "name": "assistant",
+     "schema": 2,
+     "values": {
+      "dropbox.9c264deea898d78a0a218143b016a672": {
+       "at": [
+        1786544000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "IpCMX3-h3Ti7zzcK6fh6wyalHeS6EnLhRPjJfHQbgwo"
+       }
+      }
+     }
+    },
+    "grants": {
+     "kind": "set",
+     "name": "assistant-grants",
+     "schema": 2,
+     "values": {
+      "0ad714db3029f1b328e84e1179ecf55e": {
+       "at": [
+        1787408000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"ChatGPT\",\"createdAt\":1787408000000,\"ops\":[\"seen\",\"watchlist_add\"],\"pk\":\"_TnKJLgVq12UdAbQ0imPsV7mszV50f0_2cg2e4QKVM4\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        1787408000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "fee3c42b428a8786487289d6d6ad544d": {
+       "at": [
+        1789996400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"Claude\",\"createdAt\":1787408000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"l2YsPJsOJOLBjjcMzL2nBcAR4PvpUKTr611TcMNJC-0\",\"revokedAt\":1789996400000,\"v\":1}"
+       }
+      }
+     }
+    },
+    "library": "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e",
+    "now": 1790000000000,
+    "op": "assistant_open",
+    "sealed": "S_Oi3p1VD0IilPbYuFCe4oty7mYwYfuuqPLUTPnWXBl8GrrhT-eK4s_nvUN4NJJoj5c7bnlG4DIYQKF6nkFHoM1rogFvmQ1D4kiPkUhribrXFEId_0Z2LTYw0D-u-lmaPKxwcGLj4VdFu9duV6jdM6dUgIVOdq7epgPpRV4TwRNJKom3-MD0dekG5N5yrh3-RuNeVQqJgh3--bnYxGoeXiLJDfXslFaqu8T-Kvvwbaz0yCTlUtjgD5bBnl_IR4B23iBC_j_wAuCwusIfm0iQThbZmMMFSye2wRFKP4LyD9UbNXBVHY9r2Wis-UODELm5YEXSb8tDgy9rOgxx53RfOK0Gco4h-0NyK69u3QUjXP3u3n4I-ePaoPMtFasRQAvPjmBclIQdPfQnE7sBBtOZJd9YSyStSfII3moe6AqF6lceTqrk-w6g_0-po3zuY3uC1CFFJdLz3dpoIW2w3WsiBt7Vv71MTJUkxXOI-u00A1dmSqoW-H81ULfx8leGI9zOsABpvsEmb2ZK1F2JvDrBfyr52QdLd8WhoFM6tWjNoIefJ-swSK2Du14VOebJsy92V5a7r4wCVWSLpv8NtpclUArqglVyekEAL02KwWqVPy8iBT5pJ9rWgZfR2afGZSR7jSTDNfGtscvYh1Dxwdg1U0PbUIOdzNGBG8JX76zmYjwlpmr_WpTJsGjS4USxoGBEblSKNNT4mcpfZtFac2BRpNTQAeqz2VXJCO8mcssZ4BKxfsUX_eeiTdi4Pj1BuBfzqv8S_V4aTB_C6HEQ5-qXJ2AXZ2d9en-_i4GkK-j8c_KOVyNoB58C1L3a9IBNPh7RKIDpkpY7Vg0tRRhr01ghg6_Jkb5X0UaOsyOcE7YsEWFmssT455z4WASU1HQ7pCs7Zuyi6YU0zuVzDKXNRJkT1XyO78c72gsM7V__1tDvEFYnlj7_3tbs5YWqjP4oGP_dsFOKk0WizNM7haWsOLAJrkOvh5wRvH2Vyv_wGMfMc_0KF3CErzsI7ggm2PyM-HPlg-YmNVgo2acgDeYg19AXcijS68GIU9nI63nZyRw_YR21zpt82FoW1RBG9v9g5OWvoHYI9w373G9X7bssHXB-btBxwUqyglChTQKCh-A0pzPhWfOCW90kYQU4p-BKq04v83n5PW78D8Ouf-Y4RhSXRIXkTNcDfTAhcRbiqpzlwt-N9dGMY4_cPw04Xee28rLz4rk0B9_zqI2gtNffYGG_uKijxljmcO0eQ6lbCZB5_Sb2XiT2d9-TRqJBOJt5XW4Y_puYwaEnmnFUb7KNm5bAwr0C3VkGtkECKntCo9XGaGGmSeFscfB27hehi5LkQ1ktXIE4i7DCLEuTo5_U5dY5nwi3PFWbq77tLziuWtitzmcxXpCrgtPN_bljDyugwx79p2qXrh2qRQsCBrCWqsHDpIWYbbPapskSzaoLnpopifbBelI6ur0OM-7ThlWun4NZc83mRXmM2W8LU1COTWkJKXG2S3TKFGZDlr8V5iOA3CkSatJBmww6lODU9s-1MXQJWrb80xWu2-VMwCuOPkouaEpKmqW51n53teAuROE1HdYty1KxuzzJy-4KCkAAG5zHMHp8oOBCVZZ4NC-cG5LnJ8ZuH6LTjklRvcnq42Vk_ULur5t4iiOBXYqweVq_KlTNzJgJ0a-uYvBFHHu-EUoD3siFFqFoJaFJJ62gP5xmOQG2VMSvbCCI3X-1UNtw-2QhpXX1oxy_7nvRFNm0eQZZHBLVx33-3cO6TmiG4JmN3mKVUTMZ_IfOsUpf532x3iSem8o-m_jevNuMurKuMFfxRpJTJQbxRcOyDRjvNa8SqgBIBqREyh6M9o8HbiLr8mvUAZeNsx0qFTH8AMWpASODE2IuOvP9F4zlcdU"
+   }
   }
  ]
 }

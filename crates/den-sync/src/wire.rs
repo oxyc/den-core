@@ -496,10 +496,13 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
             let row_name = a["name"].as_str().unwrap_or_default();
             // The download lease row (library-v4 §17) holds one `lease`, merged as `set:deliver`'s is.
             let deliver = row_name.starts_with("deliver:") || row_name == "download-lease";
+            // Assistant grants (assistant-v1 §4) merge by grant, a revocation sticky.
+            let grants = row_name == crate::assistant::GRANTS_ROW;
             let mut values = object(&a["values"])?.clone();
             for (key, value) in object(&b["values"])? {
                 let value = match values.get(key) {
                     Some(prior) if deliver => merge_deliver(key, prior, value)?,
+                    Some(prior) if grants => crate::assistant::merge_grant(key, prior, value)?,
                     Some(prior) => later(prior, value)?,
                     None => value.clone(),
                 };
