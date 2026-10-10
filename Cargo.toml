@@ -1,5 +1,11 @@
 [workspace]
-members = ["crates/den-sync", "crates/den-store", "bindings/native", "bindings/web"]
+members = [
+    "crates/den-sync",
+    "crates/den-store",
+    "crates/den-assistant",
+    "bindings/native",
+    "bindings/web",
+]
 default-members = ["crates/den-sync"]
 resolver = "2"
 
@@ -25,7 +31,17 @@ hkdf = { version = "0.13.0", default-features = false }
 hmac = { version = "0.13.0", default-features = false, features = ["zeroize"] }
 sha2 = { version = "0.11.0", default-features = false, features = ["zeroize"] }
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
+# Assistant writes (den-spec `wire/assistant-v1.md`): HPKE (RFC 9180) with the X-Wing KEM, Ed25519 signatures and
+# AES-256-GCM wraps. No `getrandom` anywhere: randomness arrives as input, so the crate builds for wasm32 as is.
+# `ed25519-dalek` without `fast`: its precomputed tables would add to the web binding for a handful of signatures.
+# X-Wing needs both `mlkem` and `x25519`; `x25519` also brings HKDF-SHA256.
+hpke = { version = "0.14.1", default-features = false, features = ["alloc", "mlkem", "x25519", "aes"] }
+ed25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroize"] }
+aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
+rand_core = { version = "0.10.1", default-features = false }
+x-wing = { version = "0.1.1", default-features = false, features = ["hazmat"] }
 den-sync = { path = "crates/den-sync" }
+den-assistant = { path = "crates/den-assistant" }
 den-store = { path = "crates/den-store" }
 
 # One Argon2id at 64 MiB, t = 3 takes seconds unoptimised; the tests run several.

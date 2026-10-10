@@ -15,4 +15,6 @@ hkdf.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 zeroize.workspace = true
+# Assistant writes (den-spec `wire/assistant-v1.md`): the crypto and accept rules, which den-edge and den-mcp also use.
+den-assistant.workspace = true
 

@@ -1,6 +1,7 @@
 //! Pure library state and delivery decisions. No clocks, storage, network, credentials, or async runtime.
 //! All time and provider facts arrive as inputs; bindings return the same versioned JSON envelope.
 
+mod assistant;
 mod delivery;
 mod downloads;
 mod episodes;
@@ -363,6 +364,47 @@ enum Request {
     RecoveryDerive {
         data: String,
     },
+    /// Assistant v1 §4: 32 random bytes (hex) → a drop-box key and the `set:assistant` setting holding it.
+    AssistantKeygenDropbox {
+        random: String,
+    },
+    /// Assistant v1 §8: the drop-box public key den-edge should hold for a `set:assistant` row, or null.
+    AssistantDropbox {
+        #[serde(default)]
+        assistant: Option<Value>,
+    },
+    /// Assistant v1 §4: 32 random bytes (hex) and the consent → a grant key and its `set:assistant-grants` setting.
+    AssistantKeygenGrant {
+        random: String,
+        client: String,
+        ops: Vec<String>,
+        cap: u64,
+        now: u64,
+    },
+    /// Assistant v1 §4: a grant's setting value with `revokedAt` set.
+    AssistantRevoke {
+        grant: String,
+        value: Value,
+        now: u64,
+    },
+    /// Assistant v1 §5: a sealed request against the library's three assistant rows → accept or reject.
+    AssistantOpen {
+        library: String,
+        sealed: String,
+        #[serde(default)]
+        assistant: Option<Value>,
+        #[serde(default)]
+        grants: Option<Value>,
+        #[serde(default)]
+        applied: Option<Value>,
+        now: u64,
+    },
+    /// Assistant v1 §4: the applied entries to drop.
+    AssistantPrune {
+        #[serde(default)]
+        applied: Option<Value>,
+        now: u64,
+    },
 }
 
 fn yes() -> bool {
@@ -611,6 +653,34 @@ pub fn evaluate(input: &str) -> String {
             Request::RecoveryCode { random } => recovery::code(&random),
             Request::RecoveryRead { text } => recovery::read(&text),
             Request::RecoveryDerive { data } => recovery::derive(&data),
+            Request::AssistantKeygenDropbox { random } => assistant::keygen_dropbox(&random),
+            Request::AssistantDropbox { assistant } => assistant::dropbox(assistant.as_ref()),
+            Request::AssistantKeygenGrant {
+                random,
+                client,
+                ops,
+                cap,
+                now,
+            } => assistant::keygen_grant(&random, &client, &ops, cap, now),
+            Request::AssistantRevoke { grant, value, now } => {
+                assistant::revoke(&grant, &value, now)
+            }
+            Request::AssistantOpen {
+                library,
+                sealed,
+                assistant,
+                grants,
+                applied,
+                now,
+            } => assistant::open(
+                &library,
+                &sealed,
+                assistant.as_ref(),
+                grants.as_ref(),
+                applied.as_ref(),
+                now,
+            ),
+            Request::AssistantPrune { applied, now } => assistant::prune(applied.as_ref(), now),
             Request::Retry {
                 attempts,
                 now,
