@@ -105,6 +105,9 @@ fn dropbox_row(secrets: &[[u8; 32]]) -> Value {
     row("assistant", Value::Object(values))
 }
 
+/// When the vectors' grants were consented to: they expire 20 days after `NOW`.
+const CREATED: u64 = NOW - 10 * DAY;
+
 fn grant_value(
     secret: &[u8; 32],
     client: &str,
@@ -112,9 +115,20 @@ fn grant_value(
     cap: u64,
     revoked: Option<u64>,
 ) -> Value {
+    grant_value_at(secret, client, ops, cap, revoked, CREATED)
+}
+
+fn grant_value_at(
+    secret: &[u8; 32],
+    client: &str,
+    ops: Value,
+    cap: u64,
+    revoked: Option<u64>,
+    created: u64,
+) -> Value {
     let made = ok(
         &json!({"op": "assistant_keygen_grant", "random": hex(secret), "client": client,
-        "ops": ops, "cap": cap, "now": NOW - 30 * DAY}),
+        "ops": ops, "cap": cap, "now": created}),
     );
     match revoked {
         None => made["value"].clone(),
@@ -132,10 +146,10 @@ fn grants_row() -> Value {
     row(
         "assistant-grants",
         json!({
-            gid(&k.grant): setting(grant_value(&k.grant, "Claude", all.clone(), 3, None), NOW - 30 * DAY),
+            gid(&k.grant): setting(grant_value(&k.grant, "Claude", all.clone(), 3, None), CREATED),
             gid(&k.limited): setting(
                 grant_value(&k.limited, "ChatGPT", json!(["seen", "watchlist_add"]), 50, None),
-                NOW - 30 * DAY,
+                CREATED,
             ),
             gid(&k.revoked): setting(grant_value(&k.revoked, "Claude", all, 50, Some(NOW - HOUR)), NOW - HOUR),
         }),
@@ -243,8 +257,23 @@ fn seal(grant: &[u8; 32], fields: &Value, dropbox: &[u8; 32], label: &str) -> St
 }
 
 fn open(sealed: &str, assistant: Value, grants: Value, applied: Value) -> Value {
-    json!({"op": "assistant_open", "library": LIBRARY, "sealed": sealed, "assistant": assistant,
+    json!({"op": "assistant_open", "library": LIBRARY, "device": D, "sealed": sealed, "assistant": assistant,
         "grants": grants, "applied": applied, "now": NOW})
+}
+
+/// `open` with the device's own records (§6).
+fn open_local(
+    sealed: &str,
+    assistant: Value,
+    grants: Value,
+    applied: Value,
+    local: Value,
+) -> Value {
+    let mut request = open(sealed, assistant, grants, applied);
+    for (k, v) in local.as_object().unwrap() {
+        request[k] = v.clone();
+    }
+    request
 }
 
 struct Case {
@@ -257,6 +286,7 @@ struct Case {
 fn accept(fields: &Value) -> Value {
     json!({"ok": {"accept": {
         "grant": fields["grant"], "id": fields["id"], "at": fields["at"], "op": fields["op"], "args": fields["args"],
+        "stamp": [fields["at"], 0, D],
         "setting": fields["id"],
         "value": applied_value(fields["grant"].as_str().unwrap(), fields["at"].as_u64().unwrap(), NOW),
     }}})
@@ -778,7 +808,236 @@ fn open_cases() -> Vec<Case> {
         ),
         reject("unknown_grant"),
     );
+
+    // Expiry (§5): a grant accepts nothing from its `expiresAt` on, until renewed.
+    let all = json!(["rate", "seen", "watchlist_add", "watchlist_remove"]);
+    let e = seed("expiring");
+    let with = |value: Value| {
+        let mut rows = grants.clone();
+        rows["values"][gid(&e)] = setting(value, CREATED);
+        rows
+    };
+    let f = fields(
+        &e,
+        "expired",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    add(
+        "a grant at its expiresAt",
+        open(
+            &seal(&e, &f, &k.dropbox, "expired"),
+            one.clone(),
+            with(grant_value_at(
+                &e,
+                "Claude",
+                all.clone(),
+                50,
+                None,
+                NOW - 30 * DAY,
+            )),
+            applied.clone(),
+        ),
+        reject("expired"),
+    );
+    let made = grant_value_at(&e, "Claude", all.clone(), 50, None, NOW - 40 * DAY);
+    let renewed = ok(
+        &json!({"op": "assistant_renew", "grant": gid(&e), "value": made,
+        "now": NOW - 5 * DAY}),
+    )["value"]
+        .clone();
+    let f = fields(
+        &e,
+        "renewed",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    add(
+        "a grant renewed before it expired",
+        open(
+            &seal(&e, &f, &k.dropbox, "renewed"),
+            one.clone(),
+            with(renewed),
+            applied.clone(),
+        ),
+        accept(&f),
+    );
+
+    // The device's own records (§6): a revocation or an applied request it has seen holds even when den-edge serves
+    // an older row.
+    let f = fields(
+        g,
+        "locally revoked",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    add(
+        "a grant the device has seen revoked, though the row it was served is older",
+        open_local(
+            &seal(g, &f, &k.dropbox, "locally revoked"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            json!({"localRevoked": [gid(g)]}),
+        ),
+        reject("revoked"),
+    );
+    let f = fields(
+        g,
+        "locally applied",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    let local_entry = applied_value(&gid(g), NOW - 3 * MIN, NOW - 2 * MIN);
+    add(
+        "an id the device has applied, missing from an older row",
+        open_local(
+            &seal(g, &f, &k.dropbox, "locally applied"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            json!({"localApplied": {id("locally applied"): local_entry}}),
+        ),
+        reject("replay"),
+    );
+    let f = fields(
+        g,
+        "local cap",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    add(
+        "requests the device applied count toward the cap",
+        open_local(
+            &seal(g, &f, &k.dropbox, "local cap"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            json!({"localApplied": {
+                id("local a"): applied_value(&gid(g), NOW - HOUR, NOW - HOUR),
+                id("local b"): applied_value(&gid(g), NOW - HOUR, NOW - HOUR),
+            }}),
+        ),
+        reject("over_daily_cap"),
+    );
+    let mut malformed_applied = applied.clone();
+    malformed_applied["values"][id("malformed entry")] =
+        setting(json!({"string": "not json"}), NOW);
+    let f = fields(
+        g,
+        "malformed entry",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    add(
+        "an id whose applied entry is malformed",
+        open(
+            &seal(g, &f, &k.dropbox, "malformed entry"),
+            one.clone(),
+            grants.clone(),
+            malformed_applied,
+        ),
+        reject("replay"),
+    );
+    // Another device's clock ahead: its entries count until a day after the time they claim.
+    let ahead = applied_row(&[
+        (gid(g), NOW - HOUR, NOW + 2 * DAY),
+        (gid(g), NOW - 3 * DAY, NOW + DAY),
+    ]);
+    let f = fields(
+        g,
+        "ahead cap",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    add(
+        "entries applied by a clock ahead count toward the cap",
+        open(
+            &seal(g, &f, &k.dropbox, "ahead cap"),
+            one.clone(),
+            grants.clone(),
+            ahead,
+        ),
+        reject("over_daily_cap"),
+    );
+
+    // Seals with the wrong HPKE info, and a grant key that is no curve point.
+    let token_sealed = b64url(
+        &hpke_seal(
+            &kem_public(&k.dropbox),
+            den_assistant::TOKEN_INFO,
+            LIBRARY.as_bytes(),
+            &[
+                &ed25519_sign(g, &serde_json::to_vec(&valid).unwrap())[..],
+                &serde_json::to_vec(&valid).unwrap(),
+            ]
+            .concat(),
+            &eseed("token info"),
+        )
+        .unwrap(),
+    );
+    add(
+        "a request sealed with the token claim's info",
+        open(&token_sealed, one.clone(), grants.clone(), applied.clone()),
+        reject("does_not_open"),
+    );
+    let not_a_point = not_a_point();
+    let pid = den_assistant::grant_id(&not_a_point);
+    let mut pointless = grants.clone();
+    pointless["values"][&pid] = setting(
+        json!({"string": json!({"cap": 50, "client": "Claude", "createdAt": CREATED,
+            "expiresAt": CREATED + 30 * DAY, "ops": all, "pk": b64url(&not_a_point), "revokedAt": null, "v": 1})
+            .to_string()}),
+        CREATED,
+    );
+    let mut f = fields(
+        g,
+        "no point",
+        NOW - MIN,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    f["grant"] = json!(pid);
+    let sealed = seal_raw(
+        g,
+        &serde_json::to_vec(&f).unwrap(),
+        &k.dropbox,
+        LIBRARY,
+        "no point",
+    );
+    add(
+        "a grant whose key is no curve point",
+        open(&sealed, one.clone(), pointless, applied.clone()),
+        reject("bad_signature"),
+    );
+    let mut no_device = open(
+        &seal(g, &valid, &k.dropbox, "no device"),
+        one,
+        grants,
+        applied,
+    );
+    no_device["device"] = json!("TV");
+    add(
+        "a device id that is not one",
+        no_device,
+        json!({"error": "invalid_device"}),
+    );
     cases
+}
+
+/// The first 32 bytes `[i; 32]` that do not decompress to an Edwards point.
+fn not_a_point() -> [u8; 32] {
+    (0u8..=255)
+        .map(|i| [i; 32])
+        .find(|b| ed25519_dalek::VerifyingKey::from_bytes(b).is_err())
+        .unwrap()
 }
 
 fn other_cases() -> Vec<Case> {
@@ -816,13 +1075,13 @@ fn other_cases() -> Vec<Case> {
         json!({"ok": null}),
     );
     let gpub = grant_public(&k.grant);
-    let value = json!({"string": json!({"cap": 3, "client": "Claude", "createdAt": NOW - 30 * DAY,
-        "ops": ["rate", "seen", "watchlist_add", "watchlist_remove"], "pk": b64url(&gpub), "revokedAt": null,
-        "v": 1}).to_string()});
+    let value = json!({"string": json!({"cap": 3, "client": "Claude", "createdAt": CREATED,
+        "expiresAt": CREATED + 30 * DAY, "ops": ["rate", "seen", "watchlist_add", "watchlist_remove"],
+        "pk": b64url(&gpub), "revokedAt": null, "v": 1}).to_string()});
     add(
-        "assistant_keygen_grant: ops sorted and deduplicated",
+        "assistant_keygen_grant: ops sorted and deduplicated, expiring in 30 days",
         json!({"op": "assistant_keygen_grant", "random": hex(&k.grant), "client": "Claude",
-            "ops": ["watchlist_add", "watchlist_remove", "seen", "rate", "seen"], "cap": 3, "now": NOW - 30 * DAY}),
+            "ops": ["watchlist_add", "watchlist_remove", "seen", "rate", "seen"], "cap": 3, "now": CREATED}),
         json!({"ok": {"grant": gid(&k.grant), "public": b64url(&gpub), "secret": b64url(&k.grant),
             "setting": gid(&k.grant), "value": value}}),
     );
@@ -865,11 +1124,12 @@ fn other_cases() -> Vec<Case> {
             json!({"error": error}),
         );
     }
-    let revoked_at = |v: &Value| -> Value {
-        let mut object: Value = serde_json::from_str(value["string"].as_str().unwrap()).unwrap();
-        object["revokedAt"] = v.clone();
+    let with_member = |base: &Value, key: &str, v: Value| -> Value {
+        let mut object: Value = serde_json::from_str(base["string"].as_str().unwrap()).unwrap();
+        object[key] = v;
         json!({"string": object.to_string()})
     };
+    let revoked_at = |v: &Value| with_member(&value, "revokedAt", v.clone());
     add(
         "assistant_revoke: sets revokedAt",
         json!({"op": "assistant_revoke", "grant": gid(&k.grant), "value": value, "now": NOW}),
@@ -882,8 +1142,14 @@ fn other_cases() -> Vec<Case> {
         json!({"ok": {"value": revoked_at(&json!(NOW - DAY))}}),
     );
     add(
-        "assistant_revoke: under another grant's id",
-        json!({"op": "assistant_revoke", "grant": gid(&k.limited), "value": value, "now": NOW}),
+        "assistant_revoke: a malformed grant can still be revoked",
+        json!({"op": "assistant_revoke", "grant": gid(&k.limited), "value": {"string": "{\"v\":1}"},
+            "now": NOW}),
+        json!({"ok": {"value": {"string": format!("{{\"revokedAt\":{NOW},\"v\":1}}")}}}),
+    );
+    add(
+        "assistant_revoke: a value that is no JSON object",
+        json!({"op": "assistant_revoke", "grant": gid(&k.grant), "value": {"string": "[]"}, "now": NOW}),
         json!({"error": "invalid_grant"}),
     );
     // Merge: a, b and c of one grant; the earliest revocation, the latest stamp. A malformed version ranks below.
@@ -902,26 +1168,94 @@ fn other_cases() -> Vec<Case> {
         json!({"op": "merge", "a": grants(a.clone()), "b": grants(setting(json!({"string": "{}"}), 9))}),
         json!({"ok": grants(a.clone())}),
     );
-    // Prune: entries whose request is over 8 days old.
+    add(
+        "merge: a revocation in a malformed version still revokes the grant",
+        json!({"op": "merge", "a": grants(a.clone()),
+            "b": grants(setting(json!({"string": "{\"revokedAt\":1234}"}), 9))}),
+        json!({"ok": grants(setting(revoked_at(&json!(1234)), 5))}),
+    );
+    let newer = with_member(&value, "v", json!(2));
+    add(
+        "merge: a newer grant version beats v1, keeping v1's revocation",
+        json!({"op": "merge", "a": grants(setting(revoked_at(&json!(1500)), 9)), "b": grants(setting(newer.clone(), 5))}),
+        json!({"ok": grants(setting(with_member(&newer, "revokedAt", json!(1500)), 5))}),
+    );
+    let later = with_member(&value, "expiresAt", json!(NOW + 30 * DAY));
+    add(
+        "merge: the later expiresAt, a revocation still standing",
+        json!({"op": "merge", "a": grants(setting(later.clone(), 6)), "b": grants(setting(revoked_at(&json!(1500)), 5))}),
+        json!({"ok": grants(setting(with_member(&later, "revokedAt", json!(1500)), 6))}),
+    );
+    // Renewal (§5): 30 days from now, never earlier, never un-revoking.
+    add(
+        "assistant_renew: expires 30 days from now",
+        json!({"op": "assistant_renew", "grant": gid(&k.grant), "value": value, "now": NOW}),
+        json!({"ok": {"value": with_member(&value, "expiresAt", json!(NOW + 30 * DAY))}}),
+    );
+    add(
+        "assistant_renew: a later expiresAt stands",
+        json!({"op": "assistant_renew", "grant": gid(&k.grant), "value": value, "now": CREATED - DAY}),
+        json!({"ok": {"value": value}}),
+    );
+    let revoked_value = revoked_at(&json!(NOW - DAY));
+    add(
+        "assistant_renew: a revoked grant stays revoked",
+        json!({"op": "assistant_renew", "grant": gid(&k.grant), "value": revoked_value, "now": NOW}),
+        json!({"ok": {"value": with_member(&revoked_value, "expiresAt", json!(NOW + 30 * DAY))}}),
+    );
+    // Settings' list (§5).
+    let listed = row(
+        "assistant-grants",
+        json!({
+            gid(&k.grant): setting(value.clone(), CREATED),
+            gid(&k.limited): setting(grant_value_at(&k.limited, "ChatGPT", json!(["seen"]), 5, None,
+                NOW - 31 * DAY), CREATED),
+            gid(&k.revoked): setting(grant_value(&k.revoked, "Claude", json!(["seen"]), 5, None), CREATED),
+            gid(&k.other): setting(json!({"string": "{}"}), CREATED),
+        }),
+    );
+    let mut list = vec![
+        json!({"grant": gid(&k.grant), "client": "Claude", "ops": ["rate", "seen", "watchlist_add",
+            "watchlist_remove"], "cap": 3, "createdAt": CREATED, "expiresAt": CREATED + 30 * DAY,
+            "revokedAt": null, "state": "active"}),
+        json!({"grant": gid(&k.limited), "client": "ChatGPT", "ops": ["seen"], "cap": 5,
+            "createdAt": NOW - 31 * DAY, "expiresAt": NOW - DAY, "revokedAt": null, "state": "expired"}),
+        json!({"grant": gid(&k.revoked), "client": "Claude", "ops": ["seen"], "cap": 5, "createdAt": CREATED,
+            "expiresAt": CREATED + 30 * DAY, "revokedAt": null, "state": "revoked"}),
+        json!({"grant": gid(&k.other), "state": "malformed"}),
+    ];
+    list.sort_by(|x, y| x["grant"].as_str().cmp(&y["grant"].as_str()));
+    add(
+        "assistant_grants: every grant with its state, the device's own revocations counting",
+        json!({"op": "assistant_grants", "grants": listed, "localRevoked": [gid(&k.revoked)], "now": NOW}),
+        json!({"ok": {"grants": list}}),
+    );
+    // Prune (§5): only once both the request's `at` and `applied` are over 14 days old; `applied` read as at least
+    // `at`; the device's own record pruned alike.
     let g = gid(&k.grant);
     let applied = row(
         "assistant-applied",
         json!({
-            id("p1"): setting(applied_value(&g, NOW - 8 * DAY - 1, NOW - 2 * DAY), NOW - 2 * DAY),
-            id("p2"): setting(applied_value(&g, NOW - 8 * DAY, NOW - 2 * DAY), NOW - 2 * DAY),
+            id("p1"): setting(applied_value(&g, NOW - 15 * DAY, NOW - 15 * DAY + HOUR), NOW - 2 * DAY),
+            id("p2"): setting(applied_value(&g, NOW - 15 * DAY, NOW - 2 * DAY), NOW - 2 * DAY),
             id("p3"): setting(json!({"string": "not json"}), NOW),
+            id("p4"): setting(applied_value(&g, NOW - 14 * DAY, NOW - 14 * DAY), NOW - 2 * DAY),
+            id("p5"): setting(applied_value(&g, NOW - DAY, NOW - 20 * DAY), NOW - 2 * DAY),
         }),
     );
-    let mut remove = vec![id("p1"), id("p3")];
+    let mut remove = vec![id("p1"), id("p3"), id("p6")];
     remove.sort();
     add(
-        "assistant_prune: requests over 8 days old, and malformed entries",
-        json!({"op": "assistant_prune", "applied": applied, "now": NOW}),
+        "assistant_prune: both times over 14 days old, a skewed clock keeping the rest",
+        json!({"op": "assistant_prune", "applied": applied, "localApplied": {
+            id("p6"): applied_value(&g, NOW - 20 * DAY, NOW - 20 * DAY),
+            id("p7"): applied_value(&g, NOW - 20 * DAY, NOW - DAY),
+        }, "now": NOW}),
         json!({"ok": {"remove": remove}}),
     );
     add(
         "assistant_open: a library id that is not one",
-        json!({"op": "assistant_open", "library": "LIBRARY", "sealed": "", "now": NOW}),
+        json!({"op": "assistant_open", "library": "LIBRARY", "device": D, "sealed": "", "now": NOW}),
         json!({"error": "invalid_library"}),
     );
     cases
@@ -974,12 +1308,26 @@ fn grant_merge_is_a_join() {
     let id = gid(&k.grant);
     let base = grant_value(&k.grant, "Claude", json!(["seen"]), 3, None);
     let revoked = |at: u64| grant_value(&k.grant, "Claude", json!(["seen"]), 3, Some(at));
+    let member = |key: &str, v: Value| {
+        let mut object: Value = serde_json::from_str(base["string"].as_str().unwrap()).unwrap();
+        object[key] = v;
+        json!({"string": object.to_string()})
+    };
+    let mut no_revoked: Value = serde_json::from_str(base["string"].as_str().unwrap()).unwrap();
+    no_revoked.as_object_mut().unwrap().remove("revokedAt");
     let versions = [
         setting(base.clone(), 5),
         setting(revoked(2000), 7),
         setting(revoked(1500), 6),
         setting(json!({"string": "{}"}), 9),
+        setting(json!({"string": "{\"revokedAt\":1234}"}), 9),
+        setting(json!({"string": "{\"revokedAt\":\"soon\"}"}), 4),
         setting(json!(null), 8),
+        setting(json!({"string": "not json"}), 11),
+        setting(member("v", json!(2)), 3),
+        setting(member("expiresAt", json!(NOW + 60 * DAY)), 5),
+        setting(member("revokedAt", json!("x")), 6),
+        setting(json!({"string": no_revoked.to_string()}), 5),
         setting(
             grant_value(&k.limited, "ChatGPT", json!(["seen"]), 3, None),
             10,

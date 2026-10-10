@@ -18,3 +18,7 @@ zeroize.workspace = true
 # Assistant writes (den-spec `wire/assistant-v1.md`): the crypto and accept rules, which den-edge and den-mcp also use.
 den-assistant.workspace = true
 
+[dev-dependencies]
+# The assistant vectors' grant key that is no curve point.
+ed25519-dalek.workspace = true
+

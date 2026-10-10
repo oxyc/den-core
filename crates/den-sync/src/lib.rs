@@ -381,15 +381,31 @@ enum Request {
         cap: u64,
         now: u64,
     },
-    /// Assistant v1 §4: a grant's setting value with `revokedAt` set.
+    /// Assistant v1 §5: a grant's setting value with `revokedAt` set.
     AssistantRevoke {
         grant: String,
         value: Value,
         now: u64,
     },
-    /// Assistant v1 §5: a sealed request against the library's three assistant rows → accept or reject.
+    /// Assistant v1 §5: a grant's setting value with `expiresAt` moved to `now` + 30 days.
+    AssistantRenew {
+        grant: String,
+        value: Value,
+        now: u64,
+    },
+    /// Assistant v1 §5: the grants a `set:assistant-grants` row holds, with their state, for Settings.
+    AssistantGrants {
+        #[serde(default)]
+        grants: Option<Value>,
+        #[serde(default, rename = "localRevoked")]
+        local_revoked: Vec<String>,
+        now: u64,
+    },
+    /// Assistant v1 §6: a sealed request against the library's three assistant rows and the device's own records →
+    /// accept or reject.
     AssistantOpen {
         library: String,
+        device: String,
         sealed: String,
         #[serde(default)]
         assistant: Option<Value>,
@@ -397,12 +413,18 @@ enum Request {
         grants: Option<Value>,
         #[serde(default)]
         applied: Option<Value>,
+        #[serde(default, rename = "localRevoked")]
+        local_revoked: Vec<String>,
+        #[serde(default, rename = "localApplied")]
+        local_applied: serde_json::Map<String, Value>,
         now: u64,
     },
-    /// Assistant v1 §4: the applied entries to drop.
+    /// Assistant v1 §5: the applied entries to drop, from the row and the device's own record.
     AssistantPrune {
         #[serde(default)]
         applied: Option<Value>,
+        #[serde(default, rename = "localApplied")]
+        local_applied: serde_json::Map<String, Value>,
         now: u64,
     },
 }
@@ -665,22 +687,40 @@ pub fn evaluate(input: &str) -> String {
             Request::AssistantRevoke { grant, value, now } => {
                 assistant::revoke(&grant, &value, now)
             }
+            Request::AssistantRenew { grant, value, now } => assistant::renew(&grant, &value, now),
+            Request::AssistantGrants {
+                grants,
+                local_revoked,
+                now,
+            } => assistant::list(grants.as_ref(), &local_revoked, now),
             Request::AssistantOpen {
                 library,
+                device,
                 sealed,
                 assistant,
                 grants,
                 applied,
+                local_revoked,
+                local_applied,
                 now,
             } => assistant::open(
-                &library,
                 &sealed,
-                assistant.as_ref(),
-                grants.as_ref(),
-                applied.as_ref(),
+                &assistant::Library {
+                    library: &library,
+                    device: &device,
+                    dropbox: assistant.as_ref(),
+                    grants: grants.as_ref(),
+                    applied: applied.as_ref(),
+                    local_revoked: &local_revoked,
+                    local_applied: &local_applied,
+                },
                 now,
             ),
-            Request::AssistantPrune { applied, now } => assistant::prune(applied.as_ref(), now),
+            Request::AssistantPrune {
+                applied,
+                local_applied,
+                now,
+            } => assistant::prune(applied.as_ref(), &local_applied, now),
             Request::Retry {
                 attempts,
                 now,

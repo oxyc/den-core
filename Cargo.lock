@@ -413,6 +413,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "den-assistant",
+ "ed25519-dalek",
  "hkdf",
  "hmac",
  "miniz_oxide",
