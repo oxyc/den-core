@@ -829,6 +829,67 @@ fn fan_picks_read_as_the_vectors_say() {
     );
 }
 
+/// The Wikidata names: each key the vectors list reads its title, original title and year; a store row
+/// and a key nobody names read as none.
+#[test]
+fn wikidata_names_read_as_the_vectors_say() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let strings = store.strings().expect("strings");
+    let names = store.wikidata_names().expect("names");
+    let want = expected["wikidataNames"]
+        .as_array()
+        .expect("the vectors list wikidataNames");
+    assert_eq!(names.len(), want.len());
+    for entry in want {
+        let key = entry["key"].as_str().unwrap();
+        let (media, id) = key.split_once(':').unwrap();
+        let found = names
+            .get(u8::from(media == "tv"), id.parse().unwrap())
+            .unwrap_or_else(|| panic!("{key} is named"));
+        assert_eq!(
+            strings.get(found.title),
+            entry["title"].as_str(),
+            "{key} title"
+        );
+        assert_eq!(
+            found.original.and_then(|id| strings.get(id)),
+            entry["originalTitle"].as_str(),
+            "{key} originalTitle"
+        );
+        assert_eq!(
+            found.year.map(i64::from),
+            entry["year"].as_i64(),
+            "{key} year"
+        );
+    }
+    for row in expected["rows"].as_array().unwrap() {
+        let key = row["key"].as_str().unwrap();
+        let media = u8::from(row["media"].as_u64().unwrap() == 1);
+        let id = row["tmdbId"].as_u64().unwrap() as u32;
+        assert_eq!(
+            names.get(media, id),
+            None,
+            "{key} is a store row, named by its card"
+        );
+    }
+    assert_eq!(names.get(0, 999_999), None);
+}
+
+/// The Wikidata-name sections are optional: store-v1 predates them, and names nothing.
+#[test]
+fn a_store_without_the_wikidata_name_sections_names_nothing() {
+    let (bytes, _) = fixture_or_fail!("store-v1");
+    let store = Store::open(&bytes).expect("opens");
+    assert!(
+        store.section("wd_name_key").is_err(),
+        "the store-v1 fixture carries wd_name_key, so this contract is untested"
+    );
+    let names = store.wikidata_names().expect("absence is not an error");
+    assert!(names.is_empty());
+    assert_eq!(names.get(0, 1), None);
+}
+
 /// The fan-pick sections are optional: store-v1 predates them, and reads as none.
 #[test]
 fn a_store_without_the_fan_pick_sections_has_none() {
