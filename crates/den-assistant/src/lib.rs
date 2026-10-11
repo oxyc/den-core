@@ -1254,13 +1254,24 @@ fn title_of(value: &Value) -> Option<(String, u64)> {
 
 /// The compact form (§15): titles once, in a table sorted by type and id; each list's entries as arrays that index it.
 fn compact(view: &Value) -> Option<Value> {
-    let lists = ["watchlist", "continue", "seen"];
     let mut titles: Vec<(String, u64)> = Vec::new();
-    for list in lists {
+    for list in ["watchlist", "continue", "seen"] {
         for entry in view[list].as_array()? {
             titles.push(title_of(&entry["title"])?);
         }
     }
+    // `rated` and `hide` came after the first projections: carried only when the view has them.
+    let rated_entries = match view.get("rated") {
+        None => None,
+        Some(list) => Some(list.as_array()?),
+    };
+    for entry in rated_entries.into_iter().flatten() {
+        titles.push(title_of(&entry["title"])?);
+    }
+    let hide = match view.get("hide") {
+        None => None,
+        Some(hide) => Some(hide.as_object()?.clone()),
+    };
     titles.sort();
     titles.dedup();
     let index =
@@ -1297,11 +1308,23 @@ fn compact(view: &Value) -> Option<Value> {
             ]))
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(json!({
+    let mut out = json!({
         "v": 1, "library": view["library"], "grant": view["grant"], "at": view["at"], "head": view["head"],
         "titles": titles.iter().map(|(t, id)| json!([t, id])).collect::<Vec<_>>(),
         "watchlist": watchlist, "continue": continuing, "seen": seen,
-    }))
+    });
+    if let Some(entries) = rated_entries {
+        out["rated"] = Value::Array(
+            entries
+                .iter()
+                .map(|e| Some(json!([index(e)?, e["value"], e["at"]])))
+                .collect::<Option<Vec<_>>>()?,
+        );
+    }
+    if let Some(hide) = hide {
+        out["hide"] = Value::Object(hide);
+    }
+    Some(out)
 }
 
 /// The expanded form den-mcp reads, from the compact one.
@@ -1348,10 +1371,23 @@ fn expand(compact: &Value) -> Option<Value> {
             Some(entry)
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(json!({
+    let mut out = json!({
         "v": 1, "library": compact["library"], "grant": compact["grant"], "at": compact["at"],
         "head": compact["head"], "watchlist": watchlist, "continue": continuing, "seen": seen,
-    }))
+    });
+    if compact.get("rated").is_some() {
+        out["rated"] = Value::Array(
+            rows("rated")?
+                .iter()
+                .map(|r| Some(json!({"title": title(r)?, "value": r[1], "at": r[2]})))
+                .collect::<Option<Vec<_>>>()?,
+        );
+    }
+    if let Some(hide) = compact.get("hide") {
+        hide.as_object()?;
+        out["hide"] = hide.clone();
+    }
+    Some(out)
 }
 
 #[cfg(test)]

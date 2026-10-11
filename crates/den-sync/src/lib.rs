@@ -463,6 +463,9 @@ enum Request {
         read: Option<Value>,
         #[serde(default)]
         grants: Option<Value>,
+        /// The `set:prefs` row, for the projection's hide rules.
+        #[serde(default)]
+        prefs: Option<Value>,
         #[serde(default, rename = "localRevoked")]
         local_revoked: Vec<String>,
         random: String,
@@ -767,6 +770,7 @@ pub fn evaluate(input: &str) -> String {
                 head,
                 read,
                 grants,
+                prefs,
                 local_revoked,
                 random,
                 now,
@@ -776,6 +780,7 @@ pub fn evaluate(input: &str) -> String {
                     documents: &documents,
                     layouts: &layouts,
                     head,
+                    prefs: prefs.as_ref(),
                 },
                 read.as_ref(),
                 grants.as_ref(),

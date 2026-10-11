@@ -1663,7 +1663,7 @@ fn a_large_library_projects_whole() {
     let built = started.elapsed();
     assert_eq!(
         answer["counts"],
-        json!({"watchlist": 5_000, "continue": 500, "seen": 50_000})
+        json!({"watchlist": 5_000, "continue": 500, "seen": 50_000, "rated": 0})
     );
     let set = answer["publish"][0]["set"].as_str().unwrap().to_owned();
     let parts: Vec<String> = serde_json::from_value(answer["publish"][0]["parts"].clone()).unwrap();
@@ -1729,21 +1729,26 @@ fn library_documents() -> Vec<Value> {
     let t = |h: u64| NOW - h * HOUR_;
     vec![
         json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 550},
-            "status": {"value": "watchlist", "at": st(t(10))}, "addedAt": t(10)}),
+            "status": {"value": "watchlist", "at": st(t(10))}, "addedAt": t(10),
+            "reaction": {"value": "seen", "at": st(t(10))}}),
         json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 13},
             "status": {"value": "watchlist", "at": st(t(11))}, "addedAt": t(11),
+            "reaction": {"value": "love", "at": st(t(11))},
             "deleted": {"value": true, "at": st(t(1))}}),
         json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 603},
             "status": {"value": "watched", "at": st(t(9))},
             "resume": {"value": 1, "at": st(t(9)), "viewing": 0},
+            "reaction": {"value": "love", "at": st(t(9))},
             "watch": {"plays": {"0": t(9)}, "cleared": null}}),
         json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 27205},
-            "status": {"value": "watched", "at": [0, 1, ""]}}),
+            "status": {"value": "watched", "at": [0, 1, ""]},
+            "reaction": {"value": "like", "at": [0, 1, ""]}}),
         json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 680},
             "status": {"value": "inProgress", "at": st(t(8))},
             "resume": {"value": 0.4, "at": st(t(8)), "viewing": 0, "seconds": 2000}}),
         json!({"format": 4, "kind": "title", "title": {"type": "tv", "id": 1399},
-            "status": {"value": "inProgress", "at": st(t(6))}}),
+            "status": {"value": "inProgress", "at": st(t(6))},
+            "reaction": {"value": "dislike", "at": st(t(4))}}),
         json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": 1399}, "season": 1, "seasonReset": null,
         "episodes": {
             "1": {"progress": {"value": 1, "at": st(t(7)), "viewing": 0}, "imported": false,
@@ -1785,7 +1790,29 @@ fn expected_lists() -> Value {
             {"title": {"type": "movie", "id": 603}, "at": t(9)},
             {"title": {"type": "movie", "id": 27205}, "at": null},
         ],
+        // Ratings only: not `seen`, not a deleted title's; a timeless one untimed and last.
+        "rated": [
+            {"title": {"type": "tv", "id": 1399}, "value": "dislike", "at": t(4)},
+            {"title": {"type": "movie", "id": 603}, "value": "love", "at": t(9)},
+            {"title": {"type": "movie", "id": 27205}, "value": "like", "at": null},
+        ],
+        "hide": {"minYear": 1970, "genres": [27, 16], "languages": ["tr"], "anime": true},
     })
+}
+
+/// The `set:prefs` row the small library's hide rules come from (Den Web's `prefs.ts`), with a setting the hide
+/// rules do not read.
+fn prefs_row() -> Value {
+    row(
+        "prefs",
+        json!({
+            "den.minReleaseYear": setting(json!({"int": 1970}), CREATED),
+            "den.excludedGenreIDs": setting(json!({"ints": [27, 16]}), CREATED),
+            "den.excludedLanguages": setting(json!({"strings": ["tr"]}), CREATED),
+            "den.hideAnime": setting(json!({"bool": true}), CREATED),
+            "den.hideWatched": setting(json!({"bool": true}), CREATED),
+        }),
+    )
 }
 
 fn read_cases() -> Vec<Case> {
@@ -1836,7 +1863,7 @@ fn read_cases() -> Vec<Case> {
     let grants = grants_row();
     let request = json!({"op": "assistant_projection", "library": LIBRARY, "documents": library_documents(),
         "layouts": {"1396": {"seasons": [{"season": 1, "episodes": 3}], "last_aired": {"season": 1, "episode": 3}}},
-        "head": 4711, "read": reads, "grants": grants, "localRevoked": [gid(&k.other)],
+        "head": 4711, "read": reads, "grants": grants, "prefs": prefs_row(), "localRevoked": [gid(&k.other)],
         "random": hex(&seed("projection random")), "now": NOW});
     let answer = ok(&request);
     let mut delete = vec![gid(&k.revoked), gid(&k.limited), gid(&k.other)];
@@ -1850,9 +1877,17 @@ fn read_cases() -> Vec<Case> {
     let opened =
         den_assistant::open_projection(&read_key, LIBRARY, &gid(&k.grant), set, &parts).unwrap();
     let expected = expected_lists();
-    for key in ["watchlist", "continue", "seen"] {
+    for key in ["watchlist", "continue", "seen", "rated", "hide"] {
         assert_eq!(opened[key], expected[key], "{key}");
     }
+    // The compact form names each rated title once, in the same table.
+    let compact: Value = serde_json::from_slice(
+        &den_assistant::open_projection_compact(&read_key, LIBRARY, &gid(&k.grant), set, &parts)
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(compact["rated"][0][1], "dislike");
+    assert_eq!(compact["hide"], expected["hide"]);
     assert_eq!(
         (opened["at"].as_u64(), opened["head"].as_u64()),
         (Some(NOW), Some(4711))

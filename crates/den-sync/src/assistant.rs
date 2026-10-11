@@ -598,10 +598,12 @@ pub fn projection(
         return Err("invalid_time".into());
     }
     let random = seed(random)?;
-    let (watchlist, continuing, seen, skipped) = crate::projection::lists(lib, now as i64)?;
-    let counts =
-        json!({"watchlist": watchlist.len(), "continue": continuing.len(), "seen": seen.len()});
-    let (content, digest) = crate::projection::content((watchlist, continuing, seen));
+    settings(lib.prefs, "prefs")?;
+    let lists = crate::projection::lists(lib, now as i64)?;
+    let skipped = lists.skipped;
+    let counts = json!({"watchlist": lists.watchlist.len(), "continue": lists.continuing.len(),
+        "seen": lists.seen.len(), "rated": lists.rated.len()});
+    let (content, digest) = crate::projection::content(lists, crate::projection::hide(lib.prefs));
     let mut publish = Vec::new();
     let mut delete = Vec::new();
     for (id, value) in settings(read_row, READ_ROW)?.into_iter().flatten() {

@@ -21,6 +21,8 @@ pub struct Library<'a> {
     /// By TMDB id (`"1399"`): `{"seasons": [{season, episodes}], "last_aired": {season, episode} | null}`.
     pub layouts: &'a Map<String, Value>,
     pub head: u64,
+    /// The `set:prefs` row, for the hide rules; absent is none.
+    pub prefs: Option<&'a Value>,
 }
 
 fn title_ref(media: &str, id: u64) -> Value {
@@ -49,8 +51,17 @@ fn newest_first(entries: &mut [Value], key: &str) {
     entries.sort_by_key(order);
 }
 
-/// Every list, uncut: (watchlist, continue, seen), and how many documents could not be read.
-pub fn lists(lib: &Library, now: i64) -> Result<(Vec<Value>, Vec<Value>, Vec<Value>, u64), String> {
+/// Every list, uncut, and how many documents could not be read.
+pub struct Lists {
+    pub watchlist: Vec<Value>,
+    pub continuing: Vec<Value>,
+    pub seen: Vec<Value>,
+    /// Every title the household rated (`reaction` dislike, like or love), with when.
+    pub rated: Vec<Value>,
+    pub skipped: u64,
+}
+
+pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
     let mut titles: BTreeMap<(String, u64), Map<String, Value>> = BTreeMap::new();
     let mut seasons: BTreeMap<u64, BTreeMap<u64, Map<String, Value>>> = BTreeMap::new();
     let mut skipped = 0u64;
@@ -85,9 +96,20 @@ pub fn lists(lib: &Library, now: i64) -> Result<(Vec<Value>, Vec<Value>, Vec<Val
     let mut watchlist = Vec::new();
     let mut seen = Vec::new();
     let mut films = Vec::new();
+    let mut rated = Vec::new();
     for ((media, id), doc) in &titles {
         if is_true(doc, "deleted") {
             continue;
+        }
+        // A rating, not `seen` (a reaction that only says it was seen) and not a cleared one.
+        if let Some(reaction) = doc.get("reaction") {
+            if let Some(value) = reaction["value"]
+                .as_str()
+                .filter(|v| matches!(*v, "dislike" | "like" | "love"))
+            {
+                rated.push(json!({"title": title_ref(media, *id), "value": value,
+                    "at": at_of(Some(reaction)).filter(|t| *t > 0)}));
+            }
         }
         let status = doc.get("status").and_then(|s| s["value"].as_str());
         if status == Some("watchlist") {
@@ -209,7 +231,36 @@ pub fn lists(lib: &Library, now: i64) -> Result<(Vec<Value>, Vec<Value>, Vec<Val
     let continuing: Vec<Value> = series.into_iter().map(|(_, _, e)| e).chain(films).collect();
     newest_first(&mut watchlist, "addedAt");
     newest_first(&mut seen, "at");
-    Ok((watchlist, continuing, seen, skipped))
+    newest_first(&mut rated, "at");
+    Ok(Lists {
+        watchlist,
+        continuing,
+        seen,
+        rated,
+        skipped,
+    })
+}
+
+/// The household's hide rules (§15), as Den Web sends them to `/recommend` (`hide`), from the `set:prefs` row:
+/// `den.minReleaseYear`, `den.excludedGenreIDs`, `den.excludedLanguages` and `den.hideAnime`. A setting that is
+/// absent, cleared or of another type is no rule.
+pub fn hide(prefs: Option<&Value>) -> Value {
+    let value = |key: &str| prefs.and_then(|row| row["values"][key]["value"].as_object().cloned());
+    let year = value("den.minReleaseYear").and_then(|v| v.get("int").and_then(Value::as_i64));
+    let ints = value("den.excludedGenreIDs")
+        .and_then(|v| v.get("ints").and_then(Value::as_array).cloned())
+        .map(|list| list.into_iter().filter(Value::is_i64).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let strings = value("den.excludedLanguages")
+        .and_then(|v| v.get("strings").and_then(Value::as_array).cloned())
+        .map(|list| {
+            list.into_iter()
+                .filter(Value::is_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let anime = value("den.hideAnime").is_some_and(|v| v.get("bool") == Some(&json!(true)));
+    json!({"minYear": year, "genres": ints, "languages": strings, "anime": anime})
 }
 
 /// One Seen entry per visible play of a film or episode, at its time; one untimed entry for something watched with
@@ -240,8 +291,9 @@ pub fn view(lib: &Library, grant: &str, content: &Value, now: u64) -> Value {
 }
 
 /// The lists as one object, and its digest: what changed since the last publish, whoever it is for and whenever.
-pub fn content(lists: (Vec<Value>, Vec<Value>, Vec<Value>)) -> (Value, String) {
-    let content = json!({"watchlist": lists.0, "continue": lists.1, "seen": lists.2});
+pub fn content(lists: Lists, hide: Value) -> (Value, String) {
+    let content = json!({"watchlist": lists.watchlist, "continue": lists.continuing, "seen": lists.seen,
+        "rated": lists.rated, "hide": hide});
     let digest = den_assistant::hex(&Sha256::digest(canonical(&content)));
     (content, digest)
 }
