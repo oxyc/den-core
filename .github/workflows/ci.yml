@@ -2,9 +2,11 @@ name: Shared sync policy
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
+# Three jobs, one per part of `scripts/build-bindings.sh`, so they run side by side. The script with no
+# arguments does all three; each job asks for its own part with `--only`.
 jobs:
-  bindings:
-    runs-on: macos-26
+  checks:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       # den-spec holds the store format's test vectors. Checked out beside this repo because
@@ -20,9 +22,25 @@ jobs:
         with:
           toolchain: 1.95.0
           components: rustfmt
-          targets: aarch64-apple-tvos,aarch64-apple-tvos-sim,aarch64-apple-ios,aarch64-apple-ios-sim,wasm32-unknown-unknown
-      # Every target's release build, across runs. Keyed on the toolchain and Cargo.lock by default.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: checks
+      # The format gate, then `cargo test --locked --workspace` (den-sync, den-store, ...).
+      - run: bash scripts/build-bindings.sh --only checks
+        env:
+          DEN_SPEC_DIR: ${{ github.workspace }}/den-spec-checkout
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.95.0
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: wasm
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
@@ -31,14 +49,20 @@ jobs:
       - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: wasm-bindgen@0.2.129
-      # Its `cargo test -p den-sync` replays den-spec's library-v4 vectors, so it needs den-spec too.
-      - run: bash scripts/build-bindings.sh
-        env:
-          DEN_SPEC_DIR: ${{ github.workspace }}/den-spec-checkout
-      # The whole workspace, not just den-sync: `default-members` is den-sync alone, so a bare
-      # `cargo test` silently skipped den-store entirely.
-      - run: cargo test --locked --workspace
-        env:
-          DEN_SPEC_DIR: ${{ github.workspace }}/den-spec-checkout
-      - run: swift build --package-path Swift
+      - run: bash scripts/build-bindings.sh --only wasm
       - run: node scripts/test-wasm.mjs
+
+  native:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.95.0
+          targets: aarch64-apple-tvos,aarch64-apple-tvos-sim,aarch64-apple-ios,aarch64-apple-ios-sim
+      # Every Apple target's release build, across runs. Keyed on the toolchain and Cargo.lock by default.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: native
+      - run: bash scripts/build-bindings.sh --only native
+      - run: swift build --package-path Swift
