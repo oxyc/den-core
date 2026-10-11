@@ -378,6 +378,7 @@ dependencies = [
  "hpke",
  "miniz_oxide",
  "rand_core",
+ "serde",
  "serde_json",
  "sha2",
  "x-wing",

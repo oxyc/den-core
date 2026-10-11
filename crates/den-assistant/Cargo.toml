@@ -8,6 +8,8 @@ description = "Assistant writes (den-spec wire/assistant-v1.md): keys, sealed re
 
 [dependencies]
 serde_json.workspace = true
+# Reading only a compact projection's names (`open_projection_compact`), skipping its lists unparsed.
+serde.workspace = true
 hpke.workspace = true
 ed25519-dalek.workspace = true
 aes-gcm.workspace = true

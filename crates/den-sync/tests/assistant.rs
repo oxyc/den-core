@@ -1352,6 +1352,14 @@ fn a_large_library_projects_whole() {
     for (list, n) in [("watchlist", 5_000), ("continue", 500), ("seen", 50_000)] {
         assert_eq!(opened[list].as_array().unwrap().len(), n, "{list}");
     }
+    // The compact open is the same projection, unexpanded.
+    let compact =
+        den_assistant::open_projection_compact(&read_key, LIBRARY, &gid(&k.grant), &set, &parts)
+            .unwrap();
+    assert_eq!(
+        &*compact,
+        &den_assistant::projection_plaintext(&opened).unwrap()
+    );
     let total: usize = parts.iter().map(String::len).sum();
     eprintln!(
         "large projection: {} parts, {total} characters sealed; built in {built:?}, opened in {read:?}",
