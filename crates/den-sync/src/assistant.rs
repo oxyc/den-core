@@ -4,7 +4,7 @@
 //! writes rows.
 
 use crate::wire::{canonical, stamp, Stamp};
-use den_assistant::{Applied, Grant, MAX_CAP, MAX_SAFE_INTEGER, OPS};
+use den_assistant::{Applied, Grant, Queue, GRANT_OPS, MAX_CAP, MAX_SAFE_INTEGER};
 use serde_json::{json, Map, Value};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -14,6 +14,8 @@ pub const GRANTS_ROW: &str = "assistant-grants";
 pub const APPLIED_ROW: &str = "assistant-applied";
 /// Assistant reads (§15): one read record per connection that may read, by grant id.
 pub const READ_ROW: &str = "assistant-read";
+/// Play on the TV (§16): one play record per connection that may play, by grant id.
+pub const PLAY_ROW: &str = "assistant-play";
 const DROPBOX_PREFIX: &str = "dropbox.";
 const CLIENT_MAX: usize = 80;
 
@@ -127,7 +129,11 @@ fn valid_ops(ops: &Value) -> Option<Vec<String>> {
     let list: Vec<String> = ops
         .as_array()?
         .iter()
-        .map(|op| op.as_str().filter(|op| OPS.contains(op)).map(str::to_owned))
+        .map(|op| {
+            op.as_str()
+                .filter(|op| GRANT_OPS.contains(op))
+                .map(str::to_owned)
+        })
         .collect::<Option<_>>()?;
     // Sorted and distinct, so one set of ops has one spelling.
     (!list.is_empty() && list.windows(2).all(|w| w[0] < w[1])).then_some(list)
@@ -182,6 +188,7 @@ fn grant_in(id: &str, object: &Map<String, Value>) -> Option<(Grant, Option<u64>
             cap,
             revoked: revoked.is_some(),
             expires,
+            play: false,
         },
         revoked,
     ))
@@ -222,11 +229,37 @@ fn read_in(id: &str, object: &Map<String, Value>) -> Option<([u8; 32], u64, Opti
     Some((key, expires, revoked))
 }
 
-/// Which records a setting of the grants or read row holds, for `rank` and the merge.
+/// A play record (§16) checked against the grant id it is stored under: its `expiresAt` and `revokedAt`. `None` when
+/// malformed.
+fn play_in(id: &str, object: &Map<String, Value>) -> Option<(u64, Option<u64>)> {
+    let keys = ["client", "createdAt", "expiresAt", "revokedAt", "v"];
+    if object.len() != keys.len()
+        || !keys.iter().all(|k| object.contains_key(*k))
+        || object["v"] != 1
+    {
+        return None;
+    }
+    if id.len() != 32 || !id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return None;
+    }
+    if !object["client"].as_str().is_some_and(clean_client) {
+        return None;
+    }
+    safe(&object["createdAt"])?;
+    let expires = safe(&object["expiresAt"])?;
+    let revoked = match &object["revokedAt"] {
+        Value::Null => None,
+        other => Some(safe(other)?),
+    };
+    Some((expires, revoked))
+}
+
+/// Which records a setting of the grants, read or play row holds, for `rank` and the merge.
 #[derive(Clone, Copy)]
 pub enum Record {
     Grant,
     Read,
+    Play,
 }
 
 /// How a grant or read setting ranks in a merge (§5, §15): not a JSON object, a malformed object, a v1 record, a newer
@@ -247,6 +280,7 @@ fn rank(record: Record, id: &str, value: &Value) -> (u8, Option<Map<String, Valu
     let valid = match record {
         Record::Grant => grant_in(id, &cleared).is_some(),
         Record::Read => read_in(id, &cleared).is_some(),
+        Record::Play => play_in(id, &cleared).is_some(),
     };
     (if valid { 2 } else { 1 }, Some(object))
 }
@@ -296,7 +330,7 @@ pub fn keygen_grant(
     let mut ops = ops.to_vec();
     ops.sort();
     ops.dedup();
-    if ops.is_empty() || !ops.iter().all(|op| OPS.contains(&op.as_str())) {
+    if ops.is_empty() || !ops.iter().all(|op| GRANT_OPS.contains(&op.as_str())) {
         return Err("invalid_ops".into());
     }
     if !(1..=MAX_CAP).contains(&cap) {
@@ -352,39 +386,46 @@ pub fn renew(id: &str, value: &Value, now: u64) -> Result<Value, String> {
     let expires = grant_in(id, &object)
         .map(|(grant, _)| grant.expires)
         .or_else(|| read_in(id, &object).map(|(_, expires, _)| expires))
+        .or_else(|| play_in(id, &object).map(|(expires, _)| expires))
         .ok_or("invalid_grant")?;
     object.insert("expiresAt".into(), json!(expires.max(until)));
     Ok(json!({ "value": jcs_string(&Value::Object(object)) }))
 }
 
 /// `assistant_grants`: every grant the row holds, for Settings to list and revoke — with its state at `now`, a
-/// device's own record of revocations (§6) counting as revoked — and every read record (§15), whose state also counts
-/// a revocation of the grant with its id.
+/// device's own record of revocations (§6) counting as revoked — and every read record (§15) and play record (§16),
+/// whose state also counts a revocation of the grant with its id.
 pub fn list(
     row: Option<&Value>,
     read_row: Option<&Value>,
+    play_row: Option<&Value>,
     local_revoked: &[String],
     now: u64,
 ) -> Result<Value, String> {
-    let mut reads = Vec::new();
-    for (id, value) in settings(read_row, READ_ROW)?.into_iter().flatten() {
-        let (rank, object) = rank(Record::Read, id, value);
-        let mut entry = json!({ "grant": id });
-        if let Some(object) = &object {
-            for key in ["client", "createdAt", "expiresAt", "revokedAt"] {
-                if let Some(member) = object.get(key) {
-                    entry[key] = member.clone();
+    let records =
+        |record: Record, name: &str, rows: Option<&Value>| -> Result<Vec<Value>, String> {
+            let mut out = Vec::new();
+            for (id, value) in settings(rows, name)?.into_iter().flatten() {
+                let (rank, object) = rank(record, id, value);
+                let mut entry = json!({ "grant": id });
+                if let Some(object) = &object {
+                    for key in ["client", "createdAt", "expiresAt", "revokedAt"] {
+                        if let Some(member) = object.get(key) {
+                            entry[key] = member.clone();
+                        }
+                    }
                 }
+                entry["state"] = json!(record_state(record, id, value, row, local_revoked, now)?
+                    .unwrap_or(match rank {
+                        3 => "newer",
+                        _ => "malformed",
+                    }));
+                out.push(entry);
             }
-        }
-        entry["state"] = json!(read_state(id, value, row, local_revoked, now)?.unwrap_or(
-            match rank {
-                3 => "newer",
-                _ => "malformed",
-            }
-        ));
-        reads.push(entry);
-    }
+            Ok(out)
+        };
+    let reads = records(Record::Read, READ_ROW, read_row)?;
+    let plays = records(Record::Play, PLAY_ROW, play_row)?;
     let mut out = Vec::new();
     for (id, value) in settings(row, GRANTS_ROW)?.into_iter().flatten() {
         let (rank, object) = rank(Record::Grant, id, value);
@@ -413,12 +454,24 @@ pub fn list(
         });
         out.push(entry);
     }
-    Ok(json!({ "grants": out, "reads": reads }))
+    Ok(json!({ "grants": out, "reads": reads, "plays": plays }))
 }
 
-/// A read record's state (§15): `revoked` — in the record, in the grant with its id, or in the device's own set —
-/// `expired`, or `active`; `None` when it is no v1 read record.
+/// A read record's state (§15).
 fn read_state(
+    id: &str,
+    value: &Value,
+    grants_row: Option<&Value>,
+    local_revoked: &[String],
+    now: u64,
+) -> Result<Option<&'static str>, String> {
+    record_state(Record::Read, id, value, grants_row, local_revoked, now)
+}
+
+/// A read (§15) or play (§16) record's state: `revoked` — in the record, in the grant with its id, or in the device's
+/// own set — `expired`, or `active`; `None` when it is no v1 record of its kind.
+fn record_state(
+    record: Record,
     id: &str,
     value: &Value,
     grants_row: Option<&Value>,
@@ -434,12 +487,49 @@ fn read_state(
     let revoked = local_revoked.iter().any(|r| r == id)
         || grant_revoked
         || object.as_ref().and_then(revoked_in).is_some();
-    Ok(match object.as_ref().and_then(|o| read_in(id, o)) {
+    let expires = object.as_ref().and_then(|o| match record {
+        Record::Read => read_in(id, o).map(|(_, expires, _)| expires),
+        Record::Play => play_in(id, o).map(|(expires, _)| expires),
+        Record::Grant => grant_in(id, o).map(|(grant, _)| grant.expires),
+    });
+    Ok(match expires {
         _ if revoked && object.is_some() => Some("revoked"),
-        Some((_, expires, _)) if now >= expires => Some("expired"),
+        Some(expires) if now >= expires => Some("expired"),
         Some(_) => Some("active"),
         None => None,
     })
+}
+
+/// `assistant_keygen_play`: a connection's `set:assistant-play` record, under its grant id (§16): it may play on the
+/// TV, for as long as its grant stands.
+pub fn keygen_play(grant: &str, client: &str, now: u64) -> Result<Value, String> {
+    if grant.len() != 32
+        || !grant
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err("invalid_grant".into());
+    }
+    if !clean_client(client) {
+        return Err("invalid_client".into());
+    }
+    let expires = now
+        .checked_add(den_assistant::GRANT_TTL_MS)
+        .filter(|t| *t <= MAX_SAFE_INTEGER)
+        .ok_or("invalid_time")?;
+    let record = json!({
+        "v": 1,
+        "client": client,
+        "createdAt": now,
+        "expiresAt": expires,
+        "revokedAt": null,
+    });
+    Ok(json!({ "setting": grant, "value": jcs_string(&record) }))
+}
+
+/// One play record merged (§16), by the grants' rule.
+pub fn merge_play(id: &str, a: &Value, b: &Value) -> Result<Value, String> {
+    merge_record(Record::Play, id, a, b)
 }
 
 /// `assistant_keygen_read`: 32 random bytes → a connection's read key and its `set:assistant-read` record, under the
@@ -623,17 +713,27 @@ fn merge_record(record: Record, id: &str, a: &Value, b: &Value) -> Result<Value,
 /// Every v1 grant the row holds, a grant in the device's own record of revocations (§6) counting as revoked.
 fn grants(
     row: Option<&Value>,
+    play_row: Option<&Value>,
     local_revoked: &[String],
+    now: u64,
 ) -> Result<BTreeMap<String, Grant>, String> {
-    Ok(settings(row, GRANTS_ROW)?
-        .into_iter()
-        .flatten()
-        .filter_map(|(id, value)| {
-            let (mut grant, _) = grant_of(id, value)?;
-            grant.revoked |= local_revoked.contains(id);
-            Some((id.clone(), grant))
-        })
-        .collect())
+    let plays = settings(play_row, PLAY_ROW)?;
+    let mut out = BTreeMap::new();
+    for (id, value) in settings(row, GRANTS_ROW)?.into_iter().flatten() {
+        let Some((mut grant, _)) = grant_of(id, value) else {
+            continue;
+        };
+        grant.revoked |= local_revoked.contains(id);
+        // §16: it may play while a live play record stands under its id.
+        grant.play = match plays.and_then(|p| p.get(id)) {
+            Some(record) => {
+                record_state(Record::Play, id, record, row, local_revoked, now)? == Some("active")
+            }
+            None => false,
+        };
+        out.insert(id.clone(), grant);
+    }
+    Ok(out)
 }
 
 // ---- set:assistant-applied
@@ -699,6 +799,10 @@ pub struct Library<'a> {
     pub applied: Option<&'a Value>,
     pub local_revoked: &'a [String],
     pub local_applied: &'a Map<String, Value>,
+    /// §16: the play row, the queue drained, and for the TV's queue when the TV last woke.
+    pub play: Option<&'a Value>,
+    pub queue: Queue,
+    pub awake_since: Option<u64>,
 }
 
 /// `assistant_open` (§6): the request, accepted with the stamp to write it at and the applied entry to record, or the
@@ -720,10 +824,22 @@ pub fn open(sealed: &str, lib: &Library, now: u64) -> Result<Value, String> {
         .into_iter()
         .map(|k| k.1)
         .collect();
-    let grants = grants(lib.grants, lib.local_revoked)?;
+    if lib.queue == Queue::Tv && lib.awake_since.is_none_or(|t| t > MAX_SAFE_INTEGER) {
+        return Err("invalid_awake".into());
+    }
+    let grants = grants(lib.grants, lib.play, lib.local_revoked, now)?;
     let applied = applied(lib.applied, lib.local_applied)?;
     Ok(
-        match den_assistant::check(&keys, library, sealed, &grants, &applied, now) {
+        match den_assistant::check_queue(
+            &keys,
+            library,
+            sealed,
+            &grants,
+            &applied,
+            now,
+            lib.queue,
+            lib.awake_since,
+        ) {
             Ok(accepted) => json!({"accept": {
                 "grant": accepted.grant,
                 "id": accepted.id,

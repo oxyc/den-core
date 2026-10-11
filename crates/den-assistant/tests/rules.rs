@@ -57,6 +57,7 @@ fn grants_for(public: [u8; 32]) -> BTreeMap<String, Grant> {
             cap: 10,
             revoked: false,
             expires: NOW + 86_400_000,
+            play: false,
         },
     )])
 }

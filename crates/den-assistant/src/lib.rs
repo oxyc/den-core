@@ -72,8 +72,48 @@ pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 /// The highest episode number (library v4 §3).
 pub const MAX_EPISODE: u64 = 99_999;
 
-/// The ops a request may carry, in byte order.
-pub const OPS: [&str; 4] = ["rate", "seen", "watchlist_add", "watchlist_remove"];
+/// The ops a request may carry, in byte order: the library ops, and the TV's (§16).
+pub const OPS: [&str; 6] = [
+    "play",
+    "play_trailer",
+    "rate",
+    "seen",
+    "watchlist_add",
+    "watchlist_remove",
+];
+/// The ops a v1 grant's `ops` may list, in byte order: the library ops. The TV's are allowed by a play record (§16),
+/// never by a grant, so a grant stays readable by every client.
+pub const GRANT_OPS: [&str; 4] = ["rate", "seen", "watchlist_add", "watchlist_remove"];
+/// The TV's ops (§16).
+pub const PLAY_OPS: [&str; 2] = ["play", "play_trailer"];
+/// A TV op older than this is `stale` (§16).
+pub const PLAY_STALE_MS: u64 = 120_000;
+
+/// The queue a request belongs in, which its signed op decides (§16): the library's, which every device drains, or
+/// the TV's, which only a TV drains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Queue {
+    Library,
+    Tv,
+}
+
+impl Queue {
+    /// The queue of a request with this op.
+    pub fn of(op: &str) -> Queue {
+        if PLAY_OPS.contains(&op) {
+            Queue::Tv
+        } else {
+            Queue::Library
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Queue::Library => "library",
+            Queue::Tv => "tv",
+        }
+    }
+}
 
 /// Why building, sealing or opening something failed. Never a reason a device gives for a request: that is
 /// [`Reject`].
@@ -116,6 +156,7 @@ pub enum Reject {
     UnknownGrant,
     BadSignature,
     WrongLibrary,
+    WrongQueue,
     Revoked,
     Expired,
     FromFuture,
@@ -133,6 +174,7 @@ impl Reject {
             Reject::UnknownGrant => "unknown_grant",
             Reject::BadSignature => "bad_signature",
             Reject::WrongLibrary => "wrong_library",
+            Reject::WrongQueue => "wrong_queue",
             Reject::Revoked => "revoked",
             Reject::Expired => "expired",
             Reject::FromFuture => "from_future",
@@ -540,6 +582,24 @@ fn valid_args(op: &str, args: &Value) -> bool {
                 Some(e) => season.is_some() && safe(e).is_some_and(|e| e <= MAX_EPISODE),
             }
         }
+        "play" => {
+            if !keys_are(object, &["title"], &["season", "episode"]) {
+                return false;
+            }
+            let season = object.get("season");
+            let episode = object.get("episode");
+            if (season.is_some() || episode.is_some()) && media != "tv" {
+                return false;
+            }
+            if season.is_some_and(|s| safe(s).is_none()) {
+                return false;
+            }
+            match episode {
+                None => true,
+                Some(e) => season.is_some() && safe(e).is_some_and(|e| e <= MAX_EPISODE),
+            }
+        }
+        "play_trailer" => keys_are(object, &["title"], &[]),
         _ => false,
     }
 }
@@ -592,6 +652,8 @@ pub struct Grant {
     pub revoked: bool,
     /// `expiresAt`: from this time on, the grant accepts nothing.
     pub expires: u64,
+    /// Whether a live play record (§16) lets it play on the TV.
+    pub play: bool,
 }
 
 /// An applied request as the library's applied row holds it (§5): its grant, its own `at`, and when the device that
@@ -614,7 +676,7 @@ pub struct Accepted {
 }
 
 /// §6: open a sealed request with any of the library's drop-box keys and check it against the grants and the applied
-/// requests, at `now`.
+/// requests, at `now` — as drained from the library's queue.
 pub fn check(
     dropbox: &[[u8; KEM_SECRET_LEN]],
     library: &str,
@@ -622,6 +684,32 @@ pub fn check(
     grants: &BTreeMap<String, Grant>,
     applied: &BTreeMap<String, Applied>,
     now: u64,
+) -> Result<Accepted, Reject> {
+    check_queue(
+        dropbox,
+        library,
+        sealed,
+        grants,
+        applied,
+        now,
+        Queue::Library,
+        None,
+    )
+}
+
+/// §6, §16: [`check`] for a request drained from `queue`. A request whose op belongs in the other queue is
+/// `wrong_queue`. A TV op is `stale` past [`PLAY_STALE_MS`], or when it was made before `awake_since`, the time the TV
+/// last woke (which the TV queue requires).
+#[allow(clippy::too_many_arguments)]
+pub fn check_queue(
+    dropbox: &[[u8; KEM_SECRET_LEN]],
+    library: &str,
+    sealed: &str,
+    grants: &BTreeMap<String, Grant>,
+    applied: &BTreeMap<String, Applied>,
+    now: u64,
+    queue: Queue,
+    awake_since: Option<u64>,
 ) -> Result<Accepted, Reject> {
     let bytes = (sealed.len() <= MAX_SEALED)
         .then(|| b64url_decode(sealed))
@@ -648,6 +736,11 @@ pub fn check(
     if message.library != library {
         return Err(Reject::WrongLibrary);
     }
+    // The queue is the signed op's, so a request moved into the other queue is refused, not applied there.
+    let own = Queue::of(&message.op);
+    if own != queue {
+        return Err(Reject::WrongQueue);
+    }
     if grant.revoked {
         return Err(Reject::Revoked);
     }
@@ -657,13 +750,24 @@ pub fn check(
     if message.at > now.saturating_add(FUTURE_MS) {
         return Err(Reject::FromFuture);
     }
-    if message.at < now.saturating_sub(STALE_MS) {
+    let stale = match own {
+        Queue::Library => message.at < now.saturating_sub(STALE_MS),
+        Queue::Tv => {
+            message.at < now.saturating_sub(PLAY_STALE_MS)
+                || awake_since.is_none_or(|since| message.at < since)
+        }
+    };
+    if stale {
         return Err(Reject::Stale);
     }
     if applied.contains_key(&message.id) {
         return Err(Reject::Replay);
     }
-    if !grant.ops.iter().any(|op| *op == message.op) {
+    let allowed = match own {
+        Queue::Library => grant.ops.iter().any(|op| *op == message.op),
+        Queue::Tv => grant.play,
+    };
+    if !allowed {
         return Err(Reject::OpNotAllowed);
     }
     if applied_today(applied, &message.grant, now) >= grant.cap {

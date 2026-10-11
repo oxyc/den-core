@@ -500,12 +500,15 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
             let grants = row_name == crate::assistant::GRANTS_ROW;
             // Assistant read records (§15) merge by the same rule.
             let reads = row_name == crate::assistant::READ_ROW;
+            // And play records (§16).
+            let plays = row_name == crate::assistant::PLAY_ROW;
             let mut values = object(&a["values"])?.clone();
             for (key, value) in object(&b["values"])? {
                 let value = match values.get(key) {
                     Some(prior) if deliver => merge_deliver(key, prior, value)?,
                     Some(prior) if grants => crate::assistant::merge_grant(key, prior, value)?,
                     Some(prior) if reads => crate::assistant::merge_read(key, prior, value)?,
+                    Some(prior) if plays => crate::assistant::merge_play(key, prior, value)?,
                     Some(prior) => later(prior, value)?,
                     None => value.clone(),
                 };

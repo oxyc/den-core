@@ -1228,7 +1228,7 @@ fn other_cases() -> Vec<Case> {
     add(
         "assistant_grants: every grant with its state, the device's own revocations counting",
         json!({"op": "assistant_grants", "grants": listed, "localRevoked": [gid(&k.revoked)], "now": NOW}),
-        json!({"ok": {"grants": list, "reads": []}}),
+        json!({"ok": {"grants": list, "reads": [], "plays": []}}),
     );
     // Prune (§5): only once both the request's `at` and `applied` are over 14 days old; `applied` read as at least
     // `at`; the device's own record pruned alike.
@@ -1276,7 +1276,330 @@ fn cases() -> Vec<Case> {
     let mut all = open_cases();
     all.extend(other_cases());
     all.extend(read_cases());
+    all.extend(play_cases());
     all
+}
+
+// ---- play on the TV (§16)
+
+fn play_value(grant: &[u8; 32], created: u64) -> Value {
+    ok(&json!({"op": "assistant_keygen_play", "grant": gid(grant), "client": "Claude", "now": created}))["value"]
+        .clone()
+}
+
+fn play_cases() -> Vec<Case> {
+    let k = keys();
+    let mut cases = Vec::new();
+    let mut add = |name: &str, request: Value, expect: Value| {
+        cases.push(Case {
+            name: name.into(),
+            request,
+            expect,
+        })
+    };
+    let g = &k.grant;
+    let one = dropbox_row(&[k.dropbox]);
+    let grants = grants_row();
+    let applied = applied_row(&[]);
+    let plays = row(
+        "assistant-play",
+        json!({ gid(g): setting(play_value(g, CREATED), CREATED) }),
+    );
+    let awake = NOW - HOUR;
+    let tv = |plays: &Value| json!({"play": plays, "queue": "tv", "awakeSince": awake});
+    add(
+        "assistant_keygen_play: the play record, expiring in 30 days",
+        json!({"op": "assistant_keygen_play", "grant": gid(g), "client": "Claude", "now": CREATED}),
+        json!({"ok": {"setting": gid(g), "value": {"string": json!({"client": "Claude", "createdAt": CREATED,
+            "expiresAt": CREATED + 30 * DAY, "revokedAt": null, "v": 1}).to_string()}}}),
+    );
+    add(
+        "assistant_keygen_grant: a grant never lists a TV op",
+        json!({"op": "assistant_keygen_grant", "random": hex(g), "client": "Claude", "ops": ["play", "seen"],
+            "cap": 3, "now": CREATED}),
+        json!({"error": "invalid_ops"}),
+    );
+    let accepted: [(&str, &str, Value); 4] = [
+        ("a film played", "play", json!({"title": movie()})),
+        (
+            "a series played where it stands",
+            "play",
+            json!({"title": series()}),
+        ),
+        (
+            "an episode played",
+            "play",
+            json!({"title": series(), "season": 1, "episode": 2}),
+        ),
+        (
+            "a trailer played",
+            "play_trailer",
+            json!({"title": movie()}),
+        ),
+    ];
+    for (name, op, args) in accepted {
+        let f = fields(g, name, NOW - 10_000, op, args);
+        add(
+            &format!("assistant_open: {name} on the TV"),
+            open_local(
+                &seal(g, &f, &k.dropbox, name),
+                one.clone(),
+                grants.clone(),
+                applied.clone(),
+                tv(&plays),
+            ),
+            accept(&f),
+        );
+    }
+    let f = fields(
+        g,
+        "play 120",
+        NOW - 120_000,
+        "play",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: a play exactly 120 s old",
+        open_local(
+            &seal(g, &f, &k.dropbox, "play 120"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            tv(&plays),
+        ),
+        accept(&f),
+    );
+    let f = fields(
+        g,
+        "play 121",
+        NOW - 120_001,
+        "play",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: a play more than 120 s old",
+        open_local(
+            &seal(g, &f, &k.dropbox, "play 121"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            tv(&plays),
+        ),
+        reject("stale"),
+    );
+    let f = fields(g, "asleep", NOW - 30_000, "play", json!({"title": movie()}));
+    add(
+        "assistant_open: a play made while the TV slept",
+        open_local(
+            &seal(g, &f, &k.dropbox, "asleep"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            json!({"play": plays, "queue": "tv", "awakeSince": NOW - 20_000}),
+        ),
+        reject("stale"),
+    );
+    let f = fields(
+        g,
+        "play in library",
+        NOW - 10_000,
+        "play",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: a play moved into the library's queue",
+        open_local(
+            &seal(g, &f, &k.dropbox, "play in library"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            json!({"play": plays}),
+        ),
+        reject("wrong_queue"),
+    );
+    let f = fields(
+        g,
+        "add on tv",
+        NOW - 10_000,
+        "watchlist_add",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: a library op moved into the TV's queue",
+        open_local(
+            &seal(g, &f, &k.dropbox, "add on tv"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            tv(&plays),
+        ),
+        reject("wrong_queue"),
+    );
+    let f = fields(
+        g,
+        "no record",
+        NOW - 10_000,
+        "play",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: a play by a grant with no play record",
+        open_local(
+            &seal(g, &f, &k.dropbox, "no record"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            tv(&row("assistant-play", json!({}))),
+        ),
+        reject("op_not_allowed"),
+    );
+    let expired_plays = row(
+        "assistant-play",
+        json!({ gid(g): setting(play_value(g, NOW - 31 * DAY), CREATED) }),
+    );
+    let f = fields(
+        g,
+        "expired record",
+        NOW - 10_000,
+        "play",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: a play by a grant whose play record expired",
+        open_local(
+            &seal(g, &f, &k.dropbox, "expired record"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            tv(&expired_plays),
+        ),
+        reject("op_not_allowed"),
+    );
+    let f = fields(
+        g,
+        "replayed",
+        NOW - 10_000,
+        "play",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: a play id already applied",
+        open_local(
+            &seal(g, &f, &k.dropbox, "replayed"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            tv(&plays),
+        ),
+        reject("replay"),
+    );
+    for (name, op, args) in [
+        (
+            "a play of an episode with no season",
+            "play",
+            json!({"title": series(), "episode": 1}),
+        ),
+        (
+            "a play of an episode of a film",
+            "play",
+            json!({"title": movie(), "season": 1, "episode": 1}),
+        ),
+        (
+            "a play with a value",
+            "play",
+            json!({"title": movie(), "value": true}),
+        ),
+        (
+            "a trailer of an episode",
+            "play_trailer",
+            json!({"title": series(), "season": 1}),
+        ),
+    ] {
+        let f = fields(g, name, NOW - 10_000, op, args);
+        let sealed = seal_raw(
+            g,
+            &serde_json::to_vec(&f).unwrap(),
+            &k.dropbox,
+            LIBRARY,
+            name,
+        );
+        add(
+            &format!("assistant_open: {name}"),
+            open_local(
+                &sealed,
+                one.clone(),
+                grants.clone(),
+                applied.clone(),
+                tv(&plays),
+            ),
+            reject("malformed"),
+        );
+    }
+    let f = fields(
+        g,
+        "no awake",
+        NOW - 10_000,
+        "play",
+        json!({"title": movie()}),
+    );
+    add(
+        "assistant_open: the TV's queue without the time it woke",
+        open_local(
+            &seal(g, &f, &k.dropbox, "no awake"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            json!({"play": plays, "queue": "tv"}),
+        ),
+        json!({"error": "invalid_awake"}),
+    );
+    add(
+        "assistant_open: a queue that is not one",
+        open_local(
+            &seal(g, &f, &k.dropbox, "no awake"),
+            one.clone(),
+            grants.clone(),
+            applied.clone(),
+            json!({"queue": "radio"}),
+        ),
+        json!({"error": "invalid_queue"}),
+    );
+    // Settings lists play records, and their row merges as the grants do.
+    let mut revoked_plays = plays.clone();
+    revoked_plays["values"][gid(&k.revoked)] = setting(play_value(&k.revoked, CREATED), CREATED);
+    let mut list = vec![
+        json!({"grant": gid(g), "client": "Claude", "createdAt": CREATED, "expiresAt": CREATED + 30 * DAY,
+            "revokedAt": null, "state": "active"}),
+        json!({"grant": gid(&k.revoked), "client": "Claude", "createdAt": CREATED,
+            "expiresAt": CREATED + 30 * DAY, "revokedAt": null, "state": "revoked"}),
+    ];
+    list.sort_by(|x, y| x["grant"].as_str().cmp(&y["grant"].as_str()));
+    let grants_list = ok(&json!({"op": "assistant_grants", "grants": grants_row(), "now": NOW}))
+        ["grants"]
+        .clone();
+    add(
+        "assistant_grants: play records, a revocation of their grant counting",
+        json!({"op": "assistant_grants", "grants": grants_row(), "play": revoked_plays, "now": NOW}),
+        json!({"ok": {"grants": grants_list, "reads": [], "plays": list}}),
+    );
+    let base: Value =
+        serde_json::from_str(play_value(g, CREATED)["string"].as_str().unwrap()).unwrap();
+    let with = |key: &str, v: Value| {
+        let mut o = base.clone();
+        o[key] = v;
+        json!({"string": o.to_string()})
+    };
+    let mut both = base.clone();
+    both["revokedAt"] = json!(1500);
+    both["expiresAt"] = json!(NOW + 30 * DAY);
+    let plays_row = |v: Value| row("assistant-play", json!({ gid(g): v }));
+    add(
+        "merge: assistant play records keep a revocation and the later expiry",
+        json!({"op": "merge", "a": plays_row(setting(with("revokedAt", json!(1500)), 6)),
+            "b": plays_row(setting(with("expiresAt", json!(NOW + 30 * DAY)), 7))}),
+        json!({"ok": plays_row(setting(json!({"string": both.to_string()}), 7))}),
+    );
+    cases
 }
 
 // ---- reads (§15)
@@ -1572,7 +1895,7 @@ fn read_cases() -> Vec<Case> {
     add(
         "assistant_grants: read records, a revocation of their grant counting",
         json!({"op": "assistant_grants", "grants": grants_row(), "read": listed, "now": NOW}),
-        json!({"ok": {"grants": grants_list, "reads": reads_list}}),
+        json!({"ok": {"grants": grants_list, "reads": reads_list, "plays": []}}),
     );
     // The read row merges as the grants row does: a revocation sticks, the later expiry wins.
     let a = setting(json!({"string": record.to_string()}), 5);

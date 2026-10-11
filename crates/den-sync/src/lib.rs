@@ -401,6 +401,8 @@ enum Request {
         grants: Option<Value>,
         #[serde(default)]
         read: Option<Value>,
+        #[serde(default)]
+        play: Option<Value>,
         #[serde(default, rename = "localRevoked")]
         local_revoked: Vec<String>,
         now: u64,
@@ -421,6 +423,19 @@ enum Request {
         local_revoked: Vec<String>,
         #[serde(default, rename = "localApplied")]
         local_applied: serde_json::Map<String, Value>,
+        /// §16: the play row, the queue drained (`library`, the default, or `tv`), and for `tv` when the TV last woke.
+        #[serde(default)]
+        play: Option<Value>,
+        #[serde(default)]
+        queue: Option<String>,
+        #[serde(default, rename = "awakeSince")]
+        awake_since: Option<u64>,
+        now: u64,
+    },
+    /// Assistant v1 §16: a connection's `set:assistant-play` record.
+    AssistantKeygenPlay {
+        grant: String,
+        client: String,
         now: u64,
     },
     /// Assistant v1 §15: 32 random bytes (hex) → a grant key and id with no grants row setting, for a read-only
@@ -725,9 +740,19 @@ pub fn evaluate(input: &str) -> String {
             Request::AssistantGrants {
                 grants,
                 read,
+                play,
                 local_revoked,
                 now,
-            } => assistant::list(grants.as_ref(), read.as_ref(), &local_revoked, now),
+            } => assistant::list(
+                grants.as_ref(),
+                read.as_ref(),
+                play.as_ref(),
+                &local_revoked,
+                now,
+            ),
+            Request::AssistantKeygenPlay { grant, client, now } => {
+                assistant::keygen_play(&grant, &client, now)
+            }
             Request::AssistantGrantKey { random } => assistant::grant_key(&random),
             Request::AssistantKeygenRead {
                 grant,
@@ -767,6 +792,9 @@ pub fn evaluate(input: &str) -> String {
                 applied,
                 local_revoked,
                 local_applied,
+                play,
+                queue,
+                awake_since,
                 now,
             } => assistant::open(
                 &sealed,
@@ -778,6 +806,13 @@ pub fn evaluate(input: &str) -> String {
                     applied: applied.as_ref(),
                     local_revoked: &local_revoked,
                     local_applied: &local_applied,
+                    play: play.as_ref(),
+                    queue: match queue.as_deref() {
+                        None | Some("library") => den_assistant::Queue::Library,
+                        Some("tv") => den_assistant::Queue::Tv,
+                        Some(_) => return Err("invalid_queue".into()),
+                    },
+                    awake_since,
                 },
                 now,
             ),
