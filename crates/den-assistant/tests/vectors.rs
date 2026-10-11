@@ -89,6 +89,7 @@ fn den_spec_assistant_v1_fixed() {
             cap: 1,
             revoked: false,
             expires: now + 1,
+            play: false,
         },
     )]);
     let accepted = check(
