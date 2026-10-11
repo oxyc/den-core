@@ -8,6 +8,7 @@ mod episodes;
 mod events;
 mod library_v3;
 mod library_v4;
+mod projection;
 mod recovery;
 mod series;
 mod tilt;
@@ -393,10 +394,13 @@ enum Request {
         value: Value,
         now: u64,
     },
-    /// Assistant v1 §5: the grants a `set:assistant-grants` row holds, with their state, for Settings.
+    /// Assistant v1 §5, §15: the grants a `set:assistant-grants` row holds and the read records a `set:assistant-read`
+    /// row holds, with their state, for Settings.
     AssistantGrants {
         #[serde(default)]
         grants: Option<Value>,
+        #[serde(default)]
+        read: Option<Value>,
         #[serde(default, rename = "localRevoked")]
         local_revoked: Vec<String>,
         now: u64,
@@ -417,6 +421,36 @@ enum Request {
         local_revoked: Vec<String>,
         #[serde(default, rename = "localApplied")]
         local_applied: serde_json::Map<String, Value>,
+        now: u64,
+    },
+    /// Assistant v1 §15: 32 random bytes (hex) → a grant key and id with no grants row setting, for a read-only
+    /// connection.
+    AssistantGrantKey {
+        random: String,
+    },
+    /// Assistant v1 §15: 32 random bytes (hex) → a connection's read key and its `set:assistant-read` record.
+    AssistantKeygenRead {
+        grant: String,
+        random: String,
+        client: String,
+        now: u64,
+    },
+    /// Assistant v1 §15: the library's documents → the projection for every live read grant, sealed, and the read
+    /// grants whose projection den-edge should drop.
+    AssistantProjection {
+        library: String,
+        #[serde(default)]
+        documents: Vec<Value>,
+        #[serde(default)]
+        layouts: serde_json::Map<String, Value>,
+        head: u64,
+        #[serde(default)]
+        read: Option<Value>,
+        #[serde(default)]
+        grants: Option<Value>,
+        #[serde(default, rename = "localRevoked")]
+        local_revoked: Vec<String>,
+        random: String,
         now: u64,
     },
     /// Assistant v1 §5: the applied entries to drop, from the row and the device's own record.
@@ -690,9 +724,40 @@ pub fn evaluate(input: &str) -> String {
             Request::AssistantRenew { grant, value, now } => assistant::renew(&grant, &value, now),
             Request::AssistantGrants {
                 grants,
+                read,
                 local_revoked,
                 now,
-            } => assistant::list(grants.as_ref(), &local_revoked, now),
+            } => assistant::list(grants.as_ref(), read.as_ref(), &local_revoked, now),
+            Request::AssistantGrantKey { random } => assistant::grant_key(&random),
+            Request::AssistantKeygenRead {
+                grant,
+                random,
+                client,
+                now,
+            } => assistant::keygen_read(&grant, &random, &client, now),
+            Request::AssistantProjection {
+                library,
+                documents,
+                layouts,
+                head,
+                read,
+                grants,
+                local_revoked,
+                random,
+                now,
+            } => assistant::projection(
+                &projection::Library {
+                    library: &library,
+                    documents: &documents,
+                    layouts: &layouts,
+                    head,
+                },
+                read.as_ref(),
+                grants.as_ref(),
+                &local_revoked,
+                &random,
+                now,
+            ),
             Request::AssistantOpen {
                 library,
                 device,

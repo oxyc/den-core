@@ -1228,7 +1228,7 @@ fn other_cases() -> Vec<Case> {
     add(
         "assistant_grants: every grant with its state, the device's own revocations counting",
         json!({"op": "assistant_grants", "grants": listed, "localRevoked": [gid(&k.revoked)], "now": NOW}),
-        json!({"ok": {"grants": list}}),
+        json!({"ok": {"grants": list, "reads": []}}),
     );
     // Prune (§5): only once both the request's `at` and `applied` are over 14 days old; `applied` read as at least
     // `at`; the device's own record pruned alike.
@@ -1275,7 +1275,287 @@ fn merge_of(versions: &[&Value]) -> Value {
 fn cases() -> Vec<Case> {
     let mut all = open_cases();
     all.extend(other_cases());
+    all.extend(read_cases());
     all
+}
+
+// ---- reads (§15)
+
+const HOUR_: u64 = HOUR;
+
+/// §15's caps keep the largest projection under den-edge's limit: every list past its cap, every id and time at the
+/// largest the wire allows, fractions with all their digits.
+#[test]
+fn the_largest_projection_fits() {
+    let now: u64 = 9_000_000_000_000_000;
+    let big = 9_007_199_254_740_991u64;
+    let mut documents = Vec::new();
+    for i in 0..600u64 {
+        documents.push(
+            json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": big - i},
+            "status": {"value": "watchlist", "at": [now - i, 0, D]}, "addedAt": now - i}),
+        );
+    }
+    for i in 0..200u64 {
+        let plays: Map<String, Value> = (0..8)
+            .map(|p| (p.to_string(), json!(now - 10_000 - i * 10 - p)))
+            .collect();
+        documents.push(
+            json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": big - 1000 - i},
+            "status": {"value": "watched", "at": [now - i, 0, D]},
+            "resume": {"value": 1, "at": [now - i, 0, D], "viewing": 7},
+            "watch": {"plays": plays, "cleared": null}}),
+        );
+    }
+    // The newest Seen entries are episodes with the longest coordinates.
+    let episodes: Map<String, Value> = (99_000..=99_999u64)
+        .map(|e| {
+            (
+                e.to_string(),
+                json!({"progress": {"value": 1, "at": [now - (99_999 - e), 0, D], "viewing": 0},
+                    "imported": false, "plays": {"0": now - (99_999 - e)}, "cleared": null}),
+            )
+        })
+        .collect();
+    documents.push(
+        json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": big - 3000},
+        "season": big, "seasonReset": null, "episodes": episodes}),
+    );
+    for i in 0..150u64 {
+        documents.push(
+            json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": big - 2000 - i},
+            "status": {"value": "inProgress", "at": [now - i, 0, D]},
+            "resume": {"value": 0.123_456_789_012_345_67, "at": [now - i, 0, D], "viewing": 0}}),
+        );
+    }
+    let k = keys();
+    let reads = row(
+        "assistant-read",
+        json!({gid(&k.grant): setting(read_value(&k.grant, "read key", now - DAY), now - DAY)}),
+    );
+    let answer = ok(
+        &json!({"op": "assistant_projection", "library": LIBRARY, "documents": documents,
+        "head": big, "read": reads, "random": hex(&seed("big")), "now": now}),
+    );
+    let sealed = answer["publish"][0]["sealed"].as_str().unwrap();
+    assert_eq!(
+        answer["counts"],
+        json!({"watchlist": 500, "continue": 100, "seen": 1000})
+    );
+    assert!(
+        sealed.len() <= den_assistant::MAX_PROJECTION,
+        "{}",
+        sealed.len()
+    );
+    eprintln!("largest projection: {} characters", sealed.len());
+}
+
+fn st(t: u64) -> Value {
+    json!([t, 0, D])
+}
+
+/// A small library: a film on the watchlist, a deleted one, a film watched with a play, one watched with none, a film
+/// in progress, a series with a finished and an unfinished episode, and a series known only by an imported play.
+fn library_documents() -> Vec<Value> {
+    let t = |h: u64| NOW - h * HOUR_;
+    vec![
+        json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 550},
+            "status": {"value": "watchlist", "at": st(t(10))}, "addedAt": t(10)}),
+        json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 13},
+            "status": {"value": "watchlist", "at": st(t(11))}, "addedAt": t(11),
+            "deleted": {"value": true, "at": st(t(1))}}),
+        json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 603},
+            "status": {"value": "watched", "at": st(t(9))},
+            "resume": {"value": 1, "at": st(t(9)), "viewing": 0},
+            "watch": {"plays": {"0": t(9)}, "cleared": null}}),
+        json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 27205},
+            "status": {"value": "watched", "at": [0, 1, ""]}}),
+        json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 680},
+            "status": {"value": "inProgress", "at": st(t(8))},
+            "resume": {"value": 0.4, "at": st(t(8)), "viewing": 0, "seconds": 2000}}),
+        json!({"format": 4, "kind": "title", "title": {"type": "tv", "id": 1399},
+            "status": {"value": "inProgress", "at": st(t(6))}}),
+        json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": 1399}, "season": 1, "seasonReset": null,
+        "episodes": {
+            "1": {"progress": {"value": 1, "at": st(t(7)), "viewing": 0}, "imported": false,
+                "plays": {"0": t(7)}, "cleared": null},
+            "2": {"progress": {"value": 0.5, "at": st(t(6)), "viewing": 0}, "imported": false,
+                "plays": {}, "cleared": null},
+        }}),
+        json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": 1396}, "season": 1, "seasonReset": null,
+        "episodes": {
+            "1": {"imported": true, "plays": {(t(5) as i64 - (1i64 << 53)).to_string(): t(5)},
+                "cleared": null},
+        }}),
+    ]
+}
+
+fn read_value(grant: &[u8; 32], key: &str, created: u64) -> Value {
+    ok(
+        &json!({"op": "assistant_keygen_read", "grant": gid(grant), "random": hex(&seed(key)),
+        "client": "Claude", "now": created}),
+    )["value"]
+        .clone()
+}
+
+/// What the small library projects to (§15), as den-mcp reads it.
+fn expected_lists() -> Value {
+    let t = |h: u64| NOW - h * HOUR_;
+    json!({
+        "watchlist": [{"title": {"type": "movie", "id": 550}, "addedAt": t(10)}],
+        "continue": [
+            {"title": {"type": "tv", "id": 1399}, "action": "resume", "season": 1, "episode": 2, "fraction": 0.5,
+                "at": t(6)},
+            {"title": {"type": "tv", "id": 1396}, "action": "next", "season": 1, "episode": 2, "fraction": 0.0,
+                "at": null},
+            {"title": {"type": "movie", "id": 680}, "action": "resume", "fraction": 0.4, "at": t(8)},
+        ],
+        "seen": [
+            {"title": {"type": "tv", "id": 1396}, "season": 1, "episode": 1, "at": t(5)},
+            {"title": {"type": "tv", "id": 1399}, "season": 1, "episode": 1, "at": t(7)},
+            {"title": {"type": "movie", "id": 603}, "at": t(9)},
+            {"title": {"type": "movie", "id": 27205}, "at": null},
+        ],
+        "omitted": {"watchlist": 0, "continue": 0, "seen": 0},
+    })
+}
+
+fn read_cases() -> Vec<Case> {
+    let k = keys();
+    let mut cases = Vec::new();
+    let mut add = |name: &str, request: Value, expect: Value| {
+        cases.push(Case {
+            name: name.into(),
+            request,
+            expect,
+        })
+    };
+    let gpub = grant_public(&k.grant);
+    add(
+        "assistant_grant_key: a grant key with no grants row setting",
+        json!({"op": "assistant_grant_key", "random": hex(&k.grant)}),
+        json!({"ok": {"grant": gid(&k.grant), "public": b64url(&gpub), "secret": b64url(&k.grant)}}),
+    );
+    let read_key = seed("read key");
+    let record = json!({"client": "Claude", "createdAt": CREATED, "expiresAt": CREATED + 30 * DAY,
+        "key": b64url(&read_key), "revokedAt": null, "v": 1});
+    add(
+        "assistant_keygen_read: the read key and its record, expiring in 30 days",
+        json!({"op": "assistant_keygen_read", "grant": gid(&k.grant), "random": hex(&read_key),
+            "client": "Claude", "now": CREATED}),
+        json!({"ok": {"key": b64url(&read_key), "setting": gid(&k.grant),
+            "value": {"string": record.to_string()}}}),
+    );
+    let mut renewed = record.clone();
+    renewed["expiresAt"] = json!(NOW + 30 * DAY);
+    add(
+        "assistant_renew: a read record",
+        json!({"op": "assistant_renew", "grant": gid(&k.grant), "value": {"string": record.to_string()},
+            "now": NOW}),
+        json!({"ok": {"value": {"string": renewed.to_string()}}}),
+    );
+    // Live: the grant's. Not live: one whose grant is revoked in the grants row, one expired, one the device has
+    // seen revoked.
+    let reads = row(
+        "assistant-read",
+        json!({
+            gid(&k.grant): setting(read_value(&k.grant, "read key", CREATED), CREATED),
+            gid(&k.revoked): setting(read_value(&k.revoked, "read revoked", CREATED), CREATED),
+            gid(&k.limited): setting(read_value(&k.limited, "read limited", NOW - 31 * DAY), CREATED),
+            gid(&k.other): setting(read_value(&k.other, "read other", CREATED), CREATED),
+        }),
+    );
+    let grants = grants_row();
+    let request = json!({"op": "assistant_projection", "library": LIBRARY, "documents": library_documents(),
+        "layouts": {"1396": {"seasons": [{"season": 1, "episodes": 3}], "last_aired": {"season": 1, "episode": 3}}},
+        "head": 4711, "read": reads, "grants": grants, "localRevoked": [gid(&k.other)],
+        "random": hex(&seed("projection random")), "now": NOW});
+    let answer = ok(&request);
+    let mut delete = vec![gid(&k.revoked), gid(&k.limited), gid(&k.other)];
+    delete.sort();
+    assert_eq!(answer["delete"], json!(delete));
+    assert_eq!(answer["publish"].as_array().unwrap().len(), 1);
+    let published = &answer["publish"][0];
+    assert_eq!(published["grant"], gid(&k.grant));
+    let opened = den_assistant::open_projection(
+        &read_key,
+        LIBRARY,
+        &gid(&k.grant),
+        published["sealed"].as_str().unwrap(),
+    )
+    .unwrap();
+    let expected = expected_lists();
+    for key in ["watchlist", "continue", "seen", "omitted"] {
+        assert_eq!(opened[key], expected[key], "{key}");
+    }
+    assert_eq!(
+        (opened["at"].as_u64(), opened["head"].as_u64()),
+        (Some(NOW), Some(4711))
+    );
+    assert_eq!(
+        answer["digest"],
+        json!(hex(&Sha256::digest(serde_json::to_vec(&expected).unwrap())))
+    );
+    // Another grant's id, or another library's, does not open it.
+    assert!(den_assistant::open_projection(
+        &read_key,
+        OTHER_LIBRARY,
+        &gid(&k.grant),
+        published["sealed"].as_str().unwrap()
+    )
+    .is_err());
+    assert!(den_assistant::open_projection(
+        &read_key,
+        LIBRARY,
+        &gid(&k.limited),
+        published["sealed"].as_str().unwrap()
+    )
+    .is_err());
+    add(
+        "assistant_projection: the watchlist, Continue Watching and Seen for each live read grant",
+        request,
+        json!({"ok": answer}),
+    );
+    // Settings' list of read records.
+    let listed = row(
+        "assistant-read",
+        json!({
+            gid(&k.grant): setting(read_value(&k.grant, "read key", CREATED), CREATED),
+            gid(&k.revoked): setting(read_value(&k.revoked, "read revoked", CREATED), CREATED),
+        }),
+    );
+    let mut reads_list = vec![
+        json!({"grant": gid(&k.grant), "client": "Claude", "createdAt": CREATED, "expiresAt": CREATED + 30 * DAY,
+            "revokedAt": null, "state": "active"}),
+        json!({"grant": gid(&k.revoked), "client": "Claude", "createdAt": CREATED, "expiresAt": CREATED + 30 * DAY,
+            "revokedAt": null, "state": "revoked"}),
+    ];
+    reads_list.sort_by(|x, y| x["grant"].as_str().cmp(&y["grant"].as_str()));
+    let grants_list = ok(&json!({"op": "assistant_grants", "grants": grants_row(), "now": NOW}))
+        ["grants"]
+        .clone();
+    add(
+        "assistant_grants: read records, a revocation of their grant counting",
+        json!({"op": "assistant_grants", "grants": grants_row(), "read": listed, "now": NOW}),
+        json!({"ok": {"grants": grants_list, "reads": reads_list}}),
+    );
+    // The read row merges as the grants row does: a revocation sticks, the later expiry wins.
+    let a = setting(json!({"string": record.to_string()}), 5);
+    let mut revoked = record.clone();
+    revoked["revokedAt"] = json!(1500);
+    let mut later = record.clone();
+    later["expiresAt"] = json!(NOW + 30 * DAY);
+    let mut both = later.clone();
+    both["revokedAt"] = json!(1500);
+    let reads_row = |v: Value| row("assistant-read", json!({gid(&k.grant): v}));
+    add(
+        "merge: assistant read records keep a revocation and the later expiry",
+        json!({"op": "merge", "a": reads_row(setting(json!({"string": revoked.to_string()}), 6)),
+            "b": reads_row(setting(json!({"string": later.to_string()}), 7))}),
+        json!({"ok": reads_row(setting(json!({"string": both.to_string()}), 7))}),
+    );
+    let _ = a;
+    cases
 }
 
 fn check(case: &Case) {
@@ -1298,6 +1578,46 @@ fn assistant_cases() {
     assert!(all.len() > 50, "{}", all.len());
     for case in &all {
         check(case);
+    }
+}
+
+/// The read records' merge (§15) is the same join.
+#[test]
+fn read_merge_is_a_join() {
+    let k = keys();
+    let id = gid(&k.grant);
+    let base: Value = serde_json::from_str(
+        read_value(&k.grant, "read key", CREATED)["string"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let member = |key: &str, v: Value| {
+        let mut object = base.clone();
+        object[key] = v;
+        json!({"string": object.to_string()})
+    };
+    let versions = [
+        setting(json!({"string": base.to_string()}), 5),
+        setting(member("revokedAt", json!(2000)), 7),
+        setting(member("revokedAt", json!(1500)), 6),
+        setting(member("expiresAt", json!(NOW + 60 * DAY)), 6),
+        setting(json!({"string": "{\"revokedAt\":1234}"}), 9),
+        setting(member("v", json!(2)), 3),
+        setting(json!(null), 8),
+    ];
+    let reads = |v: &Value| row("assistant-read", json!({id.clone(): v}));
+    let merge = |a: &Value, b: &Value| {
+        ok(&json!({"op": "merge", "a": reads(a), "b": reads(b)}))["values"][&id].clone()
+    };
+    for a in &versions {
+        assert_eq!(&merge(a, a), a);
+        for b in &versions {
+            assert_eq!(merge(a, b), merge(b, a));
+            for c in &versions {
+                assert_eq!(merge(&merge(a, b), c), merge(a, &merge(b, c)));
+            }
+        }
     }
 }
 
@@ -1390,6 +1710,33 @@ fn fixed() -> Value {
     let claim = seal_claim(&kem_public(&k.mcp), SUB, &grant_key, &eseed("claim")).unwrap();
     let nonce: [u8; 12] = bytes("nonce", 12).try_into().unwrap();
     let wrapped = wrap(&refresh_secret(), SUB, &grant_key, &nonce);
+    // Reads (§15): the same grant with a read key.
+    let read_key = seed("read key");
+    let reader = GrantKey::from_secret(&k.grant).with_read_key(&read_key);
+    let read_claim =
+        den_assistant::seal_read_claim(&kem_public(&k.mcp), SUB, &reader, &eseed("read claim"))
+            .unwrap();
+    let read_nonce: [u8; 12] = bytes("read nonce", 12).try_into().unwrap();
+    let read_wrapped = wrap(&refresh_secret(), SUB, &reader, &read_nonce);
+    let mut projection = expected_lists();
+    for (key, value) in [
+        ("v", json!(1)),
+        ("library", json!(LIBRARY)),
+        ("grant", json!(gid(&k.grant))),
+        ("at", json!(NOW)),
+        ("head", json!(4711)),
+    ] {
+        projection[key] = value;
+    }
+    let projection_nonce: [u8; 12] = bytes("projection nonce", 12).try_into().unwrap();
+    let projection_sealed = den_assistant::seal_projection(
+        &read_key,
+        LIBRARY,
+        &gid(&k.grant),
+        &serde_json::to_vec(&projection).unwrap(),
+        &projection_nonce,
+    )
+    .unwrap();
     json!({
         "library": LIBRARY,
         "now": NOW,
@@ -1426,6 +1773,15 @@ fn fixed() -> Value {
             "key": hex(&*wrap_key(&refresh_secret(), SUB)),
             "nonce": hex(&nonce),
             "wrapped": wrapped,
+        },
+        "read": {
+            "grant": gid(&k.grant),
+            "readKey": b64url(&read_key),
+            "claim": {"sub": SUB, "eseed": hex(&eseed("read claim")), "claim": read_claim,
+                "claimLength": read_claim.len()},
+            "wrap": {"session": SUB, "nonce": hex(&read_nonce), "wrapped": read_wrapped},
+            "projection": {"library": LIBRARY, "aad": hex(&den_assistant::projection_aad(LIBRARY, &gid(&k.grant))),
+                "nonce": hex(&projection_nonce), "plaintext": projection, "sealed": projection_sealed},
         },
     })
 }
