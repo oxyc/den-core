@@ -46,9 +46,13 @@ if [[ -d Swift/Artifacts/DenCoreFFI.xcframework ]]; then
 fi
 mv "$scratch/DenCoreFFI.xcframework" Swift/Artifacts/DenCoreFFI.xcframework
 
-cargo build --locked --release -p den-core-web --target wasm32-unknown-unknown
+# Two web modules: every op but the assistant's, and the assistant ops with their crypto, which a browser loads only
+# when it needs them. The name section only names functions for stack traces; errors come back as JSON either way.
+cargo build --locked --release -p den-core-web -p den-core-web-assistant --target wasm32-unknown-unknown
 bindgen="$root/.tools/bin/wasm-bindgen"
 if [[ ! -x "$bindgen" ]]; then bindgen=wasm-bindgen; fi
-"$bindgen" --target web --out-dir web/generated --out-name den_core \
+"$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core \
     target/wasm32-unknown-unknown/release/den_core_web.wasm
+"$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_assistant \
+    target/wasm32-unknown-unknown/release/den_core_web_assistant.wasm
 if [[ " $* " == *" --vendor "* ]]; then node scripts/vendor.mjs; fi
