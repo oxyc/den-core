@@ -837,10 +837,16 @@ pub fn unwrap(refresh_secret: &[u8], session: &str, wrapped: &str) -> Result<Gra
 
 /// HPKE `info` of a connection's read key sealed into an access token for den-mcp (`dr`, §15).
 pub const READ_INFO: &[u8] = b"den/assistant/read/v1";
-/// What a projection's additional data starts with (§15).
+/// What a projection part's additional data starts with (§15).
 pub const PROJECTION_CONTEXT: &[u8] = b"den/assistant/projection/v1";
-/// den-edge's cap on one sealed projection, in characters of base64url.
-pub const MAX_PROJECTION: usize = 262_144;
+/// The longest sealed part, in characters of base64url: 256 KiB.
+pub const MAX_PART: usize = 262_144;
+/// Compressed bytes per part: what fills [`MAX_PART`] once a nonce and a tag are added (196,608 − 28).
+pub const PART_BYTES: usize = 196_580;
+/// The most parts one projection may have.
+pub const MAX_PARTS: usize = 64;
+/// The largest projection plaintext, before compression and after inflating: 64 MiB.
+pub const MAX_PROJECTION_PLAINTEXT: usize = 64 << 20;
 
 /// A connection's read key, as den-mcp holds it from a `dr` claim. Wiped when dropped.
 pub struct ReadKey {
@@ -913,72 +919,247 @@ pub fn open_read_claim(
     })
 }
 
-/// A projection's additional data (§15): the context, the library id and the grant id, each after a zero byte.
-pub fn projection_aad(library: &str, grant: &str) -> Vec<u8> {
-    [
-        PROJECTION_CONTEXT,
-        b"\0",
-        library.as_bytes(),
-        b"\0",
-        grant.as_bytes(),
-    ]
-    .concat()
-}
-
-/// §15: a projection's plaintext under the grant's read key: unpadded base64url of `nonce ‖ ct ‖ tag`, AES-256-GCM
-/// with [`projection_aad`]. `InvalidRequest` past [`MAX_PROJECTION`]. The nonce MUST be fresh for every seal under
-/// one key.
-pub fn seal_projection(
-    key: &[u8; 32],
+/// One part's additional data (§15): the context, the library id, the grant id, the publish's set id, the part's index
+/// and the number of parts, each after a zero byte, numbers in decimal. A part therefore opens only in its own place
+/// in its own publish.
+pub fn projection_aad(
     library: &str,
     grant: &str,
-    plaintext: &[u8],
-    nonce: &[u8; 12],
-) -> Result<String, Error> {
-    let cipher = Aes256Gcm::new(key.into());
-    let ct = cipher
-        .encrypt(
-            nonce.into(),
-            Payload {
-                msg: plaintext,
-                aad: &projection_aad(library, grant),
-            },
-        )
-        .map_err(|_| Error::InvalidRequest)?;
-    let sealed = b64url(&[&nonce[..], &ct].concat());
-    if sealed.len() > MAX_PROJECTION {
-        return Err(Error::InvalidRequest);
+    set: &str,
+    index: usize,
+    count: usize,
+) -> Vec<u8> {
+    let mut out = PROJECTION_CONTEXT.to_vec();
+    for field in [library, grant, set, &index.to_string(), &count.to_string()] {
+        out.push(0);
+        out.extend_from_slice(field.as_bytes());
     }
-    Ok(sealed)
+    out
 }
 
-/// §15: den-mcp's side of [`seal_projection`]: the projection object, checked to be v1 and to name this library and
-/// grant.
+/// A sealed projection: the publish's set id (32 hex) and its parts, in order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SealedProjection {
+    pub set: String,
+    pub parts: Vec<String>,
+}
+
+fn derive(random: &[u8; 32], info: &[&[u8]], out: &mut [u8]) {
+    Hkdf::<Sha256>::new(None, random)
+        .expand(&info.concat(), out)
+        .expect("a short HKDF-SHA256 output");
+}
+
+/// §15: a projection (the expanded object: `v`, `library`, `grant`, `at`, `head`, `watchlist`, `continue`, `seen`)
+/// written compact, compressed with raw DEFLATE, split into parts of [`PART_BYTES`] and each sealed under the read
+/// key. The set id and every part's nonce derive from `random`, which MUST be fresh for every call under one key.
+/// `InvalidRequest` for a projection that is not one, or past [`MAX_PROJECTION_PLAINTEXT`] or [`MAX_PARTS`].
+pub fn seal_projection(
+    key: &[u8; 32],
+    projection: &Value,
+    random: &[u8; 32],
+) -> Result<SealedProjection, Error> {
+    let library = projection["library"]
+        .as_str()
+        .ok_or(Error::InvalidRequest)?;
+    let grant = projection["grant"].as_str().ok_or(Error::InvalidRequest)?;
+    let plain = projection_plaintext(projection)?;
+    let deflated = miniz_oxide::deflate::compress_to_vec(&plain, 9);
+    let count = deflated.len().div_ceil(PART_BYTES);
+    if count > MAX_PARTS {
+        return Err(Error::InvalidRequest);
+    }
+    let mut set = [0u8; 16];
+    derive(random, &[b"den/assistant/projection/set/v1"], &mut set);
+    let set = hex(&set);
+    let cipher = Aes256Gcm::new(key.into());
+    let mut parts = Vec::with_capacity(count);
+    for (index, chunk) in deflated.chunks(PART_BYTES).enumerate() {
+        let mut nonce = [0u8; 12];
+        derive(
+            random,
+            &[
+                b"den/assistant/projection/nonce/v1\0",
+                index.to_string().as_bytes(),
+            ],
+            &mut nonce,
+        );
+        let ct = cipher
+            .encrypt(
+                (&nonce).into(),
+                Payload {
+                    msg: chunk,
+                    aad: &projection_aad(library, grant, &set, index, count),
+                },
+            )
+            .map_err(|_| Error::InvalidRequest)?;
+        parts.push(b64url(&[&nonce[..], &ct].concat()));
+    }
+    Ok(SealedProjection { set, parts })
+}
+
+/// §15: den-mcp's side of [`seal_projection`]: every part opened in its place, the whole inflated (at most
+/// [`MAX_PROJECTION_PLAINTEXT`]) and read back to the expanded projection, which must name this library and grant.
+/// `DoesNotOpen` for anything else — a missing, extra, reordered or foreign part included.
 pub fn open_projection(
     key: &[u8; 32],
     library: &str,
     grant: &str,
-    sealed: &str,
+    set: &str,
+    parts: &[String],
 ) -> Result<Value, Error> {
-    let bytes = (sealed.len() <= MAX_PROJECTION)
-        .then(|| b64url_decode(sealed))
-        .flatten()
-        .filter(|b| b.len() >= 12 + TAG_LEN)
-        .ok_or(Error::DoesNotOpen)?;
+    let count = parts.len();
+    if count == 0 || count > MAX_PARTS || !lower_hex_id(set) {
+        return Err(Error::DoesNotOpen);
+    }
     let cipher = Aes256Gcm::new(key.into());
-    let nonce: &[u8; 12] = bytes[..12].try_into().expect("12 bytes");
-    let plain = cipher
-        .decrypt(
-            nonce.into(),
-            Payload {
-                msg: &bytes[12..],
-                aad: &projection_aad(library, grant),
-            },
-        )
-        .map_err(|_| Error::DoesNotOpen)?;
-    let value: Value = serde_json::from_slice(&plain).map_err(|_| Error::DoesNotOpen)?;
-    let names = value["v"] == 1 && value["library"] == library && value["grant"] == grant;
-    names.then_some(value).ok_or(Error::DoesNotOpen)
+    let mut deflated = Vec::new();
+    for (index, part) in parts.iter().enumerate() {
+        let bytes = (part.len() <= MAX_PART)
+            .then(|| b64url_decode(part))
+            .flatten()
+            .filter(|b| b.len() > 12 + TAG_LEN)
+            .ok_or(Error::DoesNotOpen)?;
+        let nonce: &[u8; 12] = bytes[..12].try_into().expect("12 bytes");
+        let plain = cipher
+            .decrypt(
+                nonce.into(),
+                Payload {
+                    msg: &bytes[12..],
+                    aad: &projection_aad(library, grant, set, index, count),
+                },
+            )
+            .map_err(|_| Error::DoesNotOpen)?;
+        deflated.extend_from_slice(&plain);
+    }
+    let plain =
+        miniz_oxide::inflate::decompress_to_vec_with_limit(&deflated, MAX_PROJECTION_PLAINTEXT)
+            .map_err(|_| Error::DoesNotOpen)?;
+    let compact: Value = serde_json::from_slice(&plain).map_err(|_| Error::DoesNotOpen)?;
+    if compact["library"] != library || compact["grant"] != grant {
+        return Err(Error::DoesNotOpen);
+    }
+    expand(&compact).ok_or(Error::DoesNotOpen)
+}
+
+/// §15: the plaintext a projection compresses: the JCS of its compact form. `InvalidRequest` for a projection that is
+/// not one, or past [`MAX_PROJECTION_PLAINTEXT`].
+pub fn projection_plaintext(projection: &Value) -> Result<Vec<u8>, Error> {
+    let plain = serde_json::to_vec(&compact(projection).ok_or(Error::InvalidRequest)?)
+        .map_err(|_| Error::InvalidRequest)?;
+    if plain.len() > MAX_PROJECTION_PLAINTEXT {
+        return Err(Error::InvalidRequest);
+    }
+    Ok(plain)
+}
+
+fn title_of(value: &Value) -> Option<(String, u64)> {
+    let media = value["type"]
+        .as_str()
+        .filter(|t| matches!(*t, "movie" | "tv"))?;
+    Some((media.to_owned(), value["id"].as_u64()?))
+}
+
+/// The compact form (§15): titles once, in a table sorted by type and id; each list's entries as arrays that index it.
+fn compact(view: &Value) -> Option<Value> {
+    let lists = ["watchlist", "continue", "seen"];
+    let mut titles: Vec<(String, u64)> = Vec::new();
+    for list in lists {
+        for entry in view[list].as_array()? {
+            titles.push(title_of(&entry["title"])?);
+        }
+    }
+    titles.sort();
+    titles.dedup();
+    let index =
+        |entry: &Value| title_of(&entry["title"]).and_then(|t| titles.binary_search(&t).ok());
+    let coordinate = |entry: &Value, key: &str| entry.get(key).cloned().unwrap_or(Value::Null);
+    let watchlist = view["watchlist"]
+        .as_array()?
+        .iter()
+        .map(|e| Some(json!([index(e)?, e["addedAt"]])))
+        .collect::<Option<Vec<_>>>()?;
+    let continuing = view["continue"]
+        .as_array()?
+        .iter()
+        .map(|e| {
+            Some(json!([
+                index(e)?,
+                e["action"],
+                coordinate(e, "season"),
+                coordinate(e, "episode"),
+                e["fraction"],
+                e["at"]
+            ]))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let seen = view["seen"]
+        .as_array()?
+        .iter()
+        .map(|e| {
+            Some(json!([
+                index(e)?,
+                coordinate(e, "season"),
+                coordinate(e, "episode"),
+                e["at"]
+            ]))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(json!({
+        "v": 1, "library": view["library"], "grant": view["grant"], "at": view["at"], "head": view["head"],
+        "titles": titles.iter().map(|(t, id)| json!([t, id])).collect::<Vec<_>>(),
+        "watchlist": watchlist, "continue": continuing, "seen": seen,
+    }))
+}
+
+/// The expanded form den-mcp reads, from the compact one.
+fn expand(compact: &Value) -> Option<Value> {
+    if compact["v"] != 1 {
+        return None;
+    }
+    let titles = compact["titles"]
+        .as_array()?
+        .iter()
+        .map(|t| {
+            let media = t[0].as_str().filter(|m| matches!(*m, "movie" | "tv"))?;
+            Some(json!({"type": media, "id": t[1].as_u64()?}))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let title = |row: &Value| titles.get(usize::try_from(row[0].as_u64()?).ok()?).cloned();
+    let place = |entry: &mut Value, season: &Value, episode: &Value| {
+        if !season.is_null() {
+            entry["season"] = season.clone();
+        }
+        if !episode.is_null() {
+            entry["episode"] = episode.clone();
+        }
+    };
+    let rows = |list: &str| compact[list].as_array().cloned();
+    let watchlist = rows("watchlist")?
+        .iter()
+        .map(|r| Some(json!({"title": title(r)?, "addedAt": r[1]})))
+        .collect::<Option<Vec<_>>>()?;
+    let continuing = rows("continue")?
+        .iter()
+        .map(|r| {
+            let mut entry =
+                json!({"title": title(r)?, "action": r[1], "fraction": r[4], "at": r[5]});
+            place(&mut entry, &r[2], &r[3]);
+            Some(entry)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let seen = rows("seen")?
+        .iter()
+        .map(|r| {
+            let mut entry = json!({"title": title(r)?, "at": r[3]});
+            place(&mut entry, &r[1], &r[2]);
+            Some(entry)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(json!({
+        "v": 1, "library": compact["library"], "grant": compact["grant"], "at": compact["at"],
+        "head": compact["head"], "watchlist": watchlist, "continue": continuing, "seen": seen,
+    }))
 }
 
 #[cfg(test)]

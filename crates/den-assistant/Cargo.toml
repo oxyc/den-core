@@ -15,6 +15,8 @@ hkdf.workspace = true
 sha2.workspace = true
 zeroize.workspace = true
 rand_core.workspace = true
+# Projections (§15) are raw DEFLATE: the same pure-Rust compressor, at the same pinned version, as library v4.
+miniz_oxide.workspace = true
 
 [dev-dependencies]
 # The official X-Wing and HPKE-PQ vectors: X-Wing's own, and HPKE's for X-Wing with HKDF-SHA256, whose only published

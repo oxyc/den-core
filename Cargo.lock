@@ -376,6 +376,7 @@ dependencies = [
  "ed25519-dalek",
  "hkdf",
  "hpke",
+ "miniz_oxide",
  "rand_core",
  "serde_json",
  "sha2",

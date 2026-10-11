@@ -509,11 +509,11 @@ pub fn projection(
     }
     let random = seed(random)?;
     let (watchlist, continuing, seen, skipped) = crate::projection::lists(lib, now as i64)?;
-    let lists = (watchlist, continuing, seen);
+    let counts =
+        json!({"watchlist": watchlist.len(), "continue": continuing.len(), "seen": seen.len()});
+    let (content, digest) = crate::projection::content((watchlist, continuing, seen));
     let mut publish = Vec::new();
     let mut delete = Vec::new();
-    let mut digest = String::new();
-    let mut counts = Value::Null;
     for (id, value) in settings(read_row, READ_ROW)?.into_iter().flatten() {
         let live = read_state(id, value, grants_row, local_revoked, now)? == Some("active");
         let record = held(value).and_then(|o| read_in(id, &o));
@@ -521,27 +521,19 @@ pub fn projection(
             delete.push(json!(id));
             continue;
         };
-        let (plain, hash) = crate::projection::plaintext(lib, id, &lists, now);
-        digest = hash;
-        counts = json!({
-            "watchlist": plain["watchlist"].as_array().map_or(0, Vec::len),
-            "continue": plain["continue"].as_array().map_or(0, Vec::len),
-            "seen": plain["seen"].as_array().map_or(0, Vec::len),
-        });
+        let view = crate::projection::view(lib, id, &content, now);
         let sealed = den_assistant::seal_projection(
             &key,
-            lib.library,
-            id,
-            &canonical(&plain),
-            &crate::projection::nonce(&random, id),
+            &view,
+            &crate::projection::random_for(&random, id),
         )
         .map_err(|_| "too_large")?;
-        publish.push(json!({"grant": id, "sealed": sealed}));
+        publish.push(json!({"grant": id, "set": sealed.set, "parts": sealed.parts}));
     }
     Ok(json!({
         "publish": publish,
         "delete": delete,
-        "digest": if digest.is_empty() { Value::Null } else { json!(digest) },
+        "digest": digest,
         "counts": counts,
         "skipped": skipped,
     }))

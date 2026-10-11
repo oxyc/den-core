@@ -10,11 +10,8 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-pub const MAX_WATCHLIST: usize = 500;
-pub const MAX_CONTINUE: usize = 100;
-pub const MAX_SEEN: usize = 1000;
 const WATCHED: f64 = 0.95;
-const NONCE_INFO: &[u8] = b"den/assistant/projection/nonce/v1";
+const RANDOM_INFO: &[u8] = b"den/assistant/projection/grant/v1\0";
 
 /// What a projection is built from: the library's documents, the series layouts the client knows, and the log head
 /// it read them at.
@@ -231,41 +228,30 @@ fn push_plays(seen: &mut Vec<Value>, state: &Value, base: Value) {
     }
 }
 
-/// The projection object for one grant (§15), and the digest of everything in it but who it is for and when.
-pub fn plaintext(
-    lib: &Library,
-    grant: &str,
-    lists: &(Vec<Value>, Vec<Value>, Vec<Value>),
-    now: u64,
-) -> (Value, String) {
-    let cut = |list: &Vec<Value>, max: usize| {
-        (
-            list.iter().take(max).cloned().collect::<Vec<_>>(),
-            list.len().saturating_sub(max),
-        )
-    };
-    let (watchlist, w) = cut(&lists.0, MAX_WATCHLIST);
-    let (continuing, c) = cut(&lists.1, MAX_CONTINUE);
-    let (seen, s) = cut(&lists.2, MAX_SEEN);
-    let content = json!({
-        "watchlist": watchlist, "continue": continuing, "seen": seen,
-        "omitted": {"watchlist": w, "continue": c, "seen": s},
-    });
-    let digest = den_assistant::hex(&Sha256::digest(canonical(&content)));
+/// The projection object for one grant (§15): the lists, with who it is for, when, and the log head they were read at.
+pub fn view(lib: &Library, grant: &str, content: &Value, now: u64) -> Value {
     let mut object = content.as_object().cloned().expect("an object");
     object.insert("v".into(), json!(1));
     object.insert("library".into(), json!(lib.library));
     object.insert("grant".into(), json!(grant));
     object.insert("at".into(), json!(now));
     object.insert("head".into(), json!(lib.head));
-    (Value::Object(object), digest)
+    Value::Object(object)
 }
 
-/// A seal's nonce for one grant from the call's 32 random bytes: HKDF-SHA256(ikm = random, info = context ‖ grant).
-pub fn nonce(random: &[u8; 32], grant: &str) -> [u8; 12] {
-    let mut out = [0u8; 12];
+/// The lists as one object, and its digest: what changed since the last publish, whoever it is for and whenever.
+pub fn content(lists: (Vec<Value>, Vec<Value>, Vec<Value>)) -> (Value, String) {
+    let content = json!({"watchlist": lists.0, "continue": lists.1, "seen": lists.2});
+    let digest = den_assistant::hex(&Sha256::digest(canonical(&content)));
+    (content, digest)
+}
+
+/// One grant's 32 random bytes for its seal, from the call's: HKDF-SHA256(ikm = random, info = context ‖ grant), so
+/// one call's grants never share a set id or a nonce.
+pub fn random_for(random: &[u8; 32], grant: &str) -> [u8; 32] {
+    let mut out = [0u8; 32];
     Hkdf::<Sha256>::new(None, random)
-        .expand(&[NONCE_INFO, grant.as_bytes()].concat(), &mut out)
-        .expect("12 bytes is a valid HKDF-SHA256 length");
+        .expand(&[RANDOM_INFO, grant.as_bytes()].concat(), &mut out)
+        .expect("32 bytes is a valid HKDF-SHA256 length");
     out
 }
