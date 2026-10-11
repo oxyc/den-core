@@ -1283,71 +1283,109 @@ fn cases() -> Vec<Case> {
 
 const HOUR_: u64 = HOUR;
 
-/// §15's caps keep the largest projection under den-edge's limit: every list past its cap, every id and time at the
-/// largest the wire allows, fractions with all their digits.
+/// A large library projects whole (§15): 5,000 on the watchlist, 500 in Continue Watching and 50,000 plays in Seen,
+/// with ids, times and fractions at full length. It seals into parts no larger than den-edge's, which open back to
+/// every entry; parts of two publishes don't mix, and parts out of order don't open.
 #[test]
-fn the_largest_projection_fits() {
-    let now: u64 = 9_000_000_000_000_000;
+fn a_large_library_projects_whole() {
+    let now: u64 = 1_790_000_000_000;
     let big = 9_007_199_254_740_991u64;
     let mut documents = Vec::new();
-    for i in 0..600u64 {
+    for i in 0..5_000u64 {
         documents.push(
             json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": big - i},
-            "status": {"value": "watchlist", "at": [now - i, 0, D]}, "addedAt": now - i}),
+            "status": {"value": "watchlist", "at": [now - i, 0, D]}, "addedAt": now - i * 1_000}),
         );
     }
-    for i in 0..200u64 {
-        let plays: Map<String, Value> = (0..8)
-            .map(|p| (p.to_string(), json!(now - 10_000 - i * 10 - p)))
+    for i in 0..500u64 {
+        documents.push(
+            json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": big - 10_000 - i},
+            "status": {"value": "inProgress", "at": [now - i, 0, D]},
+            "resume": {"value": 0.123_456_789_012_345_67, "at": [now - i * 1_000, 0, D], "viewing": 0}}),
+        );
+    }
+    // 500 series of 100 episodes, each watched once: 50,000 plays.
+    for s in 0..500u64 {
+        let episodes: Map<String, Value> = (1..=100u64)
+            .map(|e| {
+                let at = now - 3_600_000 - (s * 100 + e) * 60_000;
+                (
+                    e.to_string(),
+                    json!({"progress": {"value": 1, "at": [at, 0, D], "viewing": 0}, "imported": false,
+                        "plays": {"0": at}, "cleared": null}),
+                )
+            })
             .collect();
         documents.push(
-            json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": big - 1000 - i},
-            "status": {"value": "watched", "at": [now - i, 0, D]},
-            "resume": {"value": 1, "at": [now - i, 0, D], "viewing": 7},
-            "watch": {"plays": plays, "cleared": null}}),
+            json!({"format": 4, "kind": "title", "title": {"type": "tv", "id": big - 20_000 - s},
+            "status": {"value": "watched", "at": [now - s, 0, D]}}),
         );
-    }
-    // The newest Seen entries are episodes with the longest coordinates.
-    let episodes: Map<String, Value> = (99_000..=99_999u64)
-        .map(|e| {
-            (
-                e.to_string(),
-                json!({"progress": {"value": 1, "at": [now - (99_999 - e), 0, D], "viewing": 0},
-                    "imported": false, "plays": {"0": now - (99_999 - e)}, "cleared": null}),
-            )
-        })
-        .collect();
-    documents.push(
-        json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": big - 3000},
-        "season": big, "seasonReset": null, "episodes": episodes}),
-    );
-    for i in 0..150u64 {
         documents.push(
-            json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": big - 2000 - i},
-            "status": {"value": "inProgress", "at": [now - i, 0, D]},
-            "resume": {"value": 0.123_456_789_012_345_67, "at": [now - i, 0, D], "viewing": 0}}),
+            json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": big - 20_000 - s},
+            "season": 1, "seasonReset": null, "episodes": episodes}),
         );
     }
     let k = keys();
+    let read_key = seed("read key");
     let reads = row(
         "assistant-read",
         json!({gid(&k.grant): setting(read_value(&k.grant, "read key", now - DAY), now - DAY)}),
     );
-    let answer = ok(
-        &json!({"op": "assistant_projection", "library": LIBRARY, "documents": documents,
-        "head": big, "read": reads, "random": hex(&seed("big")), "now": now}),
-    );
-    let sealed = answer["publish"][0]["sealed"].as_str().unwrap();
+    let request = |random: &str| {
+        json!({"op": "assistant_projection", "library": LIBRARY, "documents": documents,
+        "head": big, "read": reads, "random": hex(&seed(random)), "now": now})
+    };
+    let started = std::time::Instant::now();
+    let answer = ok(&request("big"));
+    let built = started.elapsed();
     assert_eq!(
         answer["counts"],
-        json!({"watchlist": 500, "continue": 100, "seen": 1000})
+        json!({"watchlist": 5_000, "continue": 500, "seen": 50_000})
+    );
+    let set = answer["publish"][0]["set"].as_str().unwrap().to_owned();
+    let parts: Vec<String> = serde_json::from_value(answer["publish"][0]["parts"].clone()).unwrap();
+    assert!(parts.iter().all(|p| p.len() <= den_assistant::MAX_PART));
+    let started = std::time::Instant::now();
+    let opened =
+        den_assistant::open_projection(&read_key, LIBRARY, &gid(&k.grant), &set, &parts).unwrap();
+    let read = started.elapsed();
+    for (list, n) in [("watchlist", 5_000), ("continue", 500), ("seen", 50_000)] {
+        assert_eq!(opened[list].as_array().unwrap().len(), n, "{list}");
+    }
+    let total: usize = parts.iter().map(String::len).sum();
+    eprintln!(
+        "large projection: {} parts, {total} characters sealed; built in {built:?}, opened in {read:?}",
+        parts.len()
+    );
+    assert!(parts.len() > 1, "the test should cover more than one part");
+    // Two publishes don't mix, and a set's parts open only in order and complete.
+    let other = ok(&request("other"));
+    let other_parts: Vec<String> =
+        serde_json::from_value(other["publish"][0]["parts"].clone()).unwrap();
+    let other_set = other["publish"][0]["set"].as_str().unwrap();
+    assert_ne!(other_set, set);
+    let mut mixed = parts.clone();
+    mixed[1] = other_parts[1].clone();
+    assert!(
+        den_assistant::open_projection(&read_key, LIBRARY, &gid(&k.grant), &set, &mixed).is_err()
     );
     assert!(
-        sealed.len() <= den_assistant::MAX_PROJECTION,
-        "{}",
-        sealed.len()
+        den_assistant::open_projection(&read_key, LIBRARY, &gid(&k.grant), other_set, &parts)
+            .is_err()
     );
-    eprintln!("largest projection: {} characters", sealed.len());
+    let mut swapped = parts.clone();
+    swapped.swap(0, 1);
+    assert!(
+        den_assistant::open_projection(&read_key, LIBRARY, &gid(&k.grant), &set, &swapped).is_err()
+    );
+    assert!(den_assistant::open_projection(
+        &read_key,
+        LIBRARY,
+        &gid(&k.grant),
+        &set,
+        &parts[..parts.len() - 1]
+    )
+    .is_err());
 }
 
 fn st(t: u64) -> Value {
@@ -1416,7 +1454,6 @@ fn expected_lists() -> Value {
             {"title": {"type": "movie", "id": 603}, "at": t(9)},
             {"title": {"type": "movie", "id": 27205}, "at": null},
         ],
-        "omitted": {"watchlist": 0, "continue": 0, "seen": 0},
     })
 }
 
@@ -1477,15 +1514,12 @@ fn read_cases() -> Vec<Case> {
     assert_eq!(answer["publish"].as_array().unwrap().len(), 1);
     let published = &answer["publish"][0];
     assert_eq!(published["grant"], gid(&k.grant));
-    let opened = den_assistant::open_projection(
-        &read_key,
-        LIBRARY,
-        &gid(&k.grant),
-        published["sealed"].as_str().unwrap(),
-    )
-    .unwrap();
+    let set = published["set"].as_str().unwrap();
+    let parts: Vec<String> = serde_json::from_value(published["parts"].clone()).unwrap();
+    let opened =
+        den_assistant::open_projection(&read_key, LIBRARY, &gid(&k.grant), set, &parts).unwrap();
     let expected = expected_lists();
-    for key in ["watchlist", "continue", "seen", "omitted"] {
+    for key in ["watchlist", "continue", "seen"] {
         assert_eq!(opened[key], expected[key], "{key}");
     }
     assert_eq!(
@@ -1497,20 +1531,13 @@ fn read_cases() -> Vec<Case> {
         json!(hex(&Sha256::digest(serde_json::to_vec(&expected).unwrap())))
     );
     // Another grant's id, or another library's, does not open it.
-    assert!(den_assistant::open_projection(
-        &read_key,
-        OTHER_LIBRARY,
-        &gid(&k.grant),
-        published["sealed"].as_str().unwrap()
-    )
-    .is_err());
-    assert!(den_assistant::open_projection(
-        &read_key,
-        LIBRARY,
-        &gid(&k.limited),
-        published["sealed"].as_str().unwrap()
-    )
-    .is_err());
+    assert!(
+        den_assistant::open_projection(&read_key, OTHER_LIBRARY, &gid(&k.grant), set, &parts)
+            .is_err()
+    );
+    assert!(
+        den_assistant::open_projection(&read_key, LIBRARY, &gid(&k.limited), set, &parts).is_err()
+    );
     add(
         "assistant_projection: the watchlist, Continue Watching and Seen for each live read grant",
         request,
@@ -1728,15 +1755,12 @@ fn fixed() -> Value {
     ] {
         projection[key] = value;
     }
-    let projection_nonce: [u8; 12] = bytes("projection nonce", 12).try_into().unwrap();
-    let projection_sealed = den_assistant::seal_projection(
-        &read_key,
-        LIBRARY,
-        &gid(&k.grant),
-        &serde_json::to_vec(&projection).unwrap(),
-        &projection_nonce,
-    )
-    .unwrap();
+    let projection_random: [u8; 32] = bytes("projection random", 32).try_into().unwrap();
+    let projection_sealed =
+        den_assistant::seal_projection(&read_key, &projection, &projection_random).unwrap();
+    let compact =
+        String::from_utf8(den_assistant::projection_plaintext(&projection).unwrap()).unwrap();
+    let count = projection_sealed.parts.len();
     json!({
         "library": LIBRARY,
         "now": NOW,
@@ -1780,8 +1804,10 @@ fn fixed() -> Value {
             "claim": {"sub": SUB, "eseed": hex(&eseed("read claim")), "claim": read_claim,
                 "claimLength": read_claim.len()},
             "wrap": {"session": SUB, "nonce": hex(&read_nonce), "wrapped": read_wrapped},
-            "projection": {"library": LIBRARY, "aad": hex(&den_assistant::projection_aad(LIBRARY, &gid(&k.grant))),
-                "nonce": hex(&projection_nonce), "plaintext": projection, "sealed": projection_sealed},
+            "projection": {"library": LIBRARY, "random": hex(&projection_random), "view": projection,
+                "plaintext": compact, "set": projection_sealed.set,
+                "aad0": hex(&den_assistant::projection_aad(LIBRARY, &gid(&k.grant), &projection_sealed.set, 0, count)),
+                "parts": projection_sealed.parts},
         },
     })
 }

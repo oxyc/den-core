@@ -182,20 +182,50 @@ fn den_spec_assistant_v1_fixed() {
         Some(Error::InvalidRequest)
     );
     let p = &r["projection"];
-    assert_eq!(projection_aad(library, grant.id()), unhex(&p["aad"]));
-    let nonce: [u8; 12] = unhex(&p["nonce"]).try_into().unwrap();
-    let sealed = seal_projection(
-        &read_key,
-        library,
-        grant.id(),
-        &serde_json::to_vec(&p["plaintext"]).unwrap(),
-        &nonce,
-    )
-    .unwrap();
-    assert_eq!(sealed, p["sealed"]);
     assert_eq!(
-        open_projection(&read_key, library, grant.id(), &sealed).unwrap(),
+        String::from_utf8(projection_plaintext(&p["view"]).unwrap()).unwrap(),
         p["plaintext"]
     );
-    assert!(open_projection(&[0; 32], library, grant.id(), &sealed).is_err());
+    let random: [u8; 32] = unhex(&p["random"]).try_into().unwrap();
+    let sealed = seal_projection(&read_key, &p["view"], &random).unwrap();
+    let parts: Vec<String> = serde_json::from_value(p["parts"].clone()).unwrap();
+    assert_eq!(
+        (sealed.set.as_str(), &sealed.parts),
+        (p["set"].as_str().unwrap(), &parts)
+    );
+    assert_eq!(
+        projection_aad(library, grant.id(), &sealed.set, 0, parts.len()),
+        unhex(&p["aad0"])
+    );
+    assert_eq!(
+        open_projection(&read_key, library, grant.id(), &sealed.set, &parts).unwrap(),
+        p["view"]
+    );
+    assert!(open_projection(&[0; 32], library, grant.id(), &sealed.set, &parts).is_err());
+}
+
+/// The inflate limit (§15): a part set that inflates past 64 MiB does not open, however small it is sealed.
+#[test]
+fn a_decompression_bomb_does_not_open() {
+    let key = [5u8; 32];
+    let library = "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e";
+    let grant = "d7047d7faa4c6f77e1919c132bb6bd9f";
+    let set = "00112233445566778899aabbccddeeff";
+    let bomb = vec![b' '; MAX_PROJECTION_PLAINTEXT + 1];
+    let deflated = miniz_oxide::deflate::compress_to_vec(&bomb, 9);
+    assert!(deflated.len() < PART_BYTES);
+    use aes_gcm::aead::{Aead, Payload};
+    use aes_gcm::{Aes256Gcm, KeyInit};
+    let nonce = [1u8; 12];
+    let ct = Aes256Gcm::new((&key).into())
+        .encrypt(
+            (&nonce).into(),
+            Payload {
+                msg: &deflated,
+                aad: &projection_aad(library, grant, set, 0, 1),
+            },
+        )
+        .unwrap();
+    let part = b64url(&[&nonce[..], &ct].concat());
+    assert!(open_projection(&key, library, grant, set, &[part]).is_err());
 }
