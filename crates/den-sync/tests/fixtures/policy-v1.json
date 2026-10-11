@@ -6585,7 +6585,8 @@
       "revokedAt": null,
       "state": "revoked"
      }
-    ]
+    ],
+    "reads": []
    },
    "request": {
     "grants": {
@@ -7359,6 +7360,541 @@
     "now": 1790000000000,
     "op": "assistant_open",
     "sealed": "bi7KUrl7LV8enNSK8HojqoV64mpz4deW-EiyrEk0bibTFxlObojwPYuVMTMtr9f1zCbsdKk9BQCj1mZGr5snxJeMC9ivNmatXVBexK5GiY4SFounL7bExUsv61j2SjoadhJQoMlXw0mbgkxiNHB2nQV-NSpSpk4lIIZLoUh7ROwCHm8HllTbHpdxZkF7vkbY1pMCXWz0jQ5GQqb-mGAMbabwMj1rVPlA_cKz8KJkg7MEJYS1p5T1fP_OutqmDSohXzVR-jROb_Jdgcs6z7ka7QK9h-JPGfV2esVpNce6Nw5FwRfIY_AYXtpPMciQHxLTGlaNQV2geT-Eqxc1VVotBdn-Z5E_Dytebo-BixhV3JG562ViQrqQS8WI5dOr_fGlgXO1cc7cG_B2sRa9CnrrnXzyK0gbuwBvwWKxGspv7kGsMyhA04eO4RkOB0Ck0NNuhF-_529gt8306IiZwLslUhhWqmOS9Ma3oAPG28OKEtHzfWMrrBieTcuzuWJH0hvSsMGhQ-Okbe4r-a_r7MqV9KwxorPfg0J7epkowZGkKwnbS2XthaMk77j_rZPkqUyC32V2iP7LlByTheGGjscCT4KGB51j8Az6Wsz5JCqjALsj6tnK1JMlikIIxSkvGKSgNiSSOwSFvKiny6D-eWctjzpohgdGCkzO47W-3F0pPnAQV75sHNC8HSIBm7h-tDXp1c9OEmDxih499U5C9Tijvdn_l4GRCwxvDQp8d19gRev7UTAkSzuSa5CurVupOnTGZAPNlqta4KhdLamT2KVkiZQ-6WockO_FFzg_VZEK8nP2tWYrOM0dGMGbiEGgcTw_kM-fWcbvCB9aYHihU1D39KrpFFo50xztoabqL0wRVsrji8y5ItpUeAQETLt4xqG4Px6Vejgpv8OP9rAnwWzM258MtGw7MWE9bTkPqkMzMq7vFClLV6119VcYdogxD2TLEKDtmKO2d-v-xXKeIJLW2Cp13b--D0Dy3OYvSOONwfp6oO-LBK6nQ2r1ZA9PC6CIuXA3OlsXFvViyIXJOYFWFoYVK3oTd6ais1XQZdAWEmNXx0YBYMBeHRh8Z8MFar7GG5HHDCo1G4R5NYwN7r3Cw1CZe_rLiv3K-Zxo-oMpm5f2B-oBpQJklG76aSz_IoIUoPvLZGzJhMpQmgSMzHv67_ryfUA_F9Prhj62mspqx8ykaID694QCWbwjLqIweWb3ZZZLb5M6NlnYl7jCQL0CTF4zQrXaPQ5SKClaAbkKk89Dr5i_MAWVE5StpZxelWVRNjoh0LSWtgAT6UB0llRVqG7nyWQp_7x3Sw60M50Xjn1C6bmRhZKWjEEKJqLmh_BWOEzhV_zGVyGVjvi19Y6xHZcIaoRaayl0bG99IWsHPY3RbuussH61hYrb5kQ_7Mwu5I2kgYOpKRzrJkuxHmz0iUyug7-K79nnZyQdwla-nvNAoYLFhpRRZvAhTw7eIymTYNfKkUTOAxV0bRPBTsWTXeHcb7J5yLV72y19_Ddh__19NH2JI7SH28uEJTVu_rNUaght_D-m8KSAOhlL58UGm-R0VD5geqM-qaOc3o8GAmfm0i0Mlp78k4ygzrfaSjTe7PjwrpQuZWpnn8rrOR5i-HtqehAwIy1cHxMKT7Oop1I1gTHXG8w3vzYtcye-IaF65wINms1JGGxoBPyjRLElVsgvFnGUBUe4vvnPT7rLXh5NdBJixBIbec7y1tmsmfcthGLmWiOQkyN0Yz3egCLtDSTV1DGquzjLI04PO5mPYdMDhZVzGk4eHUSnFC5cM-F6pu_XWtXyLDlhKXdiBVKeWheSmAbf-8PJU8XhHj4JbWXKqV0JmS8fi2Z3hxWKuYkBbrD5tqFaZ_pjKJKiPCG32ISLZ1teelqjRKc"
+   }
+  },
+  {
+   "name": "assistant_keygen_read: the read key and its record, expiring in 30 days",
+   "ok": {
+    "key": "AnT77kYIMEcXvHr9Sq8a1Kw8O65rGj75hxMa7hl6pKc",
+    "setting": "d7047d7faa4c6f77e1919c132bb6bd9f",
+    "value": {
+     "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"key\":\"AnT77kYIMEcXvHr9Sq8a1Kw8O65rGj75hxMa7hl6pKc\",\"revokedAt\":null,\"v\":1}"
+    }
+   },
+   "request": {
+    "client": "Claude",
+    "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
+    "now": 1789136000000,
+    "op": "assistant_keygen_read",
+    "random": "0274fbee4608304717bc7afd4aaf1ad4ac3c3bae6b1a3ef987131aee197aa4a7"
+   }
+  },
+  {
+   "name": "assistant_grants: read records, a revocation of their grant counting",
+   "ok": {
+    "grants": [
+     {
+      "cap": 50,
+      "client": "ChatGPT",
+      "createdAt": 1789136000000,
+      "expiresAt": 1791728000000,
+      "grant": "0ad714db3029f1b328e84e1179ecf55e",
+      "ops": [
+       "seen",
+       "watchlist_add"
+      ],
+      "revokedAt": null,
+      "state": "active"
+     },
+     {
+      "cap": 3,
+      "client": "Claude",
+      "createdAt": 1789136000000,
+      "expiresAt": 1791728000000,
+      "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
+      "ops": [
+       "rate",
+       "seen",
+       "watchlist_add",
+       "watchlist_remove"
+      ],
+      "revokedAt": null,
+      "state": "active"
+     },
+     {
+      "cap": 50,
+      "client": "Claude",
+      "createdAt": 1789136000000,
+      "expiresAt": 1791728000000,
+      "grant": "fee3c42b428a8786487289d6d6ad544d",
+      "ops": [
+       "rate",
+       "seen",
+       "watchlist_add",
+       "watchlist_remove"
+      ],
+      "revokedAt": 1789996400000,
+      "state": "revoked"
+     }
+    ],
+    "reads": [
+     {
+      "client": "Claude",
+      "createdAt": 1789136000000,
+      "expiresAt": 1791728000000,
+      "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
+      "revokedAt": null,
+      "state": "active"
+     },
+     {
+      "client": "Claude",
+      "createdAt": 1789136000000,
+      "expiresAt": 1791728000000,
+      "grant": "fee3c42b428a8786487289d6d6ad544d",
+      "revokedAt": null,
+      "state": "revoked"
+     }
+    ]
+   },
+   "request": {
+    "grants": {
+     "kind": "set",
+     "name": "assistant-grants",
+     "schema": 2,
+     "values": {
+      "0ad714db3029f1b328e84e1179ecf55e": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"ChatGPT\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"ops\":[\"seen\",\"watchlist_add\"],\"pk\":\"_TnKJLgVq12UdAbQ0imPsV7mszV50f0_2cg2e4QKVM4\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "fee3c42b428a8786487289d6d6ad544d": {
+       "at": [
+        1789996400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"l2YsPJsOJOLBjjcMzL2nBcAR4PvpUKTr611TcMNJC-0\",\"revokedAt\":1789996400000,\"v\":1}"
+       }
+      }
+     }
+    },
+    "now": 1790000000000,
+    "op": "assistant_grants",
+    "read": {
+     "kind": "set",
+     "name": "assistant-read",
+     "schema": 2,
+     "values": {
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"key\":\"AnT77kYIMEcXvHr9Sq8a1Kw8O65rGj75hxMa7hl6pKc\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "fee3c42b428a8786487289d6d6ad544d": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"key\":\"8mENSooY02HtHop3pWci3a9ij3fMcvz6TuZS-hcztD0\",\"revokedAt\":null,\"v\":1}"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "name": "merge: assistant read records keep a revocation and the later expiry",
+   "ok": {
+    "kind": "set",
+    "name": "assistant-read",
+    "schema": 2,
+    "values": {
+     "d7047d7faa4c6f77e1919c132bb6bd9f": {
+      "at": [
+       7,
+       0,
+       "a1b2c3d4e5f60718"
+      ],
+      "value": {
+       "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1792592000000,\"key\":\"AnT77kYIMEcXvHr9Sq8a1Kw8O65rGj75hxMa7hl6pKc\",\"revokedAt\":1500,\"v\":1}"
+      }
+     }
+    }
+   },
+   "request": {
+    "a": {
+     "kind": "set",
+     "name": "assistant-read",
+     "schema": 2,
+     "values": {
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        6,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"key\":\"AnT77kYIMEcXvHr9Sq8a1Kw8O65rGj75hxMa7hl6pKc\",\"revokedAt\":1500,\"v\":1}"
+       }
+      }
+     }
+    },
+    "b": {
+     "kind": "set",
+     "name": "assistant-read",
+     "schema": 2,
+     "values": {
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        7,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1792592000000,\"key\":\"AnT77kYIMEcXvHr9Sq8a1Kw8O65rGj75hxMa7hl6pKc\",\"revokedAt\":null,\"v\":1}"
+       }
+      }
+     }
+    },
+    "op": "merge"
+   }
+  },
+  {
+   "name": "assistant_projection: the watchlist, Continue Watching and Seen for each live read grant",
+   "ok": {
+    "counts": {
+     "continue": 3,
+     "seen": 4,
+     "watchlist": 1
+    },
+    "delete": [
+     "0ad714db3029f1b328e84e1179ecf55e",
+     "b022f916e009de3d52089206f3695532",
+     "fee3c42b428a8786487289d6d6ad544d"
+    ],
+    "digest": "2934465320f16d034a261ca36d106bba7edcbf27a9694ceb4c6ecfd5450ba127",
+    "publish": [
+     {
+      "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
+      "sealed": "FjTc6jC8F7tdiiicMhYKozq3HL8KppBpW7GdY_x4nF0Q1Hlyycif2OQQpYwQfEO--71zVgV39T1_NiMuQzTvEqSuY0SASOC0BwPbVDr9IGSvtLlPsFEDw0VJm8HaX3l2a2_ipgqLD2A_YkGgYHMd-9IgNEWtudfLNYpsTc0lg8d3npc7m0wca7ciQMMBvdzgc5n2Ls25q_ayhYPiYjoMticvWkBeBpzLp9QGMvs9zMZdYDWhPST4IPu9qDjluazWJXgI7qlxlrhSyteAaiXvwyjp1BiZ5cynQ15ACRclBk2dd6Fw7S0sf9DK5tgOKL7N7jLwXRL48yhzTlrgXNIzH_dDgVFgzOIycxIP8uxm35BlIJWLwOckqptuM8QrvhpaPqnwcwaqN96htUzkXpCom422xSwD49Xxz37lMZOoHQaGT8CybmkS-ckCkcCTXYstwRn2gySo4ceOn5DLz7rU5CZ-8b7wZ3idJdFc3srITCiyUUHnmov4-g-z9OsR0-DAaGxi-NLGvtXELSPbCneS1Uvyw4kIzfRUoSntXtZisKe89JqLFWUDPRObH_XtaVkNQ3tzPWyKyrNIDjkpZsIThCVtQ-GEvF6pahe2rJmP-hY7dLtjHrlPU5zIaTVY3F4KjwQdl19JtS5mrhdnmYUf4H52n2QeEEjSjJDO-7fsWOVedTlXKnRgtTEFXMfRDkHMnNhLX0X5zKQRP-fBlbUYgjVzYM-uWkBAuwX2PpZG0RvLELgoz6go9vjHZS8jFw8oErGhWEwIswdxt74II9uHruLho55sXz0MQGnPpQeHL8wJkHvmpRoXcW8W0luKnnURj0wMDsrch9Hz1tp5bss2yqnE5esR6iuZ7PMRAVTmTOkJ22cEEWfJSRAs2vkps6aOEYav9sVBseQLy-MRufhvhA6n77ejsCe2AXxuTpMNOYFn2GQ-ctIg8WsDi1WaYIIZO_WrBCIbksnz9PBiKnXczutLdxwonKpB9aGV1ZHY89pPrxhm-otWNUiR6n9n0iLuqqZML0A-yCa2K64T-AQzgI_B38qGZnNdGoyznEmdc_GVUn63gvJiBulSDPrkG6PjlWULPrwmMZj8qHTia61HXQOoeWCSP2uPrYUpFakU1M8"
+     }
+    ],
+    "skipped": 0
+   },
+   "request": {
+    "documents": [
+     {
+      "addedAt": 1789964000000,
+      "format": 4,
+      "kind": "title",
+      "status": {
+       "at": [
+        1789964000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": "watchlist"
+      },
+      "title": {
+       "id": 550,
+       "type": "movie"
+      }
+     },
+     {
+      "addedAt": 1789960400000,
+      "deleted": {
+       "at": [
+        1789996400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": true
+      },
+      "format": 4,
+      "kind": "title",
+      "status": {
+       "at": [
+        1789960400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": "watchlist"
+      },
+      "title": {
+       "id": 13,
+       "type": "movie"
+      }
+     },
+     {
+      "format": 4,
+      "kind": "title",
+      "resume": {
+       "at": [
+        1789967600000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": 1,
+       "viewing": 0
+      },
+      "status": {
+       "at": [
+        1789967600000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": "watched"
+      },
+      "title": {
+       "id": 603,
+       "type": "movie"
+      },
+      "watch": {
+       "cleared": null,
+       "plays": {
+        "0": 1789967600000
+       }
+      }
+     },
+     {
+      "format": 4,
+      "kind": "title",
+      "status": {
+       "at": [
+        0,
+        1,
+        ""
+       ],
+       "value": "watched"
+      },
+      "title": {
+       "id": 27205,
+       "type": "movie"
+      }
+     },
+     {
+      "format": 4,
+      "kind": "title",
+      "resume": {
+       "at": [
+        1789971200000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "seconds": 2000,
+       "value": 0.4,
+       "viewing": 0
+      },
+      "status": {
+       "at": [
+        1789971200000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": "inProgress"
+      },
+      "title": {
+       "id": 680,
+       "type": "movie"
+      }
+     },
+     {
+      "format": 4,
+      "kind": "title",
+      "status": {
+       "at": [
+        1789978400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": "inProgress"
+      },
+      "title": {
+       "id": 1399,
+       "type": "tv"
+      }
+     },
+     {
+      "episodes": {
+       "1": {
+        "cleared": null,
+        "imported": false,
+        "plays": {
+         "0": 1789974800000
+        },
+        "progress": {
+         "at": [
+          1789974800000,
+          0,
+          "a1b2c3d4e5f60718"
+         ],
+         "value": 1,
+         "viewing": 0
+        }
+       },
+       "2": {
+        "cleared": null,
+        "imported": false,
+        "plays": {},
+        "progress": {
+         "at": [
+          1789978400000,
+          0,
+          "a1b2c3d4e5f60718"
+         ],
+         "value": 0.5,
+         "viewing": 0
+        }
+       }
+      },
+      "format": 4,
+      "kind": "season",
+      "season": 1,
+      "seasonReset": null,
+      "title": {
+       "id": 1399,
+       "type": "tv"
+      }
+     },
+     {
+      "episodes": {
+       "1": {
+        "cleared": null,
+        "imported": true,
+        "plays": {
+         "-9005409272740992": 1789982000000
+        }
+       }
+      },
+      "format": 4,
+      "kind": "season",
+      "season": 1,
+      "seasonReset": null,
+      "title": {
+       "id": 1396,
+       "type": "tv"
+      }
+     }
+    ],
+    "grants": {
+     "kind": "set",
+     "name": "assistant-grants",
+     "schema": 2,
+     "values": {
+      "0ad714db3029f1b328e84e1179ecf55e": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"ChatGPT\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"ops\":[\"seen\",\"watchlist_add\"],\"pk\":\"_TnKJLgVq12UdAbQ0imPsV7mszV50f0_2cg2e4QKVM4\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":3,\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"jftOjtUEDF6Jm8aGfb7qQZsWQBTKy8ED5zIpdrgtmk0\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "fee3c42b428a8786487289d6d6ad544d": {
+       "at": [
+        1789996400000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"cap\":50,\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"ops\":[\"rate\",\"seen\",\"watchlist_add\",\"watchlist_remove\"],\"pk\":\"l2YsPJsOJOLBjjcMzL2nBcAR4PvpUKTr611TcMNJC-0\",\"revokedAt\":1789996400000,\"v\":1}"
+       }
+      }
+     }
+    },
+    "head": 4711,
+    "layouts": {
+     "1396": {
+      "last_aired": {
+       "episode": 3,
+       "season": 1
+      },
+      "seasons": [
+       {
+        "episodes": 3,
+        "season": 1
+       }
+      ]
+     }
+    },
+    "library": "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e",
+    "localRevoked": [
+     "b022f916e009de3d52089206f3695532"
+    ],
+    "now": 1790000000000,
+    "op": "assistant_projection",
+    "random": "9c8b51a6e9216e23b1f472ea4d41c1f6bb32c18762ca965ae3cb4b9420ccf3fd",
+    "read": {
+     "kind": "set",
+     "name": "assistant-read",
+     "schema": 2,
+     "values": {
+      "0ad714db3029f1b328e84e1179ecf55e": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1787321600000,\"expiresAt\":1789913600000,\"key\":\"jNa-2AkD5az5afISUTcAHkr-ukSxXXWqnLePw2ZmcPo\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "b022f916e009de3d52089206f3695532": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"key\":\"QgCRcu0X1XPxqEVy4996dVSqozL611eXrBXxf0GkfRA\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "d7047d7faa4c6f77e1919c132bb6bd9f": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"key\":\"AnT77kYIMEcXvHr9Sq8a1Kw8O65rGj75hxMa7hl6pKc\",\"revokedAt\":null,\"v\":1}"
+       }
+      },
+      "fee3c42b428a8786487289d6d6ad544d": {
+       "at": [
+        1789136000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ],
+       "value": {
+        "string": "{\"client\":\"Claude\",\"createdAt\":1789136000000,\"expiresAt\":1791728000000,\"key\":\"8mENSooY02HtHop3pWci3a9ij3fMcvz6TuZS-hcztD0\",\"revokedAt\":null,\"v\":1}"
+       }
+      }
+     }
+    }
    }
   }
  ]

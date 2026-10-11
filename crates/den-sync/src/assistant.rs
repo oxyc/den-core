@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 pub const DROPBOX_ROW: &str = "assistant";
 pub const GRANTS_ROW: &str = "assistant-grants";
 pub const APPLIED_ROW: &str = "assistant-applied";
+/// Assistant reads (§15): one read record per connection that may read, by grant id.
+pub const READ_ROW: &str = "assistant-read";
 const DROPBOX_PREFIX: &str = "dropbox.";
 const CLIENT_MAX: usize = 80;
 
@@ -190,9 +192,46 @@ fn revoked_in(object: &Map<String, Value>) -> Option<u64> {
     object.get("revokedAt").and_then(safe)
 }
 
-/// How a grant setting ranks in a merge (§5): not a JSON object, a malformed object, a v1 grant, a newer version.
-/// Read with `revokedAt` set aside, so writing a revocation into a value never changes its rank.
-fn rank(id: &str, value: &Value) -> (u8, Option<Map<String, Value>>) {
+/// A read record (§15) checked against the grant id it is stored under: its read key, `expiresAt` and `revokedAt`.
+/// `None` when malformed.
+fn read_in(id: &str, object: &Map<String, Value>) -> Option<([u8; 32], u64, Option<u64>)> {
+    let keys = ["client", "createdAt", "expiresAt", "key", "revokedAt", "v"];
+    if object.len() != keys.len()
+        || !keys.iter().all(|k| object.contains_key(*k))
+        || object["v"] != 1
+    {
+        return None;
+    }
+    if id.len() != 32 || !id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return None;
+    }
+    let key: [u8; 32] = object["key"]
+        .as_str()
+        .and_then(den_assistant::b64url_decode)?
+        .try_into()
+        .ok()?;
+    if !object["client"].as_str().is_some_and(clean_client) {
+        return None;
+    }
+    safe(&object["createdAt"])?;
+    let expires = safe(&object["expiresAt"])?;
+    let revoked = match &object["revokedAt"] {
+        Value::Null => None,
+        other => Some(safe(other)?),
+    };
+    Some((key, expires, revoked))
+}
+
+/// Which records a setting of the grants or read row holds, for `rank` and the merge.
+#[derive(Clone, Copy)]
+pub enum Record {
+    Grant,
+    Read,
+}
+
+/// How a grant or read setting ranks in a merge (§5, §15): not a JSON object, a malformed object, a v1 record, a newer
+/// version. Read with `revokedAt` set aside, so writing a revocation into a value never changes its rank.
+fn rank(record: Record, id: &str, value: &Value) -> (u8, Option<Map<String, Value>>) {
     let Some(object) = held(value) else {
         return (0, None);
     };
@@ -205,12 +244,11 @@ fn rank(id: &str, value: &Value) -> (u8, Option<Map<String, Value>>) {
     }
     let mut cleared = object.clone();
     cleared.insert("revokedAt".into(), Value::Null);
-    let rank = if grant_in(id, &cleared).is_some() {
-        2
-    } else {
-        1
+    let valid = match record {
+        Record::Grant => grant_in(id, &cleared).is_some(),
+        Record::Read => read_in(id, &cleared).is_some(),
     };
-    (rank, Some(object))
+    (if valid { 2 } else { 1 }, Some(object))
 }
 
 /// A value's `revokedAt` as the merge joins it: absent, then anything that is not a time (by JCS), then `null`, then
@@ -295,33 +333,61 @@ pub fn revoke(id: &str, value: &Value, now: u64) -> Result<Value, String> {
     if now > MAX_SAFE_INTEGER {
         return Err("invalid_time".into());
     }
-    let (rank, object) = rank(id, &json!({ "value": value }));
+    let (rank, object) = rank(Record::Grant, id, &json!({ "value": value }));
     let mut object = object.filter(|_| rank > 0).ok_or("invalid_grant")?;
     let at = revoked_in(&object).map_or(now, |r| r.min(now));
     object.insert("revokedAt".into(), json!(at));
     Ok(json!({ "value": jcs_string(&Value::Object(object)) }))
 }
 
-/// `assistant_renew`: a v1 grant value whose `expiresAt` is `now` + 30 days, or kept when it is later. A revoked grant
-/// stays revoked.
+/// `assistant_renew`: a v1 grant value, or a v1 read record (§15), whose `expiresAt` is `now` + 30 days, or kept when
+/// it is later. A revoked one stays revoked.
 pub fn renew(id: &str, value: &Value, now: u64) -> Result<Value, String> {
     let until = now
         .checked_add(den_assistant::GRANT_TTL_MS)
         .filter(|t| *t <= MAX_SAFE_INTEGER)
         .ok_or("invalid_time")?;
     let stamped = json!({ "value": value });
-    let (grant, _) = grant_of(id, &stamped).ok_or("invalid_grant")?;
-    let mut object = held(&stamped).expect("checked");
-    object.insert("expiresAt".into(), json!(grant.expires.max(until)));
+    let mut object = held(&stamped).ok_or("invalid_grant")?;
+    let expires = grant_in(id, &object)
+        .map(|(grant, _)| grant.expires)
+        .or_else(|| read_in(id, &object).map(|(_, expires, _)| expires))
+        .ok_or("invalid_grant")?;
+    object.insert("expiresAt".into(), json!(expires.max(until)));
     Ok(json!({ "value": jcs_string(&Value::Object(object)) }))
 }
 
 /// `assistant_grants`: every grant the row holds, for Settings to list and revoke — with its state at `now`, a
-/// device's own record of revocations (§6) counting as revoked.
-pub fn list(row: Option<&Value>, local_revoked: &[String], now: u64) -> Result<Value, String> {
+/// device's own record of revocations (§6) counting as revoked — and every read record (§15), whose state also counts
+/// a revocation of the grant with its id.
+pub fn list(
+    row: Option<&Value>,
+    read_row: Option<&Value>,
+    local_revoked: &[String],
+    now: u64,
+) -> Result<Value, String> {
+    let mut reads = Vec::new();
+    for (id, value) in settings(read_row, READ_ROW)?.into_iter().flatten() {
+        let (rank, object) = rank(Record::Read, id, value);
+        let mut entry = json!({ "grant": id });
+        if let Some(object) = &object {
+            for key in ["client", "createdAt", "expiresAt", "revokedAt"] {
+                if let Some(member) = object.get(key) {
+                    entry[key] = member.clone();
+                }
+            }
+        }
+        entry["state"] = json!(read_state(id, value, row, local_revoked, now)?.unwrap_or(
+            match rank {
+                3 => "newer",
+                _ => "malformed",
+            }
+        ));
+        reads.push(entry);
+    }
     let mut out = Vec::new();
     for (id, value) in settings(row, GRANTS_ROW)?.into_iter().flatten() {
-        let (rank, object) = rank(id, value);
+        let (rank, object) = rank(Record::Grant, id, value);
         let mut entry = json!({ "grant": id });
         if let Some(object) = &object {
             for key in [
@@ -347,7 +413,138 @@ pub fn list(row: Option<&Value>, local_revoked: &[String], now: u64) -> Result<V
         });
         out.push(entry);
     }
-    Ok(json!({ "grants": out }))
+    Ok(json!({ "grants": out, "reads": reads }))
+}
+
+/// A read record's state (§15): `revoked` — in the record, in the grant with its id, or in the device's own set —
+/// `expired`, or `active`; `None` when it is no v1 read record.
+fn read_state(
+    id: &str,
+    value: &Value,
+    grants_row: Option<&Value>,
+    local_revoked: &[String],
+    now: u64,
+) -> Result<Option<&'static str>, String> {
+    let object = held(value);
+    let grant_revoked = settings(grants_row, GRANTS_ROW)?
+        .and_then(|values| values.get(id))
+        .and_then(held)
+        .and_then(|o| revoked_in(&o))
+        .is_some();
+    let revoked = local_revoked.iter().any(|r| r == id)
+        || grant_revoked
+        || object.as_ref().and_then(revoked_in).is_some();
+    Ok(match object.as_ref().and_then(|o| read_in(id, o)) {
+        _ if revoked && object.is_some() => Some("revoked"),
+        Some((_, expires, _)) if now >= expires => Some("expired"),
+        Some(_) => Some("active"),
+        None => None,
+    })
+}
+
+/// `assistant_keygen_read`: 32 random bytes → a connection's read key and its `set:assistant-read` record, under the
+/// connection's grant id (§15).
+pub fn keygen_read(grant: &str, random: &str, client: &str, now: u64) -> Result<Value, String> {
+    let key = seed(random)?;
+    if grant.len() != 32
+        || !grant
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err("invalid_grant".into());
+    }
+    if !clean_client(client) {
+        return Err("invalid_client".into());
+    }
+    let expires = now
+        .checked_add(den_assistant::GRANT_TTL_MS)
+        .filter(|t| *t <= MAX_SAFE_INTEGER)
+        .ok_or("invalid_time")?;
+    let record = json!({
+        "v": 1,
+        "key": den_assistant::b64url(&key),
+        "client": client,
+        "createdAt": now,
+        "expiresAt": expires,
+        "revokedAt": null,
+    });
+    Ok(json!({
+        "key": den_assistant::b64url(&key),
+        "setting": grant,
+        "value": jcs_string(&record),
+    }))
+}
+
+/// `assistant_grant_key`: 32 random bytes → a grant key and its id, with no grants row setting — for a connection
+/// that may only read (§15), which still needs a grant id and a key for den-edge to carry.
+pub fn grant_key(random: &str) -> Result<Value, String> {
+    let key = den_assistant::GrantKey::from_secret(&seed(random)?);
+    Ok(json!({
+        "grant": key.id(),
+        "public": den_assistant::b64url(&key.public()),
+        "secret": den_assistant::b64url(key.secret()),
+    }))
+}
+
+/// `assistant_projection` (§15): the projection for every live read grant, sealed under its read key, and the read
+/// grants whose projection den-edge should drop.
+pub fn projection(
+    lib: &crate::projection::Library,
+    read_row: Option<&Value>,
+    grants_row: Option<&Value>,
+    local_revoked: &[String],
+    random: &str,
+    now: u64,
+) -> Result<Value, String> {
+    if lib.library.len() != 32
+        || !lib
+            .library
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err("invalid_library".into());
+    }
+    if now > MAX_SAFE_INTEGER {
+        return Err("invalid_time".into());
+    }
+    let random = seed(random)?;
+    let (watchlist, continuing, seen, skipped) = crate::projection::lists(lib, now as i64)?;
+    let lists = (watchlist, continuing, seen);
+    let mut publish = Vec::new();
+    let mut delete = Vec::new();
+    let mut digest = String::new();
+    let mut counts = Value::Null;
+    for (id, value) in settings(read_row, READ_ROW)?.into_iter().flatten() {
+        let live = read_state(id, value, grants_row, local_revoked, now)? == Some("active");
+        let record = held(value).and_then(|o| read_in(id, &o));
+        let Some((key, _, _)) = record.filter(|_| live) else {
+            delete.push(json!(id));
+            continue;
+        };
+        let (plain, hash) = crate::projection::plaintext(lib, id, &lists, now);
+        digest = hash;
+        counts = json!({
+            "watchlist": plain["watchlist"].as_array().map_or(0, Vec::len),
+            "continue": plain["continue"].as_array().map_or(0, Vec::len),
+            "seen": plain["seen"].as_array().map_or(0, Vec::len),
+        });
+        let sealed = den_assistant::seal_projection(
+            &key,
+            lib.library,
+            id,
+            &canonical(&plain),
+            &crate::projection::nonce(&random, id),
+        )
+        .map_err(|_| "too_large")?;
+        publish.push(json!({"grant": id, "sealed": sealed}));
+    }
+    Ok(json!({
+        "publish": publish,
+        "delete": delete,
+        "digest": if digest.is_empty() { Value::Null } else { json!(digest) },
+        "counts": counts,
+        "skipped": skipped,
+    }))
 }
 
 /// One grant setting merged (§5). The higher rank wins (`rank`): a newer version over a v1 grant over a malformed
@@ -358,11 +555,20 @@ pub fn list(row: Option<&Value>, local_revoked: &[String], now: u64) -> Result<V
 /// that lost, and an earlier one stands. Each part is a join, so the merge is commutative, associative and
 /// idempotent.
 pub fn merge_grant(id: &str, a: &Value, b: &Value) -> Result<Value, String> {
+    merge_record(Record::Grant, id, a, b)
+}
+
+/// One read record merged (§15), by the grants' rule.
+pub fn merge_read(id: &str, a: &Value, b: &Value) -> Result<Value, String> {
+    merge_record(Record::Read, id, a, b)
+}
+
+fn merge_record(record: Record, id: &str, a: &Value, b: &Value) -> Result<Value, String> {
     if a == b {
         return Ok(a.clone());
     }
     let (sa, sb) = (stamp(&a["at"])?, stamp(&b["at"])?);
-    let ((ra, oa), (rb, ob)) = (rank(id, a), rank(id, b));
+    let ((ra, oa), (rb, ob)) = (rank(record, id, a), rank(record, id, b));
     let revoked = [&oa, &ob]
         .into_iter()
         .flatten()

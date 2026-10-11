@@ -144,4 +144,58 @@ fn den_spec_assistant_v1_fixed() {
     assert_eq!(unwrap(&secret, session, &wrapped).unwrap().id(), grant.id());
     assert!(unwrap(&[0; 32], session, &wrapped).is_err());
     assert!(unwrap(&secret, "00000000000000000000000000000000", &wrapped).is_err());
+    // A v1 wrap holds no read key.
+    assert!(unwrap(&secret, session, &wrapped)
+        .unwrap()
+        .read_key()
+        .is_none());
+
+    // Reads (§15): the same grant with a read key — a `dr` claim, an 80-byte wrap, and a projection.
+    let r = &f["read"];
+    let read_key: [u8; 32] = b64url_decode(r["readKey"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let reader = GrantKey::from_secret(&seed(&f["keys"]["grant"])).with_read_key(&read_key);
+    let claim = seal_read_claim(
+        &kem_public(&mcp),
+        sub,
+        &reader,
+        &unhex(&r["claim"]["eseed"]),
+    )
+    .unwrap();
+    assert_eq!(claim, r["claim"]["claim"]);
+    let opened = open_read_claim(&mcp, sub, &claim).unwrap();
+    assert_eq!((opened.grant(), opened.key()), (reader.id(), &read_key));
+    assert!(open_read_claim(&mcp, "00000000000000000000000000000000", &claim).is_err());
+    // `dr` and `dw` are not interchangeable.
+    assert!(open_claim(&mcp, sub, &claim).is_err());
+    assert!(open_read_claim(&mcp, sub, c["claim"].as_str().unwrap()).is_err());
+    let read_nonce: [u8; 12] = unhex(&r["wrap"]["nonce"]).try_into().unwrap();
+    let read_wrapped = wrap(&secret, session, &reader, &read_nonce);
+    assert_eq!(read_wrapped, r["wrap"]["wrapped"]);
+    let back = unwrap(&secret, session, &read_wrapped).unwrap();
+    assert_eq!((back.id(), back.read_key()), (reader.id(), Some(&read_key)));
+    // A grant key with no read key seals no `dr`.
+    assert_eq!(
+        seal_read_claim(&kem_public(&mcp), sub, &grant, &[0; 64]).err(),
+        Some(Error::InvalidRequest)
+    );
+    let p = &r["projection"];
+    assert_eq!(projection_aad(library, grant.id()), unhex(&p["aad"]));
+    let nonce: [u8; 12] = unhex(&p["nonce"]).try_into().unwrap();
+    let sealed = seal_projection(
+        &read_key,
+        library,
+        grant.id(),
+        &serde_json::to_vec(&p["plaintext"]).unwrap(),
+        &nonce,
+    )
+    .unwrap();
+    assert_eq!(sealed, p["sealed"]);
+    assert_eq!(
+        open_projection(&read_key, library, grant.id(), &sealed).unwrap(),
+        p["plaintext"]
+    );
+    assert!(open_projection(&[0; 32], library, grant.id(), &sealed).is_err());
 }

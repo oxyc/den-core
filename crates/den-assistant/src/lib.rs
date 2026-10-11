@@ -257,10 +257,12 @@ pub fn grant_id(public: &[u8; 32]) -> String {
     hex(&Sha256::digest(public)[..16])
 }
 
-/// A grant's private key with its id, as den-edge and den-mcp hold it. Wiped when dropped.
+/// A grant's private key with its id, as den-edge and den-mcp hold it, and the connection's read key when it may read
+/// (§15). Wiped when dropped.
 pub struct GrantKey {
     id: String,
     secret: Zeroizing<[u8; 32]>,
+    read: Option<Zeroizing<[u8; 32]>>,
 }
 
 impl GrantKey {
@@ -268,7 +270,14 @@ impl GrantKey {
         GrantKey {
             id: grant_id(&grant_public(secret)),
             secret: Zeroizing::new(*secret),
+            read: None,
         }
+    }
+
+    /// The same key, carrying a connection's read key (§15).
+    pub fn with_read_key(mut self, read: &[u8; 32]) -> GrantKey {
+        self.read = Some(Zeroizing::new(*read));
+        self
     }
 
     pub fn id(&self) -> &str {
@@ -283,7 +292,12 @@ impl GrantKey {
         grant_public(&self.secret)
     }
 
-    /// The 48 bytes a claim or a wrap holds: the id's 16 bytes, then the seed.
+    /// The connection's read key, when it may read.
+    pub fn read_key(&self) -> Option<&[u8; 32]> {
+        self.read.as_deref()
+    }
+
+    /// The 48 bytes a `dw` claim holds, whatever the connection may do: the id's 16 bytes, then the seed.
     fn to_blob(&self) -> Zeroizing<[u8; GRANT_BLOB_LEN]> {
         let mut out = Zeroizing::new([0u8; GRANT_BLOB_LEN]);
         let id = unhex16(&self.id).expect("a grant id is 16 bytes of hex");
@@ -292,14 +306,28 @@ impl GrantKey {
         out
     }
 
-    /// A blob whose id is not its seed's is no grant key.
+    /// What a wrap holds (§8, §15): the 48-byte blob, then the read key when there is one (80 bytes).
+    fn to_wrap_blob(&self) -> Zeroizing<Vec<u8>> {
+        let mut out = Zeroizing::new(self.to_blob().to_vec());
+        if let Some(read) = &self.read {
+            out.extend_from_slice(&**read);
+        }
+        out
+    }
+
+    /// A blob of 48 bytes, or 80 with a read key. One whose id is not its seed's is no grant key.
     fn from_blob(blob: &[u8]) -> Option<GrantKey> {
-        if blob.len() != GRANT_BLOB_LEN {
+        if blob.len() != GRANT_BLOB_LEN && blob.len() != GRANT_BLOB_LEN + 32 {
             return None;
         }
         let mut seed = Zeroizing::new([0u8; 32]);
-        seed.copy_from_slice(&blob[16..]);
-        let key = GrantKey::from_secret(&seed);
+        seed.copy_from_slice(&blob[16..GRANT_BLOB_LEN]);
+        let mut key = GrantKey::from_secret(&seed);
+        if blob.len() > GRANT_BLOB_LEN {
+            let mut read = Zeroizing::new([0u8; 32]);
+            read.copy_from_slice(&blob[GRANT_BLOB_LEN..]);
+            key.read = Some(read);
+        }
         (hex(&blob[..16]) == key.id).then_some(key)
     }
 }
@@ -726,11 +754,11 @@ pub fn wrap(refresh_secret: &[u8], session: &str, grant: &GrantKey, nonce: &[u8;
         .encrypt(
             nonce.into(),
             Payload {
-                msg: &*grant.to_blob(),
+                msg: &grant.to_wrap_blob(),
                 aad: session.as_bytes(),
             },
         )
-        .expect("AES-GCM seals 48 bytes");
+        .expect("AES-GCM seals 48 or 80 bytes");
     b64url(&[&nonce[..], &ct].concat())
 }
 
@@ -782,7 +810,10 @@ pub fn request_id_with_rng(rng: &mut impl rand_core::CryptoRng) -> String {
 /// §8: den-edge's side of [`wrap`].
 pub fn unwrap(refresh_secret: &[u8], session: &str, wrapped: &str) -> Result<GrantKey, Error> {
     let bytes = b64url_decode(wrapped).ok_or(Error::DoesNotOpen)?;
-    if bytes.len() != 12 + GRANT_BLOB_LEN + TAG_LEN {
+    // v1's 48-byte blob, or 80 with a read key (§15): a wrap made before reads keeps unwrapping.
+    if bytes.len() != 12 + GRANT_BLOB_LEN + TAG_LEN
+        && bytes.len() != 12 + GRANT_BLOB_LEN + 32 + TAG_LEN
+    {
         return Err(Error::DoesNotOpen);
     }
     let key = wrap_key(refresh_secret, session);
@@ -800,6 +831,154 @@ pub fn unwrap(refresh_secret: &[u8], session: &str, wrapped: &str) -> Result<Gra
             .map_err(|_| Error::DoesNotOpen)?,
     );
     GrantKey::from_blob(&blob).ok_or(Error::DoesNotOpen)
+}
+
+// ---- reads (§15)
+
+/// HPKE `info` of a connection's read key sealed into an access token for den-mcp (`dr`, §15).
+pub const READ_INFO: &[u8] = b"den/assistant/read/v1";
+/// What a projection's additional data starts with (§15).
+pub const PROJECTION_CONTEXT: &[u8] = b"den/assistant/projection/v1";
+/// den-edge's cap on one sealed projection, in characters of base64url.
+pub const MAX_PROJECTION: usize = 262_144;
+
+/// A connection's read key, as den-mcp holds it from a `dr` claim. Wiped when dropped.
+pub struct ReadKey {
+    grant: String,
+    key: Zeroizing<[u8; 32]>,
+}
+
+impl ReadKey {
+    pub fn grant(&self) -> &str {
+        &self.grant
+    }
+
+    pub fn key(&self) -> &[u8; 32] {
+        &self.key
+    }
+}
+
+/// §15: a grant's read key sealed to den-mcp's X-Wing public key for the access token whose `sub` this is: unpadded
+/// base64url of `enc ‖ ct`, the plaintext the grant id's 16 bytes and the read key. `InvalidRequest` for a grant key
+/// with no read key. For the vectors; production code calls [`seal_read_claim_with_rng`].
+#[doc(hidden)]
+pub fn seal_read_claim(
+    public: &[u8],
+    sub: &str,
+    grant: &GrantKey,
+    eseed: &[u8],
+) -> Result<String, Error> {
+    let read = grant.read_key().ok_or(Error::InvalidRequest)?;
+    let id = unhex16(grant.id()).expect("a grant id is 16 bytes of hex");
+    let plaintext = Zeroizing::new([&id[..], &read[..]].concat());
+    Ok(b64url(&hpke_seal(
+        public,
+        READ_INFO,
+        sub.as_bytes(),
+        &plaintext,
+        eseed,
+    )?))
+}
+
+/// [`seal_read_claim`] with a fresh `eseed` from `rng`. What den-edge calls for every access token of a read session.
+pub fn seal_read_claim_with_rng(
+    public: &[u8],
+    sub: &str,
+    grant: &GrantKey,
+    rng: &mut impl rand_core::CryptoRng,
+) -> Result<String, Error> {
+    let mut eseed = Zeroizing::new([0u8; ESEED_LEN]);
+    rng.fill_bytes(&mut *eseed);
+    seal_read_claim(public, sub, grant, &*eseed)
+}
+
+/// §15: den-mcp's side of [`seal_read_claim`].
+pub fn open_read_claim(
+    secret: &[u8; KEM_SECRET_LEN],
+    sub: &str,
+    claim: &str,
+) -> Result<ReadKey, Error> {
+    let sealed = b64url_decode(claim).ok_or(Error::DoesNotOpen)?;
+    let plain = Zeroizing::new(
+        hpke_open(secret, READ_INFO, sub.as_bytes(), &sealed).ok_or(Error::DoesNotOpen)?,
+    );
+    if plain.len() != 48 {
+        return Err(Error::DoesNotOpen);
+    }
+    let mut key = Zeroizing::new([0u8; 32]);
+    key.copy_from_slice(&plain[16..]);
+    Ok(ReadKey {
+        grant: hex(&plain[..16]),
+        key,
+    })
+}
+
+/// A projection's additional data (§15): the context, the library id and the grant id, each after a zero byte.
+pub fn projection_aad(library: &str, grant: &str) -> Vec<u8> {
+    [
+        PROJECTION_CONTEXT,
+        b"\0",
+        library.as_bytes(),
+        b"\0",
+        grant.as_bytes(),
+    ]
+    .concat()
+}
+
+/// §15: a projection's plaintext under the grant's read key: unpadded base64url of `nonce ‖ ct ‖ tag`, AES-256-GCM
+/// with [`projection_aad`]. `InvalidRequest` past [`MAX_PROJECTION`]. The nonce MUST be fresh for every seal under
+/// one key.
+pub fn seal_projection(
+    key: &[u8; 32],
+    library: &str,
+    grant: &str,
+    plaintext: &[u8],
+    nonce: &[u8; 12],
+) -> Result<String, Error> {
+    let cipher = Aes256Gcm::new(key.into());
+    let ct = cipher
+        .encrypt(
+            nonce.into(),
+            Payload {
+                msg: plaintext,
+                aad: &projection_aad(library, grant),
+            },
+        )
+        .map_err(|_| Error::InvalidRequest)?;
+    let sealed = b64url(&[&nonce[..], &ct].concat());
+    if sealed.len() > MAX_PROJECTION {
+        return Err(Error::InvalidRequest);
+    }
+    Ok(sealed)
+}
+
+/// §15: den-mcp's side of [`seal_projection`]: the projection object, checked to be v1 and to name this library and
+/// grant.
+pub fn open_projection(
+    key: &[u8; 32],
+    library: &str,
+    grant: &str,
+    sealed: &str,
+) -> Result<Value, Error> {
+    let bytes = (sealed.len() <= MAX_PROJECTION)
+        .then(|| b64url_decode(sealed))
+        .flatten()
+        .filter(|b| b.len() >= 12 + TAG_LEN)
+        .ok_or(Error::DoesNotOpen)?;
+    let cipher = Aes256Gcm::new(key.into());
+    let nonce: &[u8; 12] = bytes[..12].try_into().expect("12 bytes");
+    let plain = cipher
+        .decrypt(
+            nonce.into(),
+            Payload {
+                msg: &bytes[12..],
+                aad: &projection_aad(library, grant),
+            },
+        )
+        .map_err(|_| Error::DoesNotOpen)?;
+    let value: Value = serde_json::from_slice(&plain).map_err(|_| Error::DoesNotOpen)?;
+    let names = value["v"] == 1 && value["library"] == library && value["grant"] == grant;
+    names.then_some(value).ok_or(Error::DoesNotOpen)
 }
 
 #[cfg(test)]
