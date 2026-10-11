@@ -593,6 +593,57 @@ impl<'a> Store<'a> {
         Ok(FanPicks { picks, asked })
     }
 
+    /// Wikidata's name, original title and year for films and series the store has no row for — a title
+    /// a household watched that never cleared the corpus, or one released since the build. Names only:
+    /// these keys are never rows, and a reader must not search, browse, rank or count them.
+    ///
+    /// The `wd_name_*` sections are OPTIONAL and written together: a store with none of them names nothing,
+    /// which is an empty answer and not an error. Some of them, columns of different lengths, keys not
+    /// strictly ascending, a key the store holds, or a missing name is an error.
+    pub fn wikidata_names(&self) -> Result<WikidataNames<'a>, StoreError> {
+        if WIKIDATA_NAME_SECTIONS
+            .into_iter()
+            .all(|name| matches!(self.entry(name), Err(StoreError::MissingSection(_))))
+        {
+            return Ok(WikidataNames::default());
+        }
+        let keys = self.column::<u64>("wd_name_key")?;
+        let titles = self.column::<u32>("wd_name_title")?;
+        let originals = self.column::<u32>("wd_name_orig")?;
+        let years = self.column::<i16>("wd_name_year")?;
+        for (name, found) in [
+            ("wd_name_title", titles.len()),
+            ("wd_name_orig", originals.len()),
+            ("wd_name_year", years.len()),
+        ] {
+            if found != keys.len() {
+                return Err(StoreError::RowMismatch {
+                    name,
+                    rows: keys.len(),
+                    found,
+                });
+            }
+        }
+        let rows = self.per_row::<u64>("keys")?;
+        let sorted = keys.windows(2).all(|pair| pair[0] < pair[1]);
+        if !sorted || keys.iter().any(|key| rows.binary_search(key).is_ok()) {
+            return Err(StoreError::BadSection {
+                name: "wd_name_key",
+            });
+        }
+        if titles.contains(&NONE_U32) {
+            return Err(StoreError::BadSection {
+                name: "wd_name_title",
+            });
+        }
+        Ok(WikidataNames {
+            keys,
+            titles,
+            originals,
+            years,
+        })
+    }
+
     /// Each entity's IMDb person id (`nm…`, Wikidata P345) as a string id, [`NONE_U32`] for none,
     /// indexed like `ent_qid`. A join key for IMDb's own principals, never an entity's public id — that
     /// stays its Q-id.
@@ -966,6 +1017,56 @@ impl<'a> FanPicks<'a> {
     /// Row *i*'s picks in rank order. Empty for a title with none, one not asked, or a row out of range.
     pub fn get(&self, row: Row) -> impl Iterator<Item = Row> + 'a {
         self.picks.get(row).iter().map(|&pick| Row(pick as usize))
+    }
+}
+
+/// The sections [`Store::wikidata_names`] reads, all or none of which a store has.
+const WIKIDATA_NAME_SECTIONS: [&str; 4] = [
+    "wd_name_key",
+    "wd_name_title",
+    "wd_name_orig",
+    "wd_name_year",
+];
+
+/// [`Store::wikidata_names`]: names for keys the store does not hold, by binary search.
+#[derive(Default)]
+pub struct WikidataNames<'a> {
+    keys: &'a [u64],
+    titles: &'a [u32],
+    originals: &'a [u32],
+    years: &'a [i16],
+}
+
+/// One title Wikidata names that the store has no row for. Strings are ids into [`Store::strings`].
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct WikidataName {
+    pub title: u32,
+    /// The original title, where it differs from `title`.
+    pub original: Option<u32>,
+    pub year: Option<i16>,
+}
+
+impl WikidataNames<'_> {
+    /// Whether the store carries any name at all.
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+
+    /// How many titles it names.
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    /// The name of a title the store does not hold. `media`: 0 = movie, 1 = tv. `None` for a key it does
+    /// not name — which includes every key the store holds.
+    pub fn get(&self, media: u8, tmdb_id: u32) -> Option<WikidataName> {
+        let want = (u64::from(media) << 32) | u64::from(tmdb_id);
+        let at = self.keys.binary_search(&want).ok()?;
+        Some(WikidataName {
+            title: self.titles[at],
+            original: Some(self.originals[at]).filter(|&id| id != NONE_U32),
+            year: Some(self.years[at]).filter(|&year| year != NONE_I16),
+        })
     }
 }
 
@@ -1925,6 +2026,76 @@ mod tests {
         assert_eq!(
             Store::open(&build(3, &partial)).unwrap().fan_picks().err(),
             Some(StoreError::MissingSection("fan_picks_a"))
+        );
+    }
+
+    /// The Wikidata-name sections come as a set of one length: keys not strictly ascending, a key the store
+    /// holds, a missing name, a short column or some of the sections without the rest is an error.
+    #[test]
+    fn malformed_wikidata_names_are_an_error_not_empty() {
+        let u64s =
+            |values: &[u64]| -> Vec<u8> { values.iter().flat_map(|v| v.to_le_bytes()).collect() };
+        let i16s =
+            |values: &[i16]| -> Vec<u8> { values.iter().flat_map(|v| v.to_le_bytes()).collect() };
+        let movie_1 = 1u64;
+        let tv_7 = (1u64 << 32) | 7;
+        let whole =
+            |keys: &[u64], titles: &[u32], years: &[i16]| -> Vec<(&'static str, u32, Vec<u8>)> {
+                vec![
+                    ("keys", 8, u64s(&[movie_1])),
+                    ("wd_name_key", 8, u64s(keys)),
+                    ("wd_name_title", 4, u32s(titles)),
+                    ("wd_name_orig", 4, u32s(&vec![NONE_U32; titles.len()])),
+                    ("wd_name_year", 2, i16s(years)),
+                ]
+            };
+
+        let good = build(1, &whole(&[2, tv_7], &[0, 1], &[1999, NONE_I16]));
+        let store = Store::open(&good).unwrap();
+        let names = store.wikidata_names().expect("well formed");
+        assert_eq!(names.len(), 2);
+        assert_eq!(
+            names.get(0, 2),
+            Some(WikidataName {
+                title: 0,
+                original: None,
+                year: Some(1999)
+            })
+        );
+        assert_eq!(names.get(1, 7).and_then(|name| name.year), None);
+        assert_eq!(names.get(0, 1), None, "a store row is not named here");
+        assert_eq!(names.get(1, 2), None, "the other media's id");
+
+        for (keys, titles, name) in [
+            (&[tv_7, 2][..], &[0u32, 1][..], "wd_name_key"),
+            (&[2, 2], &[0, 1], "wd_name_key"),
+            (&[movie_1, 2], &[0, 1], "wd_name_key"),
+            (&[2, tv_7], &[0, NONE_U32], "wd_name_title"),
+        ] {
+            let bytes = build(1, &whole(keys, titles, &[0, 0]));
+            assert_eq!(
+                Store::open(&bytes).unwrap().wikidata_names().err(),
+                Some(StoreError::BadSection { name }),
+                "{keys:?} {titles:?}"
+            );
+        }
+        let short = build(1, &whole(&[2, tv_7], &[0, 1], &[0]));
+        assert_eq!(
+            Store::open(&short).unwrap().wikidata_names().err(),
+            Some(StoreError::RowMismatch {
+                name: "wd_name_year",
+                rows: 2,
+                found: 1
+            })
+        );
+        let mut partial = whole(&[2], &[0], &[0]);
+        partial.retain(|(name, _, _)| *name != "wd_name_orig");
+        assert_eq!(
+            Store::open(&build(1, &partial))
+                .unwrap()
+                .wikidata_names()
+                .err(),
+            Some(StoreError::MissingSection("wd_name_orig"))
         );
     }
 
