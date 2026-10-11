@@ -1008,38 +1008,126 @@ pub fn open_projection(
     set: &str,
     parts: &[String],
 ) -> Result<Value, Error> {
+    let plain = open_projection_compact(key, library, grant, set, parts)?;
+    let compact: Value = serde_json::from_slice(&plain).map_err(|_| Error::DoesNotOpen)?;
+    expand(&compact).ok_or(Error::DoesNotOpen)
+}
+
+/// The members of a compact projection [`open_projection_compact`] checks; everything else is skipped unparsed.
+#[derive(serde::Deserialize)]
+struct Names {
+    v: u64,
+    library: String,
+    grant: String,
+}
+
+/// Inflated output, grown by hand so every buffer it outgrows is wiped before it is freed.
+struct Output(Zeroizing<Vec<u8>>);
+
+impl Output {
+    fn push(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let need = self.0.len() + bytes.len();
+        if need > MAX_PROJECTION_PLAINTEXT {
+            return Err(Error::DoesNotOpen);
+        }
+        // Growing copies into a new buffer and wipes the old one (a `Vec` reallocation would free it unwiped), so the
+        // moment of growth holds both: by half again, that is at most 2.5 times the output.
+        if need > self.0.capacity() {
+            let capacity = need
+                .max(self.0.capacity() + self.0.capacity() / 2)
+                .max(1 << 16)
+                .min(MAX_PROJECTION_PLAINTEXT);
+            let mut grown = Zeroizing::new(Vec::with_capacity(capacity));
+            grown.extend_from_slice(&self.0);
+            self.0 = grown;
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(())
+    }
+}
+
+/// Like [`open_projection`], but returns the inflated compact plaintext (§15's JCS compact form) with every part
+/// opened in place and `v`, `library` and `grant` checked — no `serde_json::Value` of the lists. Parts are decoded,
+/// opened and inflated one at a time, so the deflated set is never held whole; the output grows with what inflates,
+/// up to [`MAX_PROJECTION_PLAINTEXT`]. Every intermediate buffer is wiped. Fails as `open_projection` does.
+pub fn open_projection_compact(
+    key: &[u8; 32],
+    library: &str,
+    grant: &str,
+    set: &str,
+    parts: &[String],
+) -> Result<Zeroizing<Vec<u8>>, Error> {
+    use miniz_oxide::inflate::stream::{inflate, InflateState};
+    use miniz_oxide::{DataFormat, MZError, MZFlush, MZStatus};
     let count = parts.len();
     if count == 0 || count > MAX_PARTS || !lower_hex_id(set) {
         return Err(Error::DoesNotOpen);
     }
     let cipher = Aes256Gcm::new(key.into());
-    let mut deflated = Vec::new();
+    let mut state = InflateState::new_boxed(DataFormat::Raw);
+    let mut scratch = Zeroizing::new(vec![0u8; 1 << 16]);
+    let mut out = Output(Zeroizing::new(Vec::new()));
+    let mut ended = false;
+    // Inflates `input` into `out`; `true` once the stream has ended. Input past the end is refused.
+    let mut feed = |input: &[u8], out: &mut Output, ended: &mut bool| -> Result<(), Error> {
+        let mut at = 0;
+        loop {
+            if *ended {
+                return if at < input.len() {
+                    Err(Error::DoesNotOpen)
+                } else {
+                    Ok(())
+                };
+            }
+            let result = inflate(&mut state, &input[at..], &mut scratch, MZFlush::None);
+            // `Buf` is the inflater waiting for input it was not given: the next part, or — after the last — a
+            // stream cut short, which the caller refuses as not ended.
+            let status = match result.status {
+                Ok(status) => status,
+                Err(MZError::Buf) => MZStatus::Ok,
+                Err(_) => return Err(Error::DoesNotOpen),
+            };
+            out.push(&scratch[..result.bytes_written])?;
+            at += result.bytes_consumed;
+            *ended = status == MZStatus::StreamEnd;
+            if !*ended && result.bytes_consumed == 0 && result.bytes_written == 0 {
+                return Ok(());
+            }
+        }
+    };
     for (index, part) in parts.iter().enumerate() {
-        let bytes = (part.len() <= MAX_PART)
-            .then(|| b64url_decode(part))
-            .flatten()
-            .filter(|b| b.len() > 12 + TAG_LEN)
-            .ok_or(Error::DoesNotOpen)?;
+        if part.len() > MAX_PART {
+            return Err(Error::DoesNotOpen);
+        }
+        let bytes = Zeroizing::new(b64url_decode(part).ok_or(Error::DoesNotOpen)?);
+        if bytes.len() <= 12 + TAG_LEN {
+            return Err(Error::DoesNotOpen);
+        }
         let nonce: &[u8; 12] = bytes[..12].try_into().expect("12 bytes");
-        let plain = cipher
-            .decrypt(
-                nonce.into(),
-                Payload {
-                    msg: &bytes[12..],
-                    aad: &projection_aad(library, grant, set, index, count),
-                },
-            )
-            .map_err(|_| Error::DoesNotOpen)?;
-        deflated.extend_from_slice(&plain);
+        let plain = Zeroizing::new(
+            cipher
+                .decrypt(
+                    nonce.into(),
+                    Payload {
+                        msg: &bytes[12..],
+                        aad: &projection_aad(library, grant, set, index, count),
+                    },
+                )
+                .map_err(|_| Error::DoesNotOpen)?,
+        );
+        drop(bytes);
+        feed(&plain, &mut out, &mut ended)?;
     }
-    let plain =
-        miniz_oxide::inflate::decompress_to_vec_with_limit(&deflated, MAX_PROJECTION_PLAINTEXT)
-            .map_err(|_| Error::DoesNotOpen)?;
-    let compact: Value = serde_json::from_slice(&plain).map_err(|_| Error::DoesNotOpen)?;
-    if compact["library"] != library || compact["grant"] != grant {
+    // Whatever the inflater still holds, then the stream must have ended: a set cut short does not open.
+    feed(&[], &mut out, &mut ended)?;
+    if !ended {
         return Err(Error::DoesNotOpen);
     }
-    expand(&compact).ok_or(Error::DoesNotOpen)
+    let names: Names = serde_json::from_slice(&out.0).map_err(|_| Error::DoesNotOpen)?;
+    if names.v != 1 || names.library != library || names.grant != grant {
+        return Err(Error::DoesNotOpen);
+    }
+    Ok(out.0)
 }
 
 /// §15: the plaintext a projection compresses: the JCS of its compact form. `InvalidRequest` for a projection that is

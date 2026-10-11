@@ -202,6 +202,12 @@ fn den_spec_assistant_v1_fixed() {
         p["view"]
     );
     assert!(open_projection(&[0; 32], library, grant.id(), &sealed.set, &parts).is_err());
+    // The compact open gives back exactly the vector's compact plaintext.
+    assert_eq!(
+        &*open_projection_compact(&read_key, library, grant.id(), &sealed.set, &parts).unwrap(),
+        p["plaintext"].as_str().unwrap().as_bytes()
+    );
+    assert!(open_projection_compact(&[0; 32], library, grant.id(), &sealed.set, &parts).is_err());
 }
 
 /// The inflate limit (§15): a part set that inflates past 64 MiB does not open, however small it is sealed.
