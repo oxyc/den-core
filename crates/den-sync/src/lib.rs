@@ -365,10 +365,16 @@ enum Request {
     RecoveryDerive {
         data: String,
     },
+}
+
+/// The assistant ops (den-spec `wire/assistant-v1.md`), apart from the rest so the web can load them as a module of
+/// their own (`evaluate_assistant`): they carry the assistant crypto, which every other op leaves out. `merge` of the
+/// assistant rows stays with the other ops, since every row merges there.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum AssistantRequest {
     /// Assistant v1 §4: 32 random bytes (hex) → a drop-box key and the `set:assistant` setting holding it.
-    AssistantKeygenDropbox {
-        random: String,
-    },
+    AssistantKeygenDropbox { random: String },
     /// Assistant v1 §8: the drop-box public key den-edge should hold for a `set:assistant` row, or null.
     AssistantDropbox {
         #[serde(default)]
@@ -440,9 +446,7 @@ enum Request {
     },
     /// Assistant v1 §15: 32 random bytes (hex) → a grant key and id with no grants row setting, for a read-only
     /// connection.
-    AssistantGrantKey {
-        random: String,
-    },
+    AssistantGrantKey { random: String },
     /// Assistant v1 §15: 32 random bytes (hex) → a connection's read key and its `set:assistant-read` record.
     AssistantKeygenRead {
         grant: String,
@@ -486,367 +490,424 @@ fn yes() -> bool {
 }
 
 /// Versioned, non-throwing FFI boundary. An error is never an empty snapshot or an acknowledgement.
+///
+/// Every op, the assistant's included: the native binding's one entry. The web splits it in two, `evaluate_core` and
+/// `evaluate_assistant`, so the assistant crypto loads only where it is used.
 pub fn evaluate(input: &str) -> String {
-    fn run(input: &str) -> Result<Value, String> {
-        if input.len() > MAX_REQUEST_BYTES {
-            return Err("request_too_large".into());
-        }
-        let request: Request = serde_json::from_str(input).map_err(|_| "invalid_request")?;
-        match request {
-            Request::Name { row } => Ok(json!(wire::name(&row)?)),
-            Request::Newest { row } => Ok(json!(wire::newest(&row)?)),
-            Request::Merge { a, b } => merge(&a, &b),
-            Request::Capture {
-                before,
-                after,
-                at,
-                id,
-            } => capture(&before, &after, &at, &id),
-            Request::Commands { event, current } => commands(&event, &current),
-            Request::EpisodeMark {
-                row,
-                mark,
-                authoritative,
-            } => episode_mark(&row, &mark, authoritative),
-            Request::AiredEpisodes {
-                seasons,
-                last_aired,
-            } => Ok(aired_episodes(&seasons, last_aired)),
-            Request::SeriesState {
-                seasons,
-                last_aired,
-                watched,
-            } => Ok(series_state(&seasons, last_aired, &watched)),
-            Request::EpisodeAfter {
-                seasons,
-                last_aired,
-                at,
-            } => Ok(episode_after(at, &seasons, last_aired)),
-            Request::ContinueTarget {
-                seasons,
-                last_aired,
-                last_played,
-            } => Ok(continue_target(&seasons, last_aired, last_played)),
-            Request::ContinueEntry { input } => Ok(continue_entry(&input)),
-            Request::Issue {
-                last,
-                seen,
-                now,
-                device,
-            } => {
-                let last = seen.map(|seen| last.clone().max(seen)).unwrap_or(last);
-                Ok(json!(last.issue(now, device)?))
-            }
-            Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
-            Request::EpisodeState {
-                register,
-                resets,
-                now,
-            } => library_v3::episode_state(&register, &resets, now),
-            Request::EpisodeStateV4 {
-                title,
-                season,
-                episode,
-                now,
-            } => {
-                let title = title.as_ref().map(library_v4::readable).transpose()?;
-                let season = season.as_ref().map(library_v4::readable).transpose()?;
-                let episode = match &episode {
-                    Value::String(key) => key.clone(),
-                    other => other.to_string(),
-                };
-                library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, now)
-            }
-            Request::FilmState {
-                rec,
-                register,
-                resets,
-                now,
-            } => library_v3::film_state(&rec, &register, &resets, now),
-            Request::FilmStateV4 { title, now } => {
-                library_v4::state::film_state(&library_v4::readable(&title)?, now)
-            }
-            Request::RegisterWrite {
-                action,
-                current,
-                resets,
-                now,
-            } => library_v3::register_write(&action, current.as_ref(), &resets, now),
-            Request::ImportWrite {
-                register,
-                item,
-                resets,
-                now,
-            } => library_v3::import_write(register.as_ref(), &item, &resets, now),
-            Request::PendingTargets {
-                targets,
-                receipts,
-                since,
-                now,
-            } => library_v3::pending_targets(&targets, &receipts, &since, now),
-            Request::PendingTargetsV4 {
-                documents,
-                deliver,
-                now,
-            } => library_v4::delivery::pending_targets(&documents, &deliver, now),
-            Request::Settle {
-                outcome,
-                built_from,
-                order,
-            } => library_v3::settle(&outcome, &built_from, &order),
-            Request::SettleV4 {
-                outcome,
-                built_from,
-                order,
-                entry,
-            } => library_v4::delivery::settle(
-                &outcome,
-                &built_from,
-                &order,
-                entry.as_ref().filter(|e| !e.is_null()),
-            ),
-            Request::Lease { input } => library_v3::lease(&input),
-            Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
-            Request::V3Form { rows, now, context } => {
-                library_v3::v3_form_with_context(&rows, now, context.as_ref())
-            }
-            Request::V3Compact { rows, now } => library_v3::v3_compact(&rows, now),
-            Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
-            Request::WriteBackV4 {
-                documents,
-                kept,
-                log,
-                now,
-            } => library_v4::write_back(&documents, &kept, &log, now),
-            Request::DocDecode { plaintext, name } => Ok(library_v4::decode(
-                &library_v4::codec::unbase64(&plaintext)?,
-                name.as_deref(),
-            )),
-            Request::DocEncode { document, write } => library_v4::encode(&document, write),
-            Request::DocName { document } => Ok(json!(library_v4::name(&document)?)),
-            Request::CompactionGuard { unreadable, rows } => {
-                Ok(library_v4::compaction_guard(unreadable, rows))
-            }
-            Request::DocMerge { a, b } => library_v4::doc_merge(&a, &b),
-            Request::TitleState { title, now } => Ok(library_v4::state::title_state(
-                &library_v4::readable(&title)?,
-                now,
-            )),
-            Request::ApplyWrite {
-                write,
-                target,
-                title,
-                seasons,
-                receipts,
-                now,
-            } => library_v4::write::apply_write(
-                &write,
-                &target,
-                title.as_ref(),
-                &seasons,
-                &receipts,
-                now,
-            ),
-            Request::DeliveryWrite {
-                document,
-                identity,
-                commands,
-            } => library_v4::delivery::delivery_write(document.as_ref(), &identity, &commands),
-            Request::V4Form {
-                rows,
-                base,
-                performer,
-                now,
-                stored_cap,
-            } => library_v4::switch::v4_form(&rows, base, &performer, now, stored_cap),
-            Request::V4DryRun { rows, form, now } => {
-                library_v4::switch::v4_dry_run(&rows, &form, now)
-            }
-            Request::SwitchReady { input } => library_v3::switch_ready(&input),
-            Request::DownloadMerge { a, b } => download_merge(&a, &b),
-            Request::DownloadStatus {
-                row,
-                answer,
-                clock,
-                now,
-            } => download_status(&row, answer.as_ref(), clock.as_ref(), now),
-            Request::DownloadNext {
-                row,
-                releases,
-                resolution,
-                complete,
-            } => download_next(&row, &releases, &resolution, complete),
-            Request::DownloadCancelSafe { row, rows } => download_cancel_safe(&row, &rows),
-            Request::DownloadPrune {
-                rows,
-                states,
-                watched,
-                now,
-            } => download_prune(&rows, &states, &watched, now),
-            Request::RankReleases {
-                releases,
-                original,
-                preferred,
-                tried,
-            } => Ok(rank_releases(
-                &releases,
-                original.as_deref(),
-                preferred.as_deref(),
-                &tried,
-            )),
-            Request::WatchName {
-                media,
-                id,
-                season,
-                episode,
-            } => Ok(json!(library_v3::watch_row_name(
-                &media, id, season, episode
-            )?)),
-            Request::ReceiptName {
-                provider,
-                account,
-                target,
-            } => Ok(json!(library_v3::receipt_row_name(
-                &provider, &account, &target
-            )?)),
-            Request::Tilt {
-                signals,
-                weights,
-                era,
-                include_era,
-            } => Ok(json!(order(
-                &signals,
-                &weights.unwrap_or_default(),
-                &era,
-                include_era
-            ))),
-            Request::TiltEra {
-                samples,
-                current_year,
-            } => Ok(json!(Era::from_samples(&samples, current_year))),
-            Request::RecoveryCode { random } => recovery::code(&random),
-            Request::RecoveryRead { text } => recovery::read(&text),
-            Request::RecoveryDerive { data } => recovery::derive(&data),
-            Request::AssistantKeygenDropbox { random } => assistant::keygen_dropbox(&random),
-            Request::AssistantDropbox { assistant } => assistant::dropbox(assistant.as_ref()),
-            Request::AssistantKeygenGrant {
-                random,
-                client,
-                ops,
-                cap,
-                now,
-            } => assistant::keygen_grant(&random, &client, &ops, cap, now),
-            Request::AssistantRevoke { grant, value, now } => {
-                assistant::revoke(&grant, &value, now)
-            }
-            Request::AssistantRenew { grant, value, now } => assistant::renew(&grant, &value, now),
-            Request::AssistantGrants {
-                grants,
-                read,
-                play,
-                local_revoked,
-                now,
-            } => assistant::list(
-                grants.as_ref(),
-                read.as_ref(),
-                play.as_ref(),
-                &local_revoked,
-                now,
-            ),
-            Request::AssistantKeygenPlay { grant, client, now } => {
-                assistant::keygen_play(&grant, &client, now)
-            }
-            Request::AssistantGrantKey { random } => assistant::grant_key(&random),
-            Request::AssistantKeygenRead {
-                grant,
-                random,
-                client,
-                now,
-            } => assistant::keygen_read(&grant, &random, &client, now),
-            Request::AssistantProjection {
-                library,
-                documents,
-                layouts,
-                head,
-                read,
-                grants,
-                prefs,
-                local_revoked,
-                random,
-                now,
-            } => assistant::projection(
-                &projection::Library {
-                    library: &library,
-                    documents: &documents,
-                    layouts: &layouts,
-                    head,
-                    prefs: prefs.as_ref(),
-                },
-                read.as_ref(),
-                grants.as_ref(),
-                &local_revoked,
-                &random,
-                now,
-            ),
-            Request::AssistantOpen {
-                library,
-                device,
-                sealed,
-                assistant,
-                grants,
-                applied,
-                local_revoked,
-                local_applied,
-                play,
-                queue,
-                awake_since,
-                now,
-            } => assistant::open(
-                &sealed,
-                &assistant::Library {
-                    library: &library,
-                    device: &device,
-                    dropbox: assistant.as_ref(),
-                    grants: grants.as_ref(),
-                    applied: applied.as_ref(),
-                    local_revoked: &local_revoked,
-                    local_applied: &local_applied,
-                    play: play.as_ref(),
-                    queue: match queue.as_deref() {
-                        None | Some("library") => den_assistant::Queue::Library,
-                        Some("tv") => den_assistant::Queue::Tv,
-                        Some(_) => return Err("invalid_queue".into()),
-                    },
-                    awake_since,
-                },
-                now,
-            ),
-            Request::AssistantPrune {
-                applied,
-                local_applied,
-                now,
-            } => assistant::prune(applied.as_ref(), &local_applied, now),
-            Request::Retry {
-                attempts,
-                now,
-                retry_after,
-            } => {
-                // Same capped exponential delay as the outbox, with provider Retry-After as a lower bound.
-                let delay = (5_000u64 * (1u64 << attempts.min(10))).min(1_800_000);
-                let at = now
-                    .checked_add(delay)
-                    .ok_or("time_overflow")?
-                    .max(retry_after.unwrap_or(0));
-                if at > wire::MAX_SAFE_INTEGER {
-                    return Err("time_overflow".into());
-                }
-                Ok(json!(at))
-            }
-        }
+    envelope(
+        bounded(input).and_then(|()| match serde_json::from_str::<Request>(input) {
+            Ok(request) => run(request),
+            Err(_) => match serde_json::from_str::<AssistantRequest>(input) {
+                Ok(request) => run_assistant(request),
+                Err(_) => Err("invalid_request".into()),
+            },
+        }),
+    )
+}
+
+/// Every op but the assistant's: the web's main module. An assistant op is `assistant_module`, so a caller that sent
+/// it to the wrong module says so rather than `invalid_request`.
+pub fn evaluate_core(input: &str) -> String {
+    envelope(
+        bounded(input).and_then(|()| match serde_json::from_str::<Request>(input) {
+            Ok(request) => run(request),
+            Err(_) => Err(if assistant_op(input) {
+                "assistant_module".into()
+            } else {
+                "invalid_request".into()
+            }),
+        }),
+    )
+}
+
+/// The assistant ops alone (den-spec `wire/assistant-v1.md`): the web's assistant module.
+pub fn evaluate_assistant(input: &str) -> String {
+    envelope(bounded(input).and_then(|()| {
+        serde_json::from_str::<AssistantRequest>(input)
+            .map_err(|_| "invalid_request".to_string())
+            .and_then(run_assistant)
+    }))
+}
+
+fn bounded(input: &str) -> Result<(), String> {
+    if input.len() > MAX_REQUEST_BYTES {
+        return Err("request_too_large".into());
     }
-    match run(input) {
+    Ok(())
+}
+
+fn envelope(result: Result<Value, String>) -> String {
+    match result {
         Ok(value) => json!({ "version": 1, "ok": value }).to_string(),
         Err(error) => json!({ "version": 1, "error": error }).to_string(),
+    }
+}
+
+/// Whether a request that did not parse names an assistant op. Read only on that error path.
+fn assistant_op(input: &str) -> bool {
+    #[derive(Deserialize)]
+    struct Op {
+        op: String,
+    }
+    serde_json::from_str::<Op>(input).is_ok_and(|o| o.op.starts_with("assistant_"))
+}
+
+fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
+    match request {
+        AssistantRequest::AssistantKeygenDropbox { random } => assistant::keygen_dropbox(&random),
+        AssistantRequest::AssistantDropbox { assistant } => assistant::dropbox(assistant.as_ref()),
+        AssistantRequest::AssistantKeygenGrant {
+            random,
+            client,
+            ops,
+            cap,
+            now,
+        } => assistant::keygen_grant(&random, &client, &ops, cap, now),
+        AssistantRequest::AssistantRevoke { grant, value, now } => {
+            assistant::revoke(&grant, &value, now)
+        }
+        AssistantRequest::AssistantRenew { grant, value, now } => {
+            assistant::renew(&grant, &value, now)
+        }
+        AssistantRequest::AssistantGrants {
+            grants,
+            read,
+            play,
+            local_revoked,
+            now,
+        } => assistant::list(
+            grants.as_ref(),
+            read.as_ref(),
+            play.as_ref(),
+            &local_revoked,
+            now,
+        ),
+        AssistantRequest::AssistantKeygenPlay { grant, client, now } => {
+            assistant::keygen_play(&grant, &client, now)
+        }
+        AssistantRequest::AssistantGrantKey { random } => assistant::grant_key(&random),
+        AssistantRequest::AssistantKeygenRead {
+            grant,
+            random,
+            client,
+            now,
+        } => assistant::keygen_read(&grant, &random, &client, now),
+        AssistantRequest::AssistantProjection {
+            library,
+            documents,
+            layouts,
+            head,
+            read,
+            grants,
+            prefs,
+            local_revoked,
+            random,
+            now,
+        } => assistant::projection(
+            &projection::Library {
+                library: &library,
+                documents: &documents,
+                layouts: &layouts,
+                head,
+                prefs: prefs.as_ref(),
+            },
+            read.as_ref(),
+            grants.as_ref(),
+            &local_revoked,
+            &random,
+            now,
+        ),
+        AssistantRequest::AssistantOpen {
+            library,
+            device,
+            sealed,
+            assistant,
+            grants,
+            applied,
+            local_revoked,
+            local_applied,
+            play,
+            queue,
+            awake_since,
+            now,
+        } => assistant::open(
+            &sealed,
+            &assistant::Library {
+                library: &library,
+                device: &device,
+                dropbox: assistant.as_ref(),
+                grants: grants.as_ref(),
+                applied: applied.as_ref(),
+                local_revoked: &local_revoked,
+                local_applied: &local_applied,
+                play: play.as_ref(),
+                queue: match queue.as_deref() {
+                    None | Some("library") => den_assistant::Queue::Library,
+                    Some("tv") => den_assistant::Queue::Tv,
+                    Some(_) => return Err("invalid_queue".into()),
+                },
+                awake_since,
+            },
+            now,
+        ),
+        AssistantRequest::AssistantPrune {
+            applied,
+            local_applied,
+            now,
+        } => assistant::prune(applied.as_ref(), &local_applied, now),
+    }
+}
+
+fn run(request: Request) -> Result<Value, String> {
+    match request {
+        Request::Name { row } => Ok(json!(wire::name(&row)?)),
+        Request::Newest { row } => Ok(json!(wire::newest(&row)?)),
+        Request::Merge { a, b } => merge(&a, &b),
+        Request::Capture {
+            before,
+            after,
+            at,
+            id,
+        } => capture(&before, &after, &at, &id),
+        Request::Commands { event, current } => commands(&event, &current),
+        Request::EpisodeMark {
+            row,
+            mark,
+            authoritative,
+        } => episode_mark(&row, &mark, authoritative),
+        Request::AiredEpisodes {
+            seasons,
+            last_aired,
+        } => Ok(aired_episodes(&seasons, last_aired)),
+        Request::SeriesState {
+            seasons,
+            last_aired,
+            watched,
+        } => Ok(series_state(&seasons, last_aired, &watched)),
+        Request::EpisodeAfter {
+            seasons,
+            last_aired,
+            at,
+        } => Ok(episode_after(at, &seasons, last_aired)),
+        Request::ContinueTarget {
+            seasons,
+            last_aired,
+            last_played,
+        } => Ok(continue_target(&seasons, last_aired, last_played)),
+        Request::ContinueEntry { input } => Ok(continue_entry(&input)),
+        Request::Issue {
+            last,
+            seen,
+            now,
+            device,
+        } => {
+            let last = seen.map(|seen| last.clone().max(seen)).unwrap_or(last);
+            Ok(json!(last.issue(now, device)?))
+        }
+        Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
+        Request::EpisodeState {
+            register,
+            resets,
+            now,
+        } => library_v3::episode_state(&register, &resets, now),
+        Request::EpisodeStateV4 {
+            title,
+            season,
+            episode,
+            now,
+        } => {
+            let title = title.as_ref().map(library_v4::readable).transpose()?;
+            let season = season.as_ref().map(library_v4::readable).transpose()?;
+            let episode = match &episode {
+                Value::String(key) => key.clone(),
+                other => other.to_string(),
+            };
+            library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, now)
+        }
+        Request::FilmState {
+            rec,
+            register,
+            resets,
+            now,
+        } => library_v3::film_state(&rec, &register, &resets, now),
+        Request::FilmStateV4 { title, now } => {
+            library_v4::state::film_state(&library_v4::readable(&title)?, now)
+        }
+        Request::RegisterWrite {
+            action,
+            current,
+            resets,
+            now,
+        } => library_v3::register_write(&action, current.as_ref(), &resets, now),
+        Request::ImportWrite {
+            register,
+            item,
+            resets,
+            now,
+        } => library_v3::import_write(register.as_ref(), &item, &resets, now),
+        Request::PendingTargets {
+            targets,
+            receipts,
+            since,
+            now,
+        } => library_v3::pending_targets(&targets, &receipts, &since, now),
+        Request::PendingTargetsV4 {
+            documents,
+            deliver,
+            now,
+        } => library_v4::delivery::pending_targets(&documents, &deliver, now),
+        Request::Settle {
+            outcome,
+            built_from,
+            order,
+        } => library_v3::settle(&outcome, &built_from, &order),
+        Request::SettleV4 {
+            outcome,
+            built_from,
+            order,
+            entry,
+        } => library_v4::delivery::settle(
+            &outcome,
+            &built_from,
+            &order,
+            entry.as_ref().filter(|e| !e.is_null()),
+        ),
+        Request::Lease { input } => library_v3::lease(&input),
+        Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
+        Request::V3Form { rows, now, context } => {
+            library_v3::v3_form_with_context(&rows, now, context.as_ref())
+        }
+        Request::V3Compact { rows, now } => library_v3::v3_compact(&rows, now),
+        Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
+        Request::WriteBackV4 {
+            documents,
+            kept,
+            log,
+            now,
+        } => library_v4::write_back(&documents, &kept, &log, now),
+        Request::DocDecode { plaintext, name } => Ok(library_v4::decode(
+            &library_v4::codec::unbase64(&plaintext)?,
+            name.as_deref(),
+        )),
+        Request::DocEncode { document, write } => library_v4::encode(&document, write),
+        Request::DocName { document } => Ok(json!(library_v4::name(&document)?)),
+        Request::CompactionGuard { unreadable, rows } => {
+            Ok(library_v4::compaction_guard(unreadable, rows))
+        }
+        Request::DocMerge { a, b } => library_v4::doc_merge(&a, &b),
+        Request::TitleState { title, now } => Ok(library_v4::state::title_state(
+            &library_v4::readable(&title)?,
+            now,
+        )),
+        Request::ApplyWrite {
+            write,
+            target,
+            title,
+            seasons,
+            receipts,
+            now,
+        } => library_v4::write::apply_write(
+            &write,
+            &target,
+            title.as_ref(),
+            &seasons,
+            &receipts,
+            now,
+        ),
+        Request::DeliveryWrite {
+            document,
+            identity,
+            commands,
+        } => library_v4::delivery::delivery_write(document.as_ref(), &identity, &commands),
+        Request::V4Form {
+            rows,
+            base,
+            performer,
+            now,
+            stored_cap,
+        } => library_v4::switch::v4_form(&rows, base, &performer, now, stored_cap),
+        Request::V4DryRun { rows, form, now } => library_v4::switch::v4_dry_run(&rows, &form, now),
+        Request::SwitchReady { input } => library_v3::switch_ready(&input),
+        Request::DownloadMerge { a, b } => download_merge(&a, &b),
+        Request::DownloadStatus {
+            row,
+            answer,
+            clock,
+            now,
+        } => download_status(&row, answer.as_ref(), clock.as_ref(), now),
+        Request::DownloadNext {
+            row,
+            releases,
+            resolution,
+            complete,
+        } => download_next(&row, &releases, &resolution, complete),
+        Request::DownloadCancelSafe { row, rows } => download_cancel_safe(&row, &rows),
+        Request::DownloadPrune {
+            rows,
+            states,
+            watched,
+            now,
+        } => download_prune(&rows, &states, &watched, now),
+        Request::RankReleases {
+            releases,
+            original,
+            preferred,
+            tried,
+        } => Ok(rank_releases(
+            &releases,
+            original.as_deref(),
+            preferred.as_deref(),
+            &tried,
+        )),
+        Request::WatchName {
+            media,
+            id,
+            season,
+            episode,
+        } => Ok(json!(library_v3::watch_row_name(
+            &media, id, season, episode
+        )?)),
+        Request::ReceiptName {
+            provider,
+            account,
+            target,
+        } => Ok(json!(library_v3::receipt_row_name(
+            &provider, &account, &target
+        )?)),
+        Request::Tilt {
+            signals,
+            weights,
+            era,
+            include_era,
+        } => Ok(json!(order(
+            &signals,
+            &weights.unwrap_or_default(),
+            &era,
+            include_era
+        ))),
+        Request::TiltEra {
+            samples,
+            current_year,
+        } => Ok(json!(Era::from_samples(&samples, current_year))),
+        Request::RecoveryCode { random } => recovery::code(&random),
+        Request::RecoveryRead { text } => recovery::read(&text),
+        Request::RecoveryDerive { data } => recovery::derive(&data),
+        Request::Retry {
+            attempts,
+            now,
+            retry_after,
+        } => {
+            // Same capped exponential delay as the outbox, with provider Retry-After as a lower bound.
+            let delay = (5_000u64 * (1u64 << attempts.min(10))).min(1_800_000);
+            let at = now
+                .checked_add(delay)
+                .ok_or("time_overflow")?
+                .max(retry_after.unwrap_or(0));
+            if at > wire::MAX_SAFE_INTEGER {
+                return Err("time_overflow".into());
+            }
+            Ok(json!(at))
+        }
     }
 }
 

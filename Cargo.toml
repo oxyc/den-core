@@ -5,6 +5,7 @@ members = [
     "crates/den-assistant",
     "bindings/native",
     "bindings/web",
+    "bindings/web-assistant",
 ]
 default-members = ["crates/den-sync"]
 resolver = "2"

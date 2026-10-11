@@ -44,6 +44,59 @@ fn shared_binding_contract() {
     }
 }
 
+/// The web's two modules together answer exactly what the native binding's one entry answers: every assistant op
+/// through `evaluate_assistant`, every other op through `evaluate_core`, and each refuses the other's.
+#[test]
+fn the_web_split_answers_as_the_whole() {
+    let call = |entry: fn(&str) -> String, request: &Value| -> Value {
+        serde_json::from_str(&entry(&request.to_string())).unwrap()
+    };
+    let mut assistant = 0;
+    for fixture in [
+        include_str!("fixtures/policy-v1.json"),
+        include_str!("fixtures/policy-v3.json"),
+        include_str!("fixtures/policy-v4.json"),
+    ] {
+        let fixture: Value = serde_json::from_str(fixture).unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let request = &case["request"];
+            let whole = call(evaluate, request);
+            let ours = request["op"]
+                .as_str()
+                .is_some_and(|op| op.starts_with("assistant_"));
+            if ours {
+                assistant += 1;
+                assert_eq!(
+                    call(den_sync::evaluate_assistant, request),
+                    whole,
+                    "{}",
+                    case["name"]
+                );
+                assert_eq!(
+                    call(den_sync::evaluate_core, request)["error"],
+                    "assistant_module",
+                    "{}",
+                    case["name"]
+                );
+            } else {
+                assert_eq!(
+                    call(den_sync::evaluate_core, request),
+                    whole,
+                    "{}",
+                    case["name"]
+                );
+                assert_eq!(
+                    call(den_sync::evaluate_assistant, request)["error"],
+                    "invalid_request",
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+    assert!(assistant > 0);
+}
+
 #[test]
 fn deliver_settings_merge_as_a_join() {
     let row = |device: &str, at: u64, since: u64, holder: &str, epoch: u64, unverified: Value| {
