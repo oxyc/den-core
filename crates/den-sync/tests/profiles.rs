@@ -29,9 +29,18 @@ fn vectors() -> Option<Value> {
 
 fn mutate(document: &Value, mutation: &Value) -> Value {
     let mut document = document.clone();
-    *document
-        .pointer_mut(mutation["path"].as_str().unwrap())
-        .expect("vector mutation path") = mutation["value"].clone();
+    let path = mutation["path"].as_str().unwrap();
+    if let Some(rename) = mutation.get("rename").and_then(Value::as_str) {
+        let (parent, key) = path.rsplit_once('/').expect("mutation path has key");
+        let map = document
+            .pointer_mut(parent)
+            .and_then(Value::as_object_mut)
+            .expect("vector mutation object");
+        let value = map.remove(key).expect("vector mutation key");
+        map.insert(rename.into(), value);
+    } else {
+        *document.pointer_mut(path).expect("vector mutation path") = mutation["value"].clone();
+    }
     document
 }
 
@@ -104,14 +113,143 @@ fn den_spec_profile_policy_cases() {
                 case["name"]
             );
         } else {
-            assert_eq!(
-                request(
-                    json!({"op":"profile_policy_allows", "policy":case["policy"], "titleBand":case["titleBand"]})
-                )["ok"],
-                case["allow"],
-                "{}",
-                case["name"]
-            );
+            let response = request(json!({
+                "op":"profile_policy_allows",
+                "policy":case["policy"],
+                "minimumAge":case["minimumAge"],
+                "explicitApproval":case["approved"]
+            }));
+            if let Some(error) = case.get("error") {
+                assert_eq!(response["error"], *error, "{}", case["name"]);
+            } else {
+                assert_eq!(response["ok"], case["allow"], "{}", case["name"]);
+            }
+        }
+    }
+}
+
+#[test]
+fn den_spec_profile_policy_partial_order() {
+    let Some(vectors) = vectors() else { return };
+    for case in vectors["policyOrderingCases"].as_array().unwrap() {
+        assert_eq!(
+            request(json!({"op":"profile_policy_relation", "a":case["a"], "b":case["b"]}))["ok"],
+            case["relation"],
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn den_spec_kid_title_approval_documents_validate() {
+    let Some(vectors) = vectors() else { return };
+    let directory = &vectors["validDirectories"][0]["document"];
+    let base = &vectors["validApprovalDocuments"][0]["document"];
+    for case in vectors["validApprovalDocuments"].as_array().unwrap() {
+        assert_eq!(
+            request(json!({
+                "op":"kid_title_approvals_validate",
+                "logicalName":case["logicalName"],
+                "document":case["document"],
+                "directory":directory
+            }))["ok"],
+            case["document"],
+            "{}",
+            case["name"]
+        );
+    }
+    for case in vectors["invalidApprovalDocuments"].as_array().unwrap() {
+        let document = case
+            .get("mutate")
+            .map_or_else(|| base.clone(), |mutation| mutate(base, mutation));
+        let directory = case
+            .get("directoryMutate")
+            .map_or_else(|| directory.clone(), |mutation| mutate(directory, mutation));
+        let logical_name = case
+            .get("logicalName")
+            .unwrap_or(&vectors["validApprovalDocuments"][0]["logicalName"]);
+        assert_eq!(
+            request(json!({
+                "op":"kid_title_approvals_validate",
+                "logicalName":logical_name,
+                "document":document,
+                "directory":directory
+            }))["error"],
+            case["error"],
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn den_spec_kid_title_approval_merges_converge() {
+    let Some(vectors) = vectors() else { return };
+    let directory = &vectors["validDirectories"][0]["document"];
+    let base = &vectors["validApprovalDocuments"][0];
+    for case in vectors["approvalMergeCases"].as_array().unwrap() {
+        let mut a = base["document"].clone();
+        let mut b = a.clone();
+        a["approvals"]["movie:550"] = case["a"].clone();
+        b["approvals"]["movie:550"] = case["b"].clone();
+        let request_merge = |a: &Value, b: &Value| {
+            request(json!({
+                "op":"kid_title_approvals_merge",
+                "logicalName":base["logicalName"],
+                "a":a,
+                "b":b,
+                "directory":directory
+            }))
+        };
+        let ab = request_merge(&a, &b);
+        let ba = request_merge(&b, &a);
+        assert_eq!(ab["ok"], ba["ok"], "{}", case["name"]);
+        assert_eq!(
+            ab["ok"]["approvals"]["movie:550"], case["ok"],
+            "{}",
+            case["name"]
+        );
+        assert_eq!(
+            request_merge(&ab["ok"], &ab["ok"])["ok"],
+            ab["ok"],
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn den_spec_approval_document_unknown_sets_follow_the_newest_stamp() {
+    let Some(vectors) = vectors() else { return };
+    let directory = &vectors["validDirectories"][0]["document"];
+    let base = &vectors["validApprovalDocuments"][0];
+    for case in vectors["approvalUnknownSetCases"].as_array().unwrap() {
+        let document = |stamp: &Value, unknown: &Value| {
+            let mut document = json!({
+                "format": 4,
+                "kind": "kid-title-approvals",
+                "schema": 1,
+                "kid": "11112222333344445555666677778888",
+                "approvals": {"movie:550": {"value":"allow", "at":stamp}}
+            });
+            document
+                .as_object_mut()
+                .unwrap()
+                .extend(unknown.as_object().unwrap().clone());
+            document
+        };
+        let a = document(&case["aNewestStamp"], &case["aUnknown"]);
+        let b = document(&case["bNewestStamp"], &case["bUnknown"]);
+        let merged = request(json!({
+            "op":"kid_title_approvals_merge",
+            "logicalName":base["logicalName"],
+            "a":a,
+            "b":b,
+            "directory":directory
+        }));
+        for (key, value) in case["ok"].as_object().unwrap() {
+            assert_eq!(&merged["ok"][key], value, "{}", case["name"]);
         }
     }
 }
