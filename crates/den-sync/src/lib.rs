@@ -8,6 +8,7 @@ mod episodes;
 mod events;
 mod library_v3;
 mod library_v4;
+mod profiles;
 mod projection;
 mod recovery;
 mod series;
@@ -32,6 +33,7 @@ pub use library_v3::{
     episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
     switch_ready, v2_reading, v3_compact, v3_form, v3_form_with_context, write_back,
 };
+pub use profiles::{profiles_merge, profiles_validate};
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
@@ -226,6 +228,25 @@ enum Request {
     DocMerge {
         a: Value,
         b: Value,
+    },
+    /// Profiles v1: validate one logical profile-directory document without reading any external state.
+    ProfilesValidate {
+        document: Value,
+    },
+    /// Profiles v1: converge two valid versions of one profile-directory document.
+    ProfilesMerge {
+        a: Value,
+        b: Value,
+    },
+    /// Profiles v1: translate the legacy Owner maturity ceiling into the normalized policy.
+    ProfilePolicyNormalizeLegacy {
+        legacy: Option<String>,
+    },
+    /// Profiles v1: decide one normalized title band against one normalized policy.
+    ProfilePolicyAllows {
+        policy: Value,
+        #[serde(rename = "titleBand")]
+        title_band: Option<String>,
     },
     TitleState {
         title: Value,
@@ -795,6 +816,14 @@ fn run(request: Request) -> Result<Value, String> {
             Ok(library_v4::compaction_guard(unreadable, rows))
         }
         Request::DocMerge { a, b } => library_v4::doc_merge(&a, &b),
+        Request::ProfilesValidate { document } => profiles::validate(&document),
+        Request::ProfilesMerge { a, b } => profiles::merge(&a, &b),
+        Request::ProfilePolicyNormalizeLegacy { legacy } => {
+            profiles::normalize_legacy(legacy.as_deref())
+        }
+        Request::ProfilePolicyAllows { policy, title_band } => {
+            profiles::policy_allows(&policy, title_band.as_deref())
+        }
         Request::TitleState { title, now } => Ok(library_v4::state::title_state(
             &library_v4::readable(&title)?,
             now,

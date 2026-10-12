@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+unicode-normalization.workspace = true
 miniz_oxide.workspace = true
 argon2.workspace = true
 hkdf.workspace = true
@@ -21,4 +22,3 @@ den-assistant.workspace = true
 [dev-dependencies]
 # The assistant vectors' grant key that is no curve point.
 ed25519-dalek.workspace = true
-
