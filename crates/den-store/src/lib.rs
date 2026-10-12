@@ -162,7 +162,10 @@ impl fmt::Display for StoreError {
                 write!(f, "section {name} holds {found} elements for {rows} rows")
             }
             Self::InvalidAge { row, found } => {
-                write!(f, "minimum_age row {row} is {found}, expected 0 through 18 or 255")
+                write!(
+                    f,
+                    "minimum_age row {row} is {found}, expected 0 through 18 or 255"
+                )
             }
         }
     }
