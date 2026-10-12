@@ -2,8 +2,8 @@ name: Shared sync policy
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
-# Three jobs, one per part of `scripts/build-bindings.sh`, so they run side by side. The script with no
-# arguments does all three; each job asks for its own part with `--only`.
+# The three build jobs run side by side. A fourth clean-room job combines the native and WASM outputs and
+# verifies the exact packages clients receive.
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -51,6 +51,10 @@ jobs:
           tool: wasm-bindgen@0.2.129
       - run: bash scripts/build-bindings.sh --only wasm
       - run: node scripts/test-wasm.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wasm-bindings
+          path: web/generated
 
   native:
     runs-on: macos-26
@@ -66,3 +70,27 @@ jobs:
           shared-key: native
       - run: bash scripts/build-bindings.sh --only native
       - run: swift build --package-path Swift
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-bindings
+          path: |
+            Swift/Sources
+            Swift/Artifacts
+
+  vendor:
+    needs: [native, wasm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: native-bindings
+          path: Swift
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: wasm-bindings
+          path: web/generated
+      - run: node scripts/test-vendor.mjs
