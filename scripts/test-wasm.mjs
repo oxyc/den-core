@@ -6,7 +6,7 @@ assert.throws(() => evaluate('{}'), /not initialized/);
 assert.throws(() => evaluateAssistant('{}'), /not initialized/);
 await initialize(readFileSync(new URL('../web/generated/den_core_bg.wasm', import.meta.url)));
 await initializeAssistant(readFileSync(new URL('../web/generated/den_core_assistant_bg.wasm', import.meta.url)));
-const fixtures = ['policy-v1.json', 'policy-v3.json', 'policy-v4.json'].map(name =>
+const fixtures = ['policy-v1.json', 'policy-v3.json', 'policy-v4.json', 'profiles-v1.json'].map(name =>
   JSON.parse(readFileSync(new URL(`../crates/den-sync/tests/fixtures/${name}`, import.meta.url))));
 // The assistant ops run in their own module, and each module refuses the other's ops.
 const assistant = (request) => typeof request.op === 'string' && request.op.startsWith('assistant_');

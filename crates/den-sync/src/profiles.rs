@@ -10,6 +10,7 @@ use unicode_normalization::UnicodeNormalization;
 
 const ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "owner", "profiles"];
 const ENTRY_MEMBERS: &[&str] = &["id", "role", "display", "library", "policy", "deleted"];
+const APPROVAL_ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "kid", "approvals"];
 
 fn object<'a>(value: &'a Value, error: &str) -> Result<&'a Map<String, Value>, String> {
     value.as_object().ok_or_else(|| error.into())
@@ -20,12 +21,14 @@ fn exact_members(map: &Map<String, Value>, members: &[&str]) -> bool {
 }
 
 fn profile_id(value: &Value) -> Option<&str> {
-    value.as_str().filter(|id| {
-        id.len() == 32
-            && id
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    })
+    value.as_str().filter(|id| valid_profile_id(id))
+}
+
+fn valid_profile_id(id: &str) -> bool {
+    id.len() == 32
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn stamp(value: &Value) -> Result<Stamp, String> {
@@ -115,12 +118,13 @@ fn library(value: &Value) -> Result<(), String> {
 
 fn policy_value(value: &Value) -> Result<(), String> {
     let value = object(value, "invalid_policy")?;
-    if !exact_members(value, &["maxBand", "unknownRatings"])
-        || !matches!(
-            value["maxBand"].as_str(),
-            None | Some("littleKids" | "family" | "teen" | "mature")
-        )
-        || (!value["maxBand"].is_null() && !value["maxBand"].is_string())
+    if !value.contains_key("maximumAge")
+        || !value.contains_key("unknownRatings")
+        || (!value["maximumAge"].is_null()
+            && value["maximumAge"]
+                .as_u64()
+                .filter(|age| *age <= 18)
+                .is_none())
         || !matches!(value["unknownRatings"].as_str(), Some("allow" | "block"))
     {
         return Err("invalid_policy".into());
@@ -348,36 +352,195 @@ pub fn profiles_merge(a: &Value, b: &Value) -> Result<Value, String> {
 }
 
 pub fn normalize_legacy(legacy: Option<&str>) -> Result<Value, String> {
-    let max_band = match legacy {
+    let maximum_age = match legacy {
         None => Value::Null,
-        Some("pg13") => json!("teen"),
-        Some("r") => json!("mature"),
+        Some("pg13") => json!(13),
+        Some("r") => json!(17),
         Some(_) => return Err("invalid_legacy_policy".into()),
     };
-    Ok(json!({"maxBand": max_band, "unknownRatings": "allow"}))
+    Ok(json!({"maximumAge": maximum_age, "unknownRatings": "allow"}))
 }
 
-fn band(value: Option<&str>) -> Result<Option<u8>, String> {
-    match value {
-        None => Ok(None),
-        Some("littleKids") => Ok(Some(0)),
-        Some("family") => Ok(Some(1)),
-        Some("teen") => Ok(Some(2)),
-        Some("mature") => Ok(Some(3)),
-        Some(_) => Err("invalid_title_band".into()),
-    }
+fn maximum_age(policy: &Value) -> Option<u64> {
+    policy["maximumAge"].as_u64()
 }
 
-pub fn policy_allows(policy: &Value, title_band: Option<&str>) -> Result<Value, String> {
+pub fn policy_allows(
+    policy: &Value,
+    minimum_age: Option<&Value>,
+    explicit_approval: bool,
+) -> Result<Value, String> {
     policy_value(policy)?;
-    let allowed = match band(title_band)? {
+    if explicit_approval {
+        return Ok(Value::Bool(true));
+    }
+    let minimum_age = match minimum_age {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(
+            value
+                .as_u64()
+                .filter(|age| *age <= 18)
+                .ok_or("invalid_minimum_age")?,
+        ),
+    };
+    let allowed = match minimum_age {
+        Some(minimum) => maximum_age(policy).is_none_or(|maximum| minimum <= maximum),
         None => policy["unknownRatings"] == "allow",
-        Some(title) => match band(policy["maxBand"].as_str())? {
-            None => true,
-            Some(maximum) => title <= maximum,
-        },
     };
     Ok(Value::Bool(allowed))
+}
+
+fn age_strictness(policy: &Value) -> u64 {
+    maximum_age(policy).unwrap_or(19)
+}
+
+/// Compare normalized policies in the product order used by profile-selection gating.
+pub fn policy_relation(a: &Value, b: &Value) -> Result<Value, String> {
+    policy_value(a)?;
+    policy_value(b)?;
+    let age = age_strictness(a).cmp(&age_strictness(b));
+    let unknown = (a["unknownRatings"] == "allow").cmp(&(b["unknownRatings"] == "allow"));
+    let relation = match (age, unknown) {
+        (Ordering::Equal, Ordering::Equal) => "equal",
+        (Ordering::Less | Ordering::Equal, Ordering::Less | Ordering::Equal) => "stricter",
+        (Ordering::Greater | Ordering::Equal, Ordering::Greater | Ordering::Equal) => "looser",
+        _ => "incomparable",
+    };
+    Ok(json!(relation))
+}
+
+fn title_key(value: &str) -> bool {
+    let Some((media, id)) = value.split_once(':') else {
+        return false;
+    };
+    if !matches!(media, "movie" | "tv")
+        || id.is_empty()
+        || (id.len() > 1 && id.starts_with('0'))
+        || !id.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return false;
+    }
+    id.parse::<u32>().is_ok_and(|id| id > 0)
+}
+
+fn approval_entry(value: &Value) -> Result<(), String> {
+    let entry = object(value, "invalid_approval")?;
+    if !entry.contains_key("value")
+        || !entry.contains_key("at")
+        || !matches!(entry["value"].as_str(), Some("allow" | "tombstone"))
+        || stamp(&entry["at"]).is_err()
+    {
+        return Err("invalid_approval".into());
+    }
+    Ok(())
+}
+
+fn approval_kid<'a>(logical_name: &str, document: &'a Value) -> Result<&'a str, String> {
+    let named_kid = logical_name
+        .strip_prefix("kid-title-approvals:")
+        .filter(|id| valid_profile_id(id))
+        .ok_or("approval_name_mismatch")?;
+    let kid = document
+        .get("kid")
+        .and_then(profile_id)
+        .ok_or("invalid_approvals")?;
+    if kid != named_kid {
+        return Err("approval_name_mismatch".into());
+    }
+    Ok(kid)
+}
+
+/// Validate one approval document in its logical-name and current directory context.
+pub fn approvals_validate(
+    logical_name: &str,
+    document: &Value,
+    directory: &Value,
+) -> Result<Value, String> {
+    validate(directory)?;
+    let root = object(document, "invalid_approvals")?;
+    if root.get("format").and_then(Value::as_u64) != Some(4)
+        || root.get("kind").and_then(Value::as_str) != Some("kid-title-approvals")
+        || root.get("schema").and_then(Value::as_u64) != Some(1)
+    {
+        return Err("invalid_approvals".into());
+    }
+    let kid = approval_kid(logical_name, document)?;
+    directory["profiles"]
+        .get(kid)
+        .filter(|profile| profile["role"] == "kid" && profile["deleted"]["value"] == false)
+        .ok_or("approval_not_kid")?;
+    let approvals = root
+        .get("approvals")
+        .and_then(Value::as_object)
+        .ok_or("invalid_approvals")?;
+    for (key, entry) in approvals {
+        if !title_key(key) {
+            return Err("invalid_title_key".into());
+        }
+        approval_entry(entry)?;
+    }
+    Ok(document.clone())
+}
+
+fn latest_approval(root: &Map<String, Value>) -> Option<Stamp> {
+    root["approvals"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(_, entry)| stamp(&entry["at"]).expect("validated approval stamp"))
+        .max()
+}
+
+fn approval_later(a: &Value, b: &Value) -> Value {
+    let order = stamp(&a["at"])
+        .expect("validated approval stamp")
+        .cmp(&stamp(&b["at"]).expect("validated approval stamp"))
+        .then_with(|| (a["value"] == "tombstone").cmp(&(b["value"] == "tombstone")))
+        .then_with(|| jcs::cmp(a, b));
+    if order == Ordering::Less { b } else { a }.clone()
+}
+
+/// Converge two valid versions of one Kid approval document.
+pub fn approvals_merge(
+    logical_name: &str,
+    a: &Value,
+    b: &Value,
+    directory: &Value,
+) -> Result<Value, String> {
+    approvals_validate(logical_name, a, directory)?;
+    approvals_validate(logical_name, b, directory)?;
+    let (a, b) = (a.as_object().unwrap(), b.as_object().unwrap());
+    if a["kid"] != b["kid"] {
+        return Err("identity_conflict".into());
+    }
+    let (ua, ub) = (
+        unknown(a, APPROVAL_ROOT_MEMBERS),
+        unknown(b, APPROVAL_ROOT_MEMBERS),
+    );
+    let mut out = if (latest_approval(a), rank(&ua)) < (latest_approval(b), rank(&ub)) {
+        ub
+    } else {
+        ua
+    };
+    out.insert("format".into(), json!(4));
+    out.insert("kind".into(), json!("kid-title-approvals"));
+    out.insert("schema".into(), json!(1));
+    out.insert("kid".into(), a["kid"].clone());
+    let (aa, ba) = (
+        a["approvals"].as_object().unwrap(),
+        b["approvals"].as_object().unwrap(),
+    );
+    let mut approvals = Map::new();
+    for key in aa.keys().chain(ba.keys()).collect::<BTreeSet<_>>() {
+        let value = match (aa.get(key), ba.get(key)) {
+            (Some(a), Some(b)) => approval_later(a, b),
+            (Some(value), None) | (None, Some(value)) => value.clone(),
+            (None, None) => unreachable!(),
+        };
+        approvals.insert(key.clone(), value);
+    }
+    out.insert("approvals".into(), Value::Object(approvals));
+    approvals_validate(logical_name, &Value::Object(out), directory)
 }
 
 #[cfg(test)]

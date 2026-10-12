@@ -33,7 +33,9 @@ pub use library_v3::{
     episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
     switch_ready, v2_reading, v3_compact, v3_form, v3_form_with_context, write_back,
 };
-pub use profiles::{profiles_merge, profiles_validate};
+pub use profiles::{
+    approvals_merge, approvals_validate, policy_relation, profiles_merge, profiles_validate,
+};
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
@@ -242,11 +244,33 @@ enum Request {
     ProfilePolicyNormalizeLegacy {
         legacy: Option<String>,
     },
-    /// Profiles v1: decide one normalized title band against one normalized policy.
+    /// Profiles v1: decide one title maturity signal against one normalized policy.
     ProfilePolicyAllows {
         policy: Value,
-        #[serde(rename = "titleBand")]
-        title_band: Option<String>,
+        #[serde(default, rename = "minimumAge")]
+        minimum_age: Option<Value>,
+        #[serde(default, rename = "explicitApproval")]
+        explicit_approval: bool,
+    },
+    /// Profiles v1: compare policies in their product partial order.
+    ProfilePolicyRelation {
+        a: Value,
+        b: Value,
+    },
+    /// Profiles v1: validate a per-Kid approval document in its directory/name context.
+    KidTitleApprovalsValidate {
+        #[serde(rename = "logicalName")]
+        logical_name: String,
+        document: Value,
+        directory: Value,
+    },
+    /// Profiles v1: converge two versions of a per-Kid approval document.
+    KidTitleApprovalsMerge {
+        #[serde(rename = "logicalName")]
+        logical_name: String,
+        a: Value,
+        b: Value,
+        directory: Value,
     },
     TitleState {
         title: Value,
@@ -821,9 +845,23 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
             profiles::normalize_legacy(legacy.as_deref())
         }
-        Request::ProfilePolicyAllows { policy, title_band } => {
-            profiles::policy_allows(&policy, title_band.as_deref())
-        }
+        Request::ProfilePolicyAllows {
+            policy,
+            minimum_age,
+            explicit_approval,
+        } => profiles::policy_allows(&policy, minimum_age.as_ref(), explicit_approval),
+        Request::ProfilePolicyRelation { a, b } => profiles::policy_relation(&a, &b),
+        Request::KidTitleApprovalsValidate {
+            logical_name,
+            document,
+            directory,
+        } => profiles::approvals_validate(&logical_name, &document, &directory),
+        Request::KidTitleApprovalsMerge {
+            logical_name,
+            a,
+            b,
+            directory,
+        } => profiles::approvals_merge(&logical_name, &a, &b, &directory),
         Request::TitleState { title, now } => Ok(library_v4::state::title_state(
             &library_v4::readable(&title)?,
             now,
