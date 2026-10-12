@@ -91,4 +91,7 @@ if want wasm; then
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_assistant \
         target/wasm32-unknown-unknown/release/den_core_web_assistant.wasm
 fi
-if [[ " $* " == *" --vendor "* ]]; then node scripts/vendor.mjs; fi
+if [[ " $* " == *" --vendor "* ]]; then
+    node scripts/vendor.mjs
+    node scripts/test-vendor.mjs
+fi
