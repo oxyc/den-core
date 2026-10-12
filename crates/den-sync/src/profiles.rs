@@ -68,7 +68,7 @@ fn stamp(value: &Value) -> Result<Stamp, String> {
 
 fn stamped<'a>(value: &'a Value, error: &str) -> Result<&'a Map<String, Value>, String> {
     let field = object(value, error)?;
-    if !exact_members(field, &["value", "at"]) || stamp(&field["at"]).is_err() {
+    if !field.contains_key("value") || !field.contains_key("at") || stamp(&field["at"]).is_err() {
         return Err(error.into());
     }
     Ok(field)
@@ -109,7 +109,8 @@ fn standard_base64(bytes: &[u8]) -> String {
 fn library(value: &Value) -> Result<(), String> {
     let library = stamped(value, "invalid_library")?;
     let value = object(&library["value"], "invalid_library")?;
-    if !exact_members(value, &["keyVersion", "key"])
+    if !value.contains_key("keyVersion")
+        || !value.contains_key("key")
         || value["keyVersion"]
             .as_u64()
             .filter(|version| (1..=u64::from(u32::MAX)).contains(version))
@@ -447,31 +448,30 @@ pub fn apply(
     let profile_entry = profile_entry
         .as_object_mut()
         .expect("validated profile entry");
-    let stamped_value = |value: Option<&Value>, at: Option<&Value>| {
-        Ok::<_, String>(json!({
-            "value": value.ok_or("invalid_operation_input")?,
-            "at": at.ok_or("invalid_operation_input")?
-        }))
-    };
     match operation {
         "rename" => {
-            let mut next = stamped_value(value, at)?;
-            preserve_value_extensions(&profile_entry["display"], &mut next, &["name", "avatar"])?;
+            let next =
+                replace_stamped_object(&profile_entry["display"], value, at, &["name", "avatar"])?;
             display(&next)?;
             profile_entry.insert("display".into(), next);
         }
         "policy" => {
-            let mut next = stamped_value(value, at)?;
-            preserve_value_extensions(
+            let next = replace_stamped_object(
                 &profile_entry["policy"],
-                &mut next,
+                value,
+                at,
                 &["maximumAge", "unknownRatings"],
             )?;
             policy(&next)?;
             profile_entry.insert("policy".into(), next);
         }
         "library" => {
-            let next = stamped_value(value, at)?;
+            let next = replace_stamped_object(
+                &profile_entry["library"],
+                value,
+                at,
+                &["keyVersion", "key"],
+            )?;
             library(&next)?;
             let previous = profile_entry["library"]["value"]["keyVersion"]
                 .as_u64()
@@ -485,7 +485,9 @@ pub fn apply(
             if profile == owner {
                 return Err("owner_deleted".into());
             }
-            let next = json!({"value": true, "at": at.ok_or("invalid_operation_input")?});
+            let mut next = profile_entry["deleted"].clone();
+            next["value"] = json!(true);
+            next["at"] = at.ok_or("invalid_operation_input")?.clone();
             deleted(&next)?;
             profile_entry.insert("deleted".into(), next);
         }
@@ -494,21 +496,28 @@ pub fn apply(
     validate_directory(&result, true)
 }
 
-fn preserve_value_extensions(
+fn replace_stamped_object(
     current: &Value,
-    next: &mut Value,
+    replacement: Option<&Value>,
+    at: Option<&Value>,
     known: &[&str],
-) -> Result<(), String> {
-    let current = object(&current["value"], "invalid_operation_input")?;
-    let next = next["value"]
-        .as_object_mut()
-        .ok_or("invalid_operation_input")?;
-    for (key, value) in current {
-        if !known.contains(&key.as_str()) {
-            next.insert(key.clone(), value.clone());
+) -> Result<Value, String> {
+    let mut next = current.clone();
+    let mut value = object(&current["value"], "invalid_operation_input")?.clone();
+    let replacement = object(
+        replacement.ok_or("invalid_operation_input")?,
+        "invalid_operation_input",
+    )?;
+    for key in known {
+        if let Some(replacement) = replacement.get(*key) {
+            value.insert((*key).into(), replacement.clone());
+        } else {
+            value.remove(*key);
         }
     }
-    Ok(())
+    next["value"] = Value::Object(value);
+    next["at"] = at.ok_or("invalid_operation_input")?.clone();
+    Ok(next)
 }
 
 fn optional_bool(input: &Map<String, Value>, key: &str) -> Result<bool, String> {

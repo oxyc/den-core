@@ -151,36 +151,98 @@ fn den_spec_profile_directory_operations_construct_canonical_documents() {
             );
         }
     }
+}
 
-    let mut extended = base.clone();
-    extended["profiles"]["11112222333344445555666677778888"]["policy"]["value"]
-        ["futurePolicyFlag"] = json!("preserved");
+#[test]
+fn profile_directory_operations_preserve_unknown_stamped_extensions() {
+    let Some(vectors) = vectors() else { return };
+    let profile = "11112222333344445555666677778888";
+    let mut extended = vectors["validDirectories"][0]["document"].clone();
+    extended["profiles"][profile]["display"]["futureDisplayWrapper"] = json!("kept");
+    extended["profiles"][profile]["display"]["value"]["futureDisplayValue"] = json!("kept");
+    extended["profiles"][profile]["policy"]["futurePolicyWrapper"] = json!("kept");
+    extended["profiles"][profile]["policy"]["value"]["futurePolicyValue"] = json!("kept");
+    extended["profiles"][profile]["library"]["futureLibraryWrapper"] = json!("kept");
+    extended["profiles"][profile]["library"]["value"]["futureLibraryValue"] = json!("kept");
+    extended["profiles"][profile]["deleted"]["futureDeletedWrapper"] = json!("kept");
+
+    let rename = request(json!({
+        "op":"profiles_apply",
+        "document":extended,
+        "operation":"rename",
+        "profile":profile,
+        "value":{"name":"Mina Three"},
+        "at":[1800000009000_i64,0,"a1b2c3d4e5f60718"]
+    }));
+    assert_eq!(
+        rename["ok"]["profiles"][profile]["display"]["value"]["name"],
+        "Mina Three"
+    );
+    assert!(rename["ok"]["profiles"][profile]["display"]["value"]
+        .get("avatar")
+        .is_none());
+    assert_eq!(
+        rename["ok"]["profiles"][profile]["display"]["futureDisplayWrapper"],
+        "kept"
+    );
+    assert_eq!(
+        rename["ok"]["profiles"][profile]["display"]["value"]["futureDisplayValue"],
+        "kept"
+    );
+
     let policy = request(json!({
         "op":"profiles_apply",
         "document":extended,
         "operation":"policy",
-        "profile":"11112222333344445555666677778888",
+        "profile":profile,
         "value":{"maximumAge":12,"unknownRatings":"block"},
-        "at":[1800000009000_i64,0,"a1b2c3d4e5f60718"]
+        "at":[1800000009000_i64,1,"a1b2c3d4e5f60718"]
     }));
     assert_eq!(
-        policy["ok"]["profiles"]["11112222333344445555666677778888"]["policy"]["value"]
-            ["futurePolicyFlag"],
-        "preserved"
+        policy["ok"]["profiles"][profile]["policy"]["value"]["maximumAge"],
+        12
+    );
+    assert_eq!(
+        policy["ok"]["profiles"][profile]["policy"]["futurePolicyWrapper"],
+        "kept"
+    );
+    assert_eq!(
+        policy["ok"]["profiles"][profile]["policy"]["value"]["futurePolicyValue"],
+        "kept"
     );
 
     let library = request(json!({
         "op":"profiles_apply",
-        "document":base,
+        "document":extended,
         "operation":"library",
-        "profile":"11112222333344445555666677778888",
+        "profile":profile,
         "value":{"keyVersion":2,"key":"REREREREREREREREREREREREREREREREREREREREREQ="},
-        "at":[1800000009000_i64,1,"a1b2c3d4e5f60718"]
+        "at":[1800000009000_i64,2,"a1b2c3d4e5f60718"]
     }));
     assert_eq!(
-        library["ok"]["profiles"]["11112222333344445555666677778888"]["library"]["value"]
-            ["keyVersion"],
+        library["ok"]["profiles"][profile]["library"]["value"]["keyVersion"],
         2
+    );
+    assert_eq!(
+        library["ok"]["profiles"][profile]["library"]["futureLibraryWrapper"],
+        "kept"
+    );
+    assert_eq!(
+        library["ok"]["profiles"][profile]["library"]["value"]["futureLibraryValue"],
+        "kept"
+    );
+
+    let delete = request(json!({
+        "op":"profiles_apply",
+        "document":extended,
+        "operation":"delete",
+        "profile":profile,
+        "at":[1800000009000_i64,3,"a1b2c3d4e5f60718"]
+    }));
+    assert_eq!(delete["ok"]["profiles"][profile]["deleted"]["value"], true);
+    assert_eq!(
+        delete["ok"]["profiles"][profile]["deleted"]["futureDeletedWrapper"],
+        "kept"
     );
 }
 
