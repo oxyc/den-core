@@ -1,4 +1,4 @@
-//! The den-spec contract test: read `vectors/store-v3.store` and check it against `store-v3.json` —
+//! The den-spec contract test: read `vectors/store-v4.store` and check it against `store-v4.json` —
 //! and the frozen v1/v2 outputs, which this reader still accepts.
 //!
 //! This is the mechanism that keeps a Python writer in den-dataset and this Rust reader in step. Without
@@ -44,7 +44,7 @@ fn fixture(stem: &str) -> Option<(Vec<u8>, serde_json::Value)> {
 /// to be set on purpose, which is the whole difference.
 macro_rules! fixture_or_fail {
     () => {
-        fixture_or_fail!("store-v3")
+        fixture_or_fail!("store-v4")
     };
     ($stem:literal) => {
         match fixture($stem) {
@@ -97,7 +97,7 @@ fn header_matches_the_spec_vectors() {
 fn franchise_is_every_series_in_order() {
     let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
-    assert_eq!(store.format_version(), 3);
+    assert_eq!(store.format_version(), 4);
     let franchises = store.franchises().expect("franchise_v / franchise_o");
     assert!(
         store.per_row::<u32>("franchise").is_err(),
@@ -266,6 +266,20 @@ fn structural_affinity_is_dense_and_named() {
     }
 }
 
+/// Store-v4's addition: one exact numeric threshold per row, with 255 distinct from all-ages zero.
+#[test]
+fn numeric_maturity_age_preserves_unknown() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let ages = store.minimum_ages().expect("minimum_age");
+    for row in expected["rows"].as_array().unwrap() {
+        let at = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let want = row["minimumAge"].as_u64().map(|age| age as u8);
+        assert_eq!(ages.get(at), want, "{} minimum age", row["key"]);
+    }
+    assert_eq!(ages.get(den_store::Row(usize::MAX)), None);
+}
+
 #[test]
 fn a_store_v2_file_still_opens_without_structural_sections() {
     let (bytes, _) = fixture_or_fail!("store-v2");
@@ -273,6 +287,7 @@ fn a_store_v2_file_still_opens_without_structural_sections() {
     assert_eq!(store.format_version(), 2);
     assert!(store.column::<u8>("structural").is_err());
     assert!(store.column::<u32>("structural_names").is_err());
+    assert_eq!(store.minimum_ages().unwrap().get(den_store::Row(0)), None);
 }
 
 /// A store published before store-v2 still opens, and its single `franchise` column reads as a list
