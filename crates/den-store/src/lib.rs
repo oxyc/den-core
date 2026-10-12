@@ -1,4 +1,4 @@
-//! Reads `den-<version>.store` — den-spec `wire/store-v3.md`, and the v1/v2 stores
+//! Reads `den-<version>.store` — den-spec `wire/store-v4.md`, and the v1/v2/v3 stores
 //! published before it.
 //!
 //! Pure, like the rest of this workspace: the decoder takes a byte slice and returns borrowed views of
@@ -30,9 +30,10 @@ use zerocopy::{FromBytes, Immutable, KnownLayout};
 /// `OLDEST_FORMAT_VERSION..=FORMAT_VERSION` is refused: a format change is a new version, never a
 /// reinterpretation of the same bytes.
 ///
-/// 2 made `franchise` a list (`franchise_v`/`franchise_o`). 3 adds the `structural` affinity matrix and
-/// its names. Older stores remain readable; consumers treat the structural profile as absent there.
-pub const FORMAT_VERSION: u32 = 3;
+/// 2 made `franchise` a list (`franchise_v`/`franchise_o`). 3 added the `structural` affinity matrix and
+/// its names. 4 adds numeric minimum ages. Older stores remain readable; consumers treat fields added
+/// after their version as absent.
+pub const FORMAT_VERSION: u32 = 4;
 /// The oldest layout still read. store-v1 files stay readable so a reader can ship before the writer
 /// does: the dataset is published separately, and a reader that refused v1 could not be deployed
 /// until a v2 store existed.
@@ -48,6 +49,8 @@ const NAME_BYTES: usize = 16;
 pub const NONE_U32: u32 = u32::MAX;
 /// Absent, for the `card_year` column.
 pub const NONE_I16: i16 = i16::MIN;
+/// Unknown, for store-v4's `minimum_age` column. It must never be interpreted as all-ages.
+pub const NONE_AGE: u8 = u8::MAX;
 
 /// The 12 facet axes, in the order `facet_v` and `facet_c` store them.
 pub const FACET_AXES: [&str; 12] = [
@@ -109,6 +112,11 @@ pub enum StoreError {
         rows: usize,
         found: usize,
     },
+    /// Store-v4 permits exact ages 0 through 18 and the unknown sentinel only.
+    InvalidAge {
+        row: usize,
+        found: u8,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -152,6 +160,12 @@ impl fmt::Display for StoreError {
             ),
             Self::RowMismatch { name, rows, found } => {
                 write!(f, "section {name} holds {found} elements for {rows} rows")
+            }
+            Self::InvalidAge { row, found } => {
+                write!(
+                    f,
+                    "minimum_age row {row} is {found}, expected 0 through 18 or 255"
+                )
             }
         }
     }
@@ -263,7 +277,7 @@ impl<'a> Store<'a> {
         self.rows
     }
 
-    /// The layout the writer declared: 1 or 2.
+    /// The layout the writer declared: 1 through 4.
     pub fn format_version(&self) -> u32 {
         self.format_version
     }
@@ -411,6 +425,26 @@ impl<'a> Store<'a> {
         } else {
             Ok(Franchises::Single(self.per_row("franchise")?))
         }
+    }
+
+    /// Every title's exact numeric maturity threshold. `None` is unknown.
+    ///
+    /// Store-v1 through v3 have no such column and return an all-unknown view. Store-v4 requires the
+    /// column and validates every byte before returning it, so an invalid age fails dataset load rather
+    /// than becoming a request-dependent answer.
+    pub fn minimum_ages(&self) -> Result<MinimumAges<'a>, StoreError> {
+        if self.format_version < 4 {
+            return Ok(MinimumAges::Unknown);
+        }
+        let values = self.per_row::<u8>("minimum_age")?;
+        if let Some((row, &found)) = values
+            .iter()
+            .enumerate()
+            .find(|(_, age)| **age > 18 && **age != NONE_AGE)
+        {
+            return Err(StoreError::InvalidAge { row, found });
+        }
+        Ok(MinimumAges::Values(values))
     }
 
     /// The iconic studios: production companies a viewer browses by, each with the entity ids of every
@@ -1509,6 +1543,22 @@ pub enum Franchises<'a> {
     Single(&'a [u32]),
 }
 
+/// [`Store::minimum_ages`]. Older stores have no classification for any row.
+#[derive(Clone, Copy, Debug)]
+pub enum MinimumAges<'a> {
+    Unknown,
+    Values(&'a [u8]),
+}
+
+impl MinimumAges<'_> {
+    pub fn get(&self, row: Row) -> Option<u8> {
+        match self {
+            Self::Unknown => None,
+            Self::Values(values) => values.get(row.0).copied().filter(|&age| age != NONE_AGE),
+        }
+    }
+}
+
 impl<'a> Franchises<'a> {
     /// Row *i*'s series, most specific first. Empty for a title in none, or a row out of range.
     pub fn get(&self, row: Row) -> &'a [u32] {
@@ -1803,6 +1853,38 @@ mod tests {
 
     fn u32s(values: &[u32]) -> Vec<u8> {
         values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn maturity_requires_valid_v4_values_and_is_unknown_in_v3() {
+        let good = build(3, &[("minimum_age", 1, vec![0, 18, NONE_AGE])]);
+        let store = Store::open(&good).unwrap();
+        let ages = store.minimum_ages().unwrap();
+        assert_eq!(
+            (ages.get(Row(0)), ages.get(Row(1)), ages.get(Row(2))),
+            (Some(0), Some(18), None)
+        );
+
+        let invalid = build(1, &[("minimum_age", 1, vec![19])]);
+        assert_eq!(
+            Store::open(&invalid).unwrap().minimum_ages().err(),
+            Some(StoreError::InvalidAge { row: 0, found: 19 })
+        );
+        assert_eq!(
+            Store::open(&build(1, &[])).unwrap().minimum_ages().err(),
+            Some(StoreError::MissingSection("minimum_age"))
+        );
+
+        let mut old = build(1, &[]);
+        old[8..12].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            Store::open(&old)
+                .unwrap()
+                .minimum_ages()
+                .unwrap()
+                .get(Row(0)),
+            None
+        );
     }
 
     /// The optional sections read as empty when absent (the den-spec fixture tests that half) and as an
