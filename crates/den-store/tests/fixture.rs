@@ -1,5 +1,5 @@
-//! The den-spec contract test: read `vectors/store-v4.store` and check it against `store-v4.json` —
-//! and the frozen v1/v2 outputs, which this reader still accepts.
+//! The den-spec contract test: read `vectors/store-v5.store` and check it against `store-v5.json` —
+//! and the frozen older outputs, which this reader still accepts.
 //!
 //! This is the mechanism that keeps a Python writer in den-dataset and this Rust reader in step. Without
 //! it the spec drifted from the writer unnoticed — it claimed the content hash was xxHash64 when the
@@ -44,7 +44,7 @@ fn fixture(stem: &str) -> Option<(Vec<u8>, serde_json::Value)> {
 /// to be set on purpose, which is the whole difference.
 macro_rules! fixture_or_fail {
     () => {
-        fixture_or_fail!("store-v4")
+        fixture_or_fail!("store-v5")
     };
     ($stem:literal) => {
         match fixture($stem) {
@@ -97,7 +97,7 @@ fn header_matches_the_spec_vectors() {
 fn franchise_is_every_series_in_order() {
     let (bytes, expected) = fixture_or_fail!();
     let store = Store::open(&bytes).expect("opens");
-    assert_eq!(store.format_version(), 4);
+    assert_eq!(store.format_version(), 5);
     let franchises = store.franchises().expect("franchise_v / franchise_o");
     assert!(
         store.per_row::<u32>("franchise").is_err(),
@@ -280,6 +280,33 @@ fn numeric_maturity_age_preserves_unknown() {
     assert_eq!(ages.get(den_store::Row(usize::MAX)), None);
 }
 
+/// Store-v5's sparse detail evidence keeps the official label even where normalization is unknown.
+#[test]
+fn maturity_ratings_preserve_every_public_observation() {
+    let (bytes, expected) = fixture_or_fail!();
+    let store = Store::open(&bytes).expect("opens");
+    let ratings = store.maturity_ratings().expect("mat_* sections");
+    for row in expected["rows"].as_array().unwrap() {
+        let at = den_store::Row(row["row"].as_u64().unwrap() as usize);
+        let got: Vec<_> = ratings
+            .get(at)
+            .map(|rating| {
+                serde_json::json!({
+                    "authority": rating.authority,
+                    "authorityId": rating.authority_id,
+                    "rating": rating.rating,
+                    "normalizedAge": rating.normalized_age,
+                    "assessed": rating.assessed,
+                    "runtimeMinutes": rating.runtime_minutes,
+                    "format": rating.format,
+                })
+            })
+            .collect();
+        assert_eq!(got.as_slice(), row["maturityRatings"].as_array().unwrap());
+    }
+    assert!(ratings.get(den_store::Row(usize::MAX)).next().is_none());
+}
+
 #[test]
 fn a_store_v2_file_still_opens_without_structural_sections() {
     let (bytes, _) = fixture_or_fail!("store-v2");
@@ -288,6 +315,7 @@ fn a_store_v2_file_still_opens_without_structural_sections() {
     assert!(store.column::<u8>("structural").is_err());
     assert!(store.column::<u32>("structural_names").is_err());
     assert_eq!(store.minimum_ages().unwrap().get(den_store::Row(0)), None);
+    assert!(store.maturity_ratings().unwrap().is_empty());
 }
 
 /// A store published before store-v2 still opens, and its single `franchise` column reads as a list

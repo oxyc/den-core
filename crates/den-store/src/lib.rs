@@ -1,4 +1,4 @@
-//! Reads `den-<version>.store` — den-spec `wire/store-v4.md`, and the v1/v2/v3 stores
+//! Reads `den-<version>.store` — den-spec `wire/store-v5.md`, and the v1-v4 stores
 //! published before it.
 //!
 //! Pure, like the rest of this workspace: the decoder takes a byte slice and returns borrowed views of
@@ -31,9 +31,9 @@ use zerocopy::{FromBytes, Immutable, KnownLayout};
 /// reinterpretation of the same bytes.
 ///
 /// 2 made `franchise` a list (`franchise_v`/`franchise_o`). 3 added the `structural` affinity matrix and
-/// its names. 4 adds numeric minimum ages. Older stores remain readable; consumers treat fields added
-/// after their version as absent.
-pub const FORMAT_VERSION: u32 = 4;
+/// its names. 4 added numeric minimum ages. 5 adds sparse redistributable authority observations for
+/// title details. Older stores remain readable; consumers treat fields added after their version as absent.
+pub const FORMAT_VERSION: u32 = 5;
 /// The oldest layout still read. store-v1 files stay readable so a reader can ship before the writer
 /// does: the dataset is published separately, and a reader that refused v1 could not be deployed
 /// until a v2 store existed.
@@ -49,7 +49,8 @@ const NAME_BYTES: usize = 16;
 pub const NONE_U32: u32 = u32::MAX;
 /// Absent, for the `card_year` column.
 pub const NONE_I16: i16 = i16::MIN;
-/// Unknown, for store-v4's `minimum_age` column. It must never be interpreted as all-ages.
+/// Unknown, for `minimum_age` and a store-v5 observation's optional normalized age. It must never be
+/// interpreted as all-ages.
 pub const NONE_AGE: u8 = u8::MAX;
 
 /// The 12 facet axes, in the order `facet_v` and `facet_c` store them.
@@ -445,6 +446,82 @@ impl<'a> Store<'a> {
             return Err(StoreError::InvalidAge { row, found });
         }
         Ok(MinimumAges::Values(values))
+    }
+
+    /// Redistributable official ratings for title details. Filtering continues to use
+    /// [`Store::minimum_ages`] alone; a reported rating may have no safe numeric normalization.
+    /// Store-v1 through v4 return an empty view.
+    pub fn maturity_ratings(&self) -> Result<MaturityRatings<'a>, StoreError> {
+        if self.format_version < 5 {
+            return Ok(MaturityRatings::default());
+        }
+        let offsets = self.column::<u32>("mat_o")?;
+        if offsets.len() != self.rows + 1 {
+            return Err(StoreError::RowMismatch {
+                name: "mat_o",
+                rows: self.rows + 1,
+                found: offsets.len(),
+            });
+        }
+        let authority = self.column::<u32>("mat_auth")?;
+        let n = authority.len();
+        if offsets.first() != Some(&0)
+            || offsets.last().copied() != u32::try_from(n).ok()
+            || offsets.windows(2).any(|pair| pair[0] > pair[1])
+        {
+            return Err(StoreError::BadSection { name: "mat_o" });
+        }
+        let authority_id = maturity_column(self, "mat_authid", n)?;
+        let raw = maturity_column(self, "mat_raw", n)?;
+        let assessed = maturity_column(self, "mat_assess", n)?;
+        let format = maturity_column(self, "mat_format", n)?;
+        let ages = maturity_column(self, "mat_age", n)?;
+        let runtimes = maturity_column(self, "mat_runtime", n)?;
+        if ages.iter().any(|&age| age > 18 && age != NONE_AGE) {
+            return Err(StoreError::BadSection { name: "mat_age" });
+        }
+        let strings = self.strings()?;
+        for (name, values, optional) in [
+            ("mat_auth", authority, false),
+            ("mat_authid", authority_id, false),
+            ("mat_raw", raw, false),
+            ("mat_assess", assessed, true),
+            ("mat_format", format, true),
+        ] {
+            if values.iter().any(|&id| {
+                if optional && id == NONE_U32 {
+                    false
+                } else {
+                    strings.get(id).is_none_or(str::is_empty)
+                }
+            }) {
+                return Err(StoreError::BadSection { name });
+            }
+        }
+        let minimum = self.minimum_ages()?;
+        for row in 0..self.rows {
+            let from = offsets[row] as usize;
+            let to = offsets[row + 1] as usize;
+            let observed = ages[from..to]
+                .iter()
+                .copied()
+                .filter(|&age| age != NONE_AGE)
+                .max();
+            if observed != minimum.get(Row(row)) {
+                return Err(StoreError::BadSection { name: "mat_age" });
+            }
+        }
+        Ok(MaturityRatings {
+            offsets,
+            authority,
+            authority_id,
+            raw,
+            assessed,
+            format,
+            ages,
+            runtimes,
+            strings,
+        })
     }
 
     /// The iconic studios: production companies a viewer browses by, each with the entity ids of every
@@ -1298,6 +1375,25 @@ where
     Ok(values)
 }
 
+fn maturity_column<'a, T>(
+    store: &Store<'a>,
+    name: &'static str,
+    observations: usize,
+) -> Result<&'a [T], StoreError>
+where
+    T: FromBytes + Immutable + KnownLayout,
+{
+    let values = store.column::<T>(name)?;
+    if values.len() != observations {
+        return Err(StoreError::RowMismatch {
+            name,
+            rows: observations,
+            found: values.len(),
+        });
+    }
+    Ok(values)
+}
+
 fn check_offsets<T>(list: &List<'_, T>, name: &'static str) -> Result<(), StoreError> {
     if list.offsets.first() != Some(&0)
         || list.offsets.last().copied() != Some(list.values.len() as u32)
@@ -1550,6 +1646,66 @@ pub enum MinimumAges<'a> {
     Values(&'a [u8]),
 }
 
+/// [`Store::maturity_ratings`]. The arrays are sparse and parallel; strings are resolved lazily from
+/// the store's one dictionary. Older stores produce an empty view.
+#[derive(Default)]
+pub struct MaturityRatings<'a> {
+    offsets: &'a [u32],
+    authority: &'a [u32],
+    authority_id: &'a [u32],
+    raw: &'a [u32],
+    assessed: &'a [u32],
+    format: &'a [u32],
+    ages: &'a [u8],
+    runtimes: &'a [u16],
+    strings: Strings<'a>,
+}
+
+/// One official classification observation projected for title details.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityRating<'a> {
+    pub authority: &'a str,
+    pub authority_id: &'a str,
+    pub rating: &'a str,
+    pub normalized_age: Option<u8>,
+    pub assessed: Option<&'a str>,
+    pub runtime_minutes: Option<u16>,
+    pub format: Option<&'a str>,
+}
+
+impl<'a> MaturityRatings<'a> {
+    pub fn is_empty(&self) -> bool {
+        self.authority.is_empty()
+    }
+
+    /// This title's official observations. Empty for an older store, a title with none, or a row out
+    /// of range. Construction validates all parallel arrays and required string ids.
+    pub fn get(&self, row: Row) -> impl Iterator<Item = MaturityRating<'a>> + '_ {
+        let range = row
+            .0
+            .checked_add(1)
+            .and_then(|next| {
+                Some((*self.offsets.get(row.0)? as usize)..(*self.offsets.get(next)? as usize))
+            })
+            .unwrap_or(0..0);
+        range.filter_map(|i| {
+            Some(MaturityRating {
+                authority: self.strings.get(*self.authority.get(i)?)?,
+                authority_id: self.strings.get(*self.authority_id.get(i)?)?,
+                rating: self.strings.get(*self.raw.get(i)?)?,
+                normalized_age: self.ages.get(i).copied().filter(|&age| age != NONE_AGE),
+                assessed: self.strings.get(*self.assessed.get(i)?),
+                runtime_minutes: self
+                    .runtimes
+                    .get(i)
+                    .copied()
+                    .filter(|&minutes| minutes != 0),
+                format: self.strings.get(*self.format.get(i)?),
+            })
+        })
+    }
+}
+
 impl MinimumAges<'_> {
     pub fn get(&self, row: Row) -> Option<u8> {
         match self {
@@ -1673,6 +1829,7 @@ impl<'a, T> List<'a, T> {
 }
 
 /// The one string table.
+#[derive(Default)]
 pub struct Strings<'a> {
     blob: &'a [u8],
     offsets: &'a [u32],
