@@ -1,5 +1,5 @@
-//! Household profiles v1 (`den-spec wire/profiles-v1.md`). This is only the pure directory and content-policy
-//! boundary: it has no clock, storage, network, migration, split, reset, or wire-minimum effects.
+//! Household profiles v1 (`den-spec wire/profiles-v1.md`). This is only the pure directory, content-policy, and
+//! lifecycle-decision boundary: it has no clock, storage, network, split, reset, or wire-minimum effects.
 
 use crate::library_v4::{codec, jcs};
 use crate::wire::{Stamp, MAX_SAFE_INTEGER};
@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use unicode_normalization::UnicodeNormalization;
 
-const ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "owner", "profiles"];
+const ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "owner", "migration", "profiles"];
 const ENTRY_MEMBERS: &[&str] = &["id", "role", "display", "library", "policy", "deleted"];
 const APPROVAL_ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "kid", "approvals"];
 
@@ -29,6 +29,15 @@ fn valid_profile_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn valid_digest(value: &Value) -> bool {
+    value.as_str().is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
 }
 
 fn stamp(value: &Value) -> Result<Stamp, String> {
@@ -59,7 +68,7 @@ fn stamp(value: &Value) -> Result<Stamp, String> {
 
 fn stamped<'a>(value: &'a Value, error: &str) -> Result<&'a Map<String, Value>, String> {
     let field = object(value, error)?;
-    if !exact_members(field, &["value", "at"]) || stamp(&field["at"]).is_err() {
+    if !field.contains_key("value") || !field.contains_key("at") || stamp(&field["at"]).is_err() {
         return Err(error.into());
     }
     Ok(field)
@@ -100,7 +109,8 @@ fn standard_base64(bytes: &[u8]) -> String {
 fn library(value: &Value) -> Result<(), String> {
     let library = stamped(value, "invalid_library")?;
     let value = object(&library["value"], "invalid_library")?;
-    if !exact_members(value, &["keyVersion", "key"])
+    if !value.contains_key("keyVersion")
+        || !value.contains_key("key")
         || value["keyVersion"]
             .as_u64()
             .filter(|version| (1..=u64::from(u32::MAX)).contains(version))
@@ -161,8 +171,49 @@ fn entry(value: &Value) -> Result<(), String> {
     deleted(&entry["deleted"])
 }
 
-/// Validate and return the unchanged logical document. Serialization at the boundary supplies its canonical JSON.
-pub fn validate(document: &Value) -> Result<Value, String> {
+fn migration(value: &Value, owner: &str) -> Result<(), String> {
+    let migration = object(value, "invalid_migration")?;
+    if !exact_members(
+        migration,
+        &[
+            "version",
+            "attempt",
+            "source",
+            "backup",
+            "ownerProfile",
+            "ownerHead",
+        ],
+    ) || migration["version"].as_u64() != Some(1)
+        || profile_id(&migration["attempt"]).is_none()
+        || migration["ownerProfile"].as_str() != Some(owner)
+        || !valid_digest(&migration["ownerHead"])
+    {
+        return Err("invalid_migration".into());
+    }
+    let source = object(&migration["source"], "invalid_migration")?;
+    if !exact_members(source, &["generation", "head"])
+        || source["generation"]
+            .as_u64()
+            .filter(|generation| *generation <= MAX_SAFE_INTEGER)
+            .is_none()
+        || !valid_digest(&source["head"])
+    {
+        return Err("invalid_migration".into());
+    }
+    let backup = object(&migration["backup"], "invalid_migration")?;
+    if !exact_members(backup, &["id", "digest"])
+        || backup["id"]
+            .as_str()
+            .filter(|id| (1..=256).contains(&id.chars().count()))
+            .is_none()
+        || !valid_digest(&backup["digest"])
+    {
+        return Err("invalid_migration".into());
+    }
+    Ok(())
+}
+
+fn validate_directory(document: &Value, require_migration: bool) -> Result<Value, String> {
     let root = object(document, "invalid_profiles")?;
     if root.get("format").and_then(Value::as_u64) != Some(4)
         || root.get("kind").and_then(Value::as_str) != Some("profiles")
@@ -179,6 +230,9 @@ pub fn validate(document: &Value) -> Result<Value, String> {
         .and_then(Value::as_object)
         .filter(|profiles| !profiles.is_empty())
         .ok_or("invalid_profiles")?;
+    if require_migration && !root.contains_key("migration") {
+        return Err("migration_missing".into());
+    }
     let mut owners = 0;
     let mut live_keys = BTreeSet::new();
     for (map_id, value) in profiles {
@@ -213,7 +267,20 @@ pub fn validate(document: &Value) -> Result<Value, String> {
     if owners != 1 {
         return Err("multiple_owners".into());
     }
+    if let Some(value) = root.get("migration") {
+        migration(value, owner)?;
+    }
     Ok(document.clone())
+}
+
+/// Validate and return the unchanged logical document. Serialization at the boundary supplies its canonical JSON.
+pub fn validate(document: &Value) -> Result<Value, String> {
+    validate_directory(document, false)
+}
+
+/// Validate constructor input or, with `stored`, require immutable migration evidence suitable for publication.
+pub fn validate_input(document: &Value, stored: bool) -> Result<Value, String> {
+    validate_directory(document, stored)
 }
 
 fn rank(set: &Map<String, Value>) -> (bool, Vec<u8>) {
@@ -309,10 +376,10 @@ fn monotone_document(root: &Map<String, Value>) -> Stamp {
 
 /// Validate both versions, merge the profile-id union, and validate the converged result.
 pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
-    validate(a)?;
-    validate(b)?;
+    validate_directory(a, true)?;
+    validate_directory(b, true)?;
     let (a, b) = (a.as_object().unwrap(), b.as_object().unwrap());
-    if a["owner"] != b["owner"] {
+    if a["owner"] != b["owner"] || a["migration"] != b["migration"] {
         return Err("identity_conflict".into());
     }
     let (ua, ub) = (unknown(a, ROOT_MEMBERS), unknown(b, ROOT_MEMBERS));
@@ -325,6 +392,7 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
     out.insert("kind".into(), json!("profiles"));
     out.insert("schema".into(), json!(1));
     out.insert("owner".into(), a["owner"].clone());
+    out.insert("migration".into(), a["migration"].clone());
     let (ap, bp) = (
         a["profiles"].as_object().unwrap(),
         b["profiles"].as_object().unwrap(),
@@ -339,7 +407,242 @@ pub fn merge(a: &Value, b: &Value) -> Result<Value, String> {
         profiles.insert(id.clone(), value);
     }
     out.insert("profiles".into(), Value::Object(profiles));
-    validate(&Value::Object(out))
+    validate_directory(&Value::Object(out), true)
+}
+
+/// Apply one validated owner-authorized directory operation without inventing clocks or keys.
+pub fn apply(
+    document: &Value,
+    operation: &str,
+    profile: &str,
+    entry_value: Option<&Value>,
+    value: Option<&Value>,
+    at: Option<&Value>,
+) -> Result<Value, String> {
+    let mut result = validate_directory(document, true)?;
+    if !valid_profile_id(profile) {
+        return Err("invalid_profile_id".into());
+    }
+    let root = result.as_object_mut().expect("validated directory");
+    let owner = root["owner"].as_str().expect("validated owner").to_owned();
+    let profiles = root["profiles"]
+        .as_object_mut()
+        .expect("validated profiles");
+    if operation == "create" {
+        if profiles.contains_key(profile) {
+            return Err("profile_exists".into());
+        }
+        let candidate = entry_value.ok_or("invalid_operation_input")?;
+        entry(candidate)?;
+        if candidate["id"].as_str() != Some(profile) || candidate["deleted"]["value"] != false {
+            return Err("invalid_profile".into());
+        }
+        profiles.insert(profile.into(), candidate.clone());
+        return validate_directory(&result, true);
+    }
+
+    let profile_entry = profiles.get_mut(profile).ok_or("profile_not_live")?;
+    if profile_entry["deleted"]["value"] != false {
+        return Err("profile_not_live".into());
+    }
+    let profile_entry = profile_entry
+        .as_object_mut()
+        .expect("validated profile entry");
+    match operation {
+        "rename" => {
+            let next =
+                replace_stamped_object(&profile_entry["display"], value, at, &["name", "avatar"])?;
+            display(&next)?;
+            profile_entry.insert("display".into(), next);
+        }
+        "policy" => {
+            let next = replace_stamped_object(
+                &profile_entry["policy"],
+                value,
+                at,
+                &["maximumAge", "unknownRatings"],
+            )?;
+            policy(&next)?;
+            profile_entry.insert("policy".into(), next);
+        }
+        "library" => {
+            let next = replace_stamped_object(
+                &profile_entry["library"],
+                value,
+                at,
+                &["keyVersion", "key"],
+            )?;
+            library(&next)?;
+            let previous = profile_entry["library"]["value"]["keyVersion"]
+                .as_u64()
+                .expect("validated key version");
+            if next["value"]["keyVersion"].as_u64() != previous.checked_add(1) {
+                return Err("invalid_key_version".into());
+            }
+            profile_entry.insert("library".into(), next);
+        }
+        "delete" => {
+            if profile == owner {
+                return Err("owner_deleted".into());
+            }
+            let mut next = profile_entry["deleted"].clone();
+            next["value"] = json!(true);
+            next["at"] = at.ok_or("invalid_operation_input")?.clone();
+            deleted(&next)?;
+            profile_entry.insert("deleted".into(), next);
+        }
+        _ => return Err("invalid_operation".into()),
+    }
+    validate_directory(&result, true)
+}
+
+fn replace_stamped_object(
+    current: &Value,
+    replacement: Option<&Value>,
+    at: Option<&Value>,
+    known: &[&str],
+) -> Result<Value, String> {
+    let mut next = current.clone();
+    let mut value = object(&current["value"], "invalid_operation_input")?.clone();
+    let replacement = object(
+        replacement.ok_or("invalid_operation_input")?,
+        "invalid_operation_input",
+    )?;
+    for key in known {
+        if let Some(replacement) = replacement.get(*key) {
+            value.insert((*key).into(), replacement.clone());
+        } else {
+            value.remove(*key);
+        }
+    }
+    next["value"] = Value::Object(value);
+    next["at"] = at.ok_or("invalid_operation_input")?.clone();
+    Ok(next)
+}
+
+fn optional_bool(input: &Map<String, Value>, key: &str) -> Result<bool, String> {
+    input.get(key).map_or(Ok(false), |value| {
+        value.as_bool().ok_or("invalid_evidence".into())
+    })
+}
+
+fn optional_string<'a>(
+    input: &'a Map<String, Value>,
+    key: &str,
+) -> Result<Option<&'a str>, String> {
+    input
+        .get(key)
+        .map(|value| value.as_str().ok_or("invalid_evidence".into()))
+        .transpose()
+}
+
+/// Decide the next pure initial-split effect from durable observations. This operation performs no effect itself.
+pub fn migration_next(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_evidence")?;
+    let state = input["state"].as_str().ok_or("invalid_evidence")?;
+    let observed = input["observed"].as_str().ok_or("invalid_evidence")?;
+    let candidate = optional_string(input, "candidateLibrary")?;
+    let winner = optional_string(input, "winnerLibrary")?;
+    let candidate_retired = optional_bool(input, "candidateRetired")?;
+    let answer = if observed == "committed" {
+        if winner.is_none() {
+            "invalid_evidence"
+        } else if candidate.is_some() && candidate != winner && !candidate_retired {
+            "retire-losing-candidate"
+        } else if candidate == winner
+            && candidate.is_some()
+            && optional_bool(input, "cleanupRequested")?
+        {
+            "cleanup_targets_winner"
+        } else if !optional_bool(input, "winnerVerified")? {
+            "verify-winner"
+        } else {
+            "activate"
+        }
+    } else if state == "commit-unknown" {
+        "read-household"
+    } else if observed == "corrupt" {
+        if optional_bool(input, "backupVerified")? {
+            "restore-backup"
+        } else {
+            "recovery-blocked"
+        }
+    } else if observed != "legacy" {
+        "invalid_observation"
+    } else if optional_string(input, "fence")? == Some("changed") {
+        if candidate.is_some() && !candidate_retired {
+            "retire-losing-candidate"
+        } else {
+            "restart"
+        }
+    } else if (matches!(state, "backed-up" | "owner-copied" | "ready-to-commit")
+        && !optional_bool(input, "backupVerified")?)
+        || (matches!(state, "owner-copied" | "ready-to-commit") && candidate.is_none())
+    {
+        "invalid_evidence"
+    } else if state == "ready-to-commit" && !optional_bool(input, "ownerVerified")? {
+        "verify-owner-library"
+    } else {
+        match state {
+            "idle" => "acquire-fence",
+            "fenced" => "create-backup",
+            "backed-up" => "create-owner-library",
+            "owner-copied" => "verify-owner-library",
+            "ready-to-commit" => "commit-fenced-household",
+            _ => "invalid_state",
+        }
+    };
+    Ok(json!(answer))
+}
+
+/// Decide the next pure compound-reset effect. The caller remains responsible for every returned effect.
+pub fn reset_next(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_evidence")?;
+    let profiles = input["profiles"].as_array().ok_or("invalid_evidence")?;
+    let mut old_keys = BTreeSet::new();
+    let mut new_keys = BTreeSet::new();
+    let mut all_verified = true;
+    let mut all_retired = true;
+    for profile in profiles {
+        let profile = object(profile, "invalid_evidence")?;
+        let deleted = profile["deleted"].as_bool().ok_or("invalid_evidence")?;
+        if deleted {
+            continue;
+        }
+        let old_version = profile["oldVersion"].as_u64().ok_or("invalid_evidence")?;
+        let new_version = profile["newVersion"].as_u64().ok_or("invalid_evidence")?;
+        if old_version.checked_add(1) != Some(new_version) {
+            return Ok(json!("invalid_key_version"));
+        }
+        let old_key = profile["oldKey"].as_str().ok_or("invalid_evidence")?;
+        let new_key = profile["newKey"].as_str().ok_or("invalid_evidence")?;
+        old_keys.insert(old_key);
+        if !new_keys.insert(new_key) {
+            return Ok(json!("reused_key"));
+        }
+        all_verified &= profile["verified"].as_bool().ok_or("invalid_evidence")?;
+        all_retired &= profile["oldRetired"].as_bool().ok_or("invalid_evidence")?;
+    }
+    if old_keys.iter().any(|key| new_keys.contains(key)) {
+        return Ok(json!("reused_key"));
+    }
+    let answer = if !all_verified {
+        "move-live-profiles"
+    } else if !input["householdCommitted"]
+        .as_bool()
+        .ok_or("invalid_evidence")?
+    {
+        "commit-successor-household"
+    } else if !all_retired
+        || !input["oldHouseholdRetired"]
+            .as_bool()
+            .ok_or("invalid_evidence")?
+    {
+        "retire-old-libraries"
+    } else {
+        "complete"
+    };
+    Ok(json!(answer))
 }
 
 /// Public typed equivalents for Rust callers; JSON callers use the versioned `evaluate` envelope.

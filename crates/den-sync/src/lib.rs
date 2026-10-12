@@ -34,7 +34,9 @@ pub use library_v3::{
     switch_ready, v2_reading, v3_compact, v3_form, v3_form_with_context, write_back,
 };
 pub use profiles::{
-    approvals_merge, approvals_validate, policy_relation, profiles_merge, profiles_validate,
+    apply as profiles_apply, approvals_merge, approvals_validate,
+    migration_next as profiles_migration_next, policy_relation, profiles_merge, profiles_validate,
+    reset_next as profiles_reset_next, validate_input as profiles_validate_input,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -234,11 +236,33 @@ enum Request {
     /// Profiles v1: validate one logical profile-directory document without reading any external state.
     ProfilesValidate {
         document: Value,
+        #[serde(default)]
+        stored: bool,
     },
     /// Profiles v1: converge two valid versions of one profile-directory document.
     ProfilesMerge {
         a: Value,
         b: Value,
+    },
+    /// Profiles v1: construct one owner-authorized directory edit from caller-issued identity, key, and stamp input.
+    ProfilesApply {
+        document: Value,
+        operation: String,
+        profile: String,
+        #[serde(default)]
+        entry: Option<Value>,
+        #[serde(default)]
+        value: Option<Value>,
+        #[serde(default)]
+        at: Option<Value>,
+    },
+    /// Profiles v1: choose the next initial-split effect from validated durable observations.
+    ProfilesMigrationNext {
+        input: Value,
+    },
+    /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
+    ProfilesResetNext {
+        input: Value,
     },
     /// Profiles v1: translate the legacy Owner maturity ceiling into the normalized policy.
     ProfilePolicyNormalizeLegacy {
@@ -840,8 +864,27 @@ fn run(request: Request) -> Result<Value, String> {
             Ok(library_v4::compaction_guard(unreadable, rows))
         }
         Request::DocMerge { a, b } => library_v4::doc_merge(&a, &b),
-        Request::ProfilesValidate { document } => profiles::validate(&document),
+        Request::ProfilesValidate { document, stored } => {
+            profiles::validate_input(&document, stored)
+        }
         Request::ProfilesMerge { a, b } => profiles::merge(&a, &b),
+        Request::ProfilesApply {
+            document,
+            operation,
+            profile,
+            entry,
+            value,
+            at,
+        } => profiles::apply(
+            &document,
+            &operation,
+            &profile,
+            entry.as_ref(),
+            value.as_ref(),
+            at.as_ref(),
+        ),
+        Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
+        Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
             profiles::normalize_legacy(legacy.as_deref())
         }

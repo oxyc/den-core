@@ -44,6 +44,18 @@ fn mutate(document: &Value, mutation: &Value) -> Value {
     document
 }
 
+fn remove(document: &Value, pointer: &str) -> Value {
+    let mut document = document.clone();
+    let (parent, key) = pointer.rsplit_once('/').expect("remove path has key");
+    document
+        .pointer_mut(parent)
+        .and_then(Value::as_object_mut)
+        .expect("vector removal object")
+        .remove(key)
+        .expect("vector removal key");
+    document
+}
+
 #[test]
 fn den_spec_profile_directories_validate() {
     let Some(vectors) = vectors() else { return };
@@ -57,10 +69,239 @@ fn den_spec_profile_directories_validate() {
         );
     }
     for case in vectors["invalidDirectories"].as_array().unwrap() {
-        let document = mutate(base, &case["mutate"]);
+        let document = if let Some(mutation) = case.get("mutate") {
+            mutate(base, mutation)
+        } else {
+            remove(base, case["remove"].as_str().unwrap())
+        };
         assert_eq!(
-            request(json!({"op":"profiles_validate", "document":document}))["error"],
+            request(json!({
+                "op":"profiles_validate",
+                "document":document,
+                "stored":case.get("stored").and_then(Value::as_bool).unwrap_or(false)
+            }))["error"],
             case["error"],
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn den_spec_profile_directory_operations_construct_canonical_documents() {
+    let Some(vectors) = vectors() else { return };
+    let base = &vectors["validDirectories"][0]["document"];
+    for case in vectors["directoryOperationCases"].as_array().unwrap() {
+        let mut operation = json!({
+            "op":"profiles_apply",
+            "document":base,
+            "operation":case["operation"],
+            "profile":case["profile"]
+        });
+        for field in ["entry", "value", "at"] {
+            if let Some(value) = case.get(field) {
+                operation[field] = value.clone();
+            }
+        }
+        let response = request(operation);
+        let result = response
+            .get("ok")
+            .unwrap_or_else(|| panic!("{}: {response}", case["name"]));
+        let entry = &result["profiles"][case["profile"].as_str().unwrap()];
+        let expected = &case["expect"];
+        if let Some(value) = expected.get("role") {
+            assert_eq!(&entry["role"], value, "{}", case["name"]);
+        }
+        if let Some(value) = expected.get("name") {
+            assert_eq!(
+                &entry["display"]["value"]["name"], value,
+                "{}",
+                case["name"]
+            );
+        }
+        if let Some(value) = expected.get("keyVersion") {
+            assert_eq!(
+                &entry["library"]["value"]["keyVersion"], value,
+                "{}",
+                case["name"]
+            );
+        }
+        if let Some(value) = expected.get("maximumAge") {
+            assert_eq!(
+                &entry["policy"]["value"]["maximumAge"], value,
+                "{}",
+                case["name"]
+            );
+        }
+        if let Some(value) = expected.get("unknownRatings") {
+            assert_eq!(
+                &entry["policy"]["value"]["unknownRatings"], value,
+                "{}",
+                case["name"]
+            );
+        }
+        if let Some(value) = expected.get("deleted") {
+            assert_eq!(&entry["deleted"]["value"], value, "{}", case["name"]);
+        }
+        if let Some(value) = expected.get("libraryKeyVersion") {
+            assert_eq!(
+                &entry["library"]["value"]["keyVersion"], value,
+                "{}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn profile_directory_operations_preserve_unknown_stamped_extensions() {
+    let Some(vectors) = vectors() else { return };
+    let profile = "11112222333344445555666677778888";
+    let mut extended = vectors["validDirectories"][0]["document"].clone();
+    extended["profiles"][profile]["display"]["futureDisplayWrapper"] = json!("kept");
+    extended["profiles"][profile]["display"]["value"]["futureDisplayValue"] = json!("kept");
+    extended["profiles"][profile]["policy"]["futurePolicyWrapper"] = json!("kept");
+    extended["profiles"][profile]["policy"]["value"]["futurePolicyValue"] = json!("kept");
+    extended["profiles"][profile]["library"]["futureLibraryWrapper"] = json!("kept");
+    extended["profiles"][profile]["library"]["value"]["futureLibraryValue"] = json!("kept");
+    extended["profiles"][profile]["deleted"]["futureDeletedWrapper"] = json!("kept");
+
+    let rename = request(json!({
+        "op":"profiles_apply",
+        "document":extended,
+        "operation":"rename",
+        "profile":profile,
+        "value":{"name":"Mina Three"},
+        "at":[1800000009000_i64,0,"a1b2c3d4e5f60718"]
+    }));
+    assert_eq!(
+        rename["ok"]["profiles"][profile]["display"]["value"]["name"],
+        "Mina Three"
+    );
+    assert!(rename["ok"]["profiles"][profile]["display"]["value"]
+        .get("avatar")
+        .is_none());
+    assert_eq!(
+        rename["ok"]["profiles"][profile]["display"]["futureDisplayWrapper"],
+        "kept"
+    );
+    assert_eq!(
+        rename["ok"]["profiles"][profile]["display"]["value"]["futureDisplayValue"],
+        "kept"
+    );
+
+    let policy = request(json!({
+        "op":"profiles_apply",
+        "document":extended,
+        "operation":"policy",
+        "profile":profile,
+        "value":{"maximumAge":12,"unknownRatings":"block"},
+        "at":[1800000009000_i64,1,"a1b2c3d4e5f60718"]
+    }));
+    assert_eq!(
+        policy["ok"]["profiles"][profile]["policy"]["value"]["maximumAge"],
+        12
+    );
+    assert_eq!(
+        policy["ok"]["profiles"][profile]["policy"]["futurePolicyWrapper"],
+        "kept"
+    );
+    assert_eq!(
+        policy["ok"]["profiles"][profile]["policy"]["value"]["futurePolicyValue"],
+        "kept"
+    );
+
+    let library = request(json!({
+        "op":"profiles_apply",
+        "document":extended,
+        "operation":"library",
+        "profile":profile,
+        "value":{"keyVersion":2,"key":"REREREREREREREREREREREREREREREREREREREREREQ="},
+        "at":[1800000009000_i64,2,"a1b2c3d4e5f60718"]
+    }));
+    assert_eq!(
+        library["ok"]["profiles"][profile]["library"]["value"]["keyVersion"],
+        2
+    );
+    assert_eq!(
+        library["ok"]["profiles"][profile]["library"]["futureLibraryWrapper"],
+        "kept"
+    );
+    assert_eq!(
+        library["ok"]["profiles"][profile]["library"]["value"]["futureLibraryValue"],
+        "kept"
+    );
+
+    let delete = request(json!({
+        "op":"profiles_apply",
+        "document":extended,
+        "operation":"delete",
+        "profile":profile,
+        "at":[1800000009000_i64,3,"a1b2c3d4e5f60718"]
+    }));
+    assert_eq!(delete["ok"]["profiles"][profile]["deleted"]["value"], true);
+    assert_eq!(
+        delete["ok"]["profiles"][profile]["deleted"]["futureDeletedWrapper"],
+        "kept"
+    );
+}
+
+#[test]
+fn den_spec_whole_directory_merges_converge_or_reject_identity_conflicts() {
+    let Some(vectors) = vectors() else { return };
+    let base = &vectors["validDirectories"][0]["document"];
+    for case in vectors["directoryMergeCases"].as_array().unwrap() {
+        let a = case["aMutations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .fold(base.clone(), |document, mutation| {
+                mutate(&document, mutation)
+            });
+        let b = case["bMutations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .fold(base.clone(), |document, mutation| {
+                mutate(&document, mutation)
+            });
+        let ab = request(json!({"op":"profiles_merge", "a":a, "b":b}));
+        let ba = request(json!({"op":"profiles_merge", "a":b, "b":a}));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&ab["error"], error, "{}", case["name"]);
+            assert_eq!(&ba["error"], error, "{}", case["name"]);
+        } else {
+            assert_eq!(ab["ok"], ba["ok"], "{}", case["name"]);
+            let profile = &ab["ok"]["profiles"]["11112222333344445555666677778888"];
+            assert_eq!(
+                profile["display"]["value"]["name"], case["expect"]["name"],
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                profile["policy"]["value"]["maximumAge"], case["expect"]["maximumAge"],
+                "{}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn den_spec_profile_lifecycle_decisions() {
+    let Some(vectors) = vectors() else { return };
+    for case in vectors["migrationCases"].as_array().unwrap() {
+        assert_eq!(
+            request(json!({"op":"profiles_migration_next", "input":case}))["ok"],
+            case["expect"],
+            "{}",
+            case["name"]
+        );
+    }
+    for case in vectors["resetCases"].as_array().unwrap() {
+        assert_eq!(
+            request(json!({"op":"profiles_reset_next", "input":case}))["ok"],
+            case["expect"],
             "{}",
             case["name"]
         );
