@@ -21,6 +21,7 @@ serde = { version = "1.0", features = ["derive"] }
 # `float_roundtrip`: library v4 §4 compares documents by their JCS bytes, so a number must parse to the double it
 # spells. Without it about one shortest-form fraction in ten parses 1 ULP off and a `resume.value` moves.
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
+unicode-normalization = "0.1.24"
 # Library v4 §4 pins the compressor: den-core compresses at level 9 with exactly the version in Cargo.lock.
 miniz_oxide = "=0.9.1"
 # The recovery code (den-spec `wire/recovery-code.md` §3): Argon2id, then HKDF-SHA256. No randomness or
@@ -56,4 +57,3 @@ opt-level = 3
 lto = true
 codegen-units = 1
 opt-level = "s"
-
