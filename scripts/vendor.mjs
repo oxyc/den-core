@@ -1,6 +1,6 @@
 // Mechanical packaging only. Clients consume immutable generated artifacts, never a sibling at runtime/build.
 import { createHash } from 'node:crypto';
-import { accessSync, cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, cpSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -35,13 +35,41 @@ function manifest(target) {
   writeFileSync(join(target, 'SOURCE.json'), JSON.stringify({ schema: 1, crate: 'den-sync', version: '0.1.0',
     rust: '1.95.0', uniffi, wasmBindgen, sourceDigest, sources, artifacts }, null, 2) + '\n');
 }
-function clean(target) {
-  const destination = resolve(target);
-  if (resolve(root) === destination || resolve(root).startsWith(destination + sep) || dirname(destination) === destination) {
-    throw new Error(`refusing to replace unsafe vendor destination: ${destination}`);
+function canonicalPath(target) {
+  let existing = resolve(target);
+  const missing = [];
+  while (true) {
+    try {
+      return resolve(realpathSync(existing), ...missing.reverse());
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      const parent = dirname(existing);
+      if (parent === existing) throw error;
+      missing.push(relative(parent, existing));
+      existing = parent;
+    }
   }
-  rmSync(destination, { recursive: true, force: true });
-  return destination;
+}
+function overlaps(first, second) {
+  return first === second || first.startsWith(second + sep) || second.startsWith(first + sep);
+}
+function preflightDestinations(native, web) {
+  const source = { lexical: resolve(root), canonical: canonicalPath(root) };
+  const destinations = [
+    { name: 'native', lexical: resolve(native) },
+    { name: 'web', lexical: resolve(web) },
+  ].map((destination) => ({ ...destination, canonical: canonicalPath(destination.lexical) }));
+  for (const destination of destinations) {
+    if (overlaps(destination.lexical, source.lexical) || overlaps(destination.canonical, source.canonical)) {
+      throw new Error(`refusing unsafe ${destination.name} vendor destination: ${destination.lexical}`);
+    }
+  }
+  const [nativeDestination, webDestination] = destinations;
+  if (overlaps(nativeDestination.lexical, webDestination.lexical)
+      || overlaps(nativeDestination.canonical, webDestination.canonical)) {
+    throw new Error('native and web vendor destinations must not overlap');
+  }
+  return { native: nativeDestination.lexical, web: webDestination.lexical };
 }
 export function vendor({
   native = process.env.DEN_NATIVE_VENDOR ?? join(root, '../den/Vendor/DenCore'),
@@ -55,12 +83,8 @@ export function vendor({
       .map((fixture) => `crates/den-sync/tests/fixtures/${fixture}`)];
   for (const source of required) accessSync(join(root, source));
 
-  native = resolve(native);
-  web = resolve(web);
-  if (native === web || native.startsWith(web + sep) || web.startsWith(native + sep)) {
-    throw new Error('native and web vendor destinations must not overlap');
-  }
-  native = clean(native);
+  ({ native, web } = preflightDestinations(native, web));
+  rmSync(native, { recursive: true, force: true });
   for (const name of ['Package.swift', 'Sources', 'Artifacts']) copy(`Swift/${name}`, join(native, name));
   copy('LICENSE', join(native, 'LICENSE'));
   // The golden cases travel with the binary, as they already do for the web. Kept beside it rather than copied
@@ -70,7 +94,7 @@ export function vendor({
   }
   manifest(native);
 
-  web = clean(web);
+  rmSync(web, { recursive: true, force: true });
   for (const name of ['index.js', 'index.d.ts', 'assistant.js', 'assistant.d.ts']) copy(`web/${name}`, join(web, name));
   // Two modules: every op but the assistant's (`index.js`), and the assistant ops (`assistant.js`), loaded on demand.
   for (const module of ['den_core', 'den_core_assistant']) {
