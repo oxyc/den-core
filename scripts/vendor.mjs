@@ -1,7 +1,7 @@
 // Mechanical packaging only. Clients consume immutable generated artifacts, never a sibling at runtime/build.
 import { createHash } from 'node:crypto';
 import { accessSync, cpSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -51,7 +51,12 @@ function canonicalPath(target) {
   }
 }
 function overlaps(first, second) {
-  return first === second || first.startsWith(second + sep) || second.startsWith(first + sep);
+  const contains = (parent, child) => {
+    const pathFromParent = relative(parent, child);
+    return pathFromParent === '' || (pathFromParent !== '..'
+      && !pathFromParent.startsWith(`..${sep}`) && !isAbsolute(pathFromParent));
+  };
+  return contains(first, second) || contains(second, first);
 }
 function preflightDestinations(native, web) {
   const source = { lexical: resolve(root), canonical: canonicalPath(root) };

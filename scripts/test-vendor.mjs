@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
   writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, parse, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { vendor } from './vendor.mjs';
 
@@ -96,10 +96,13 @@ try {
   assertSourceUntouched();
 
   const safeWeb = join(cleanRoom, 'safe-web');
-  for (const unsafeNative of [root, join(root, 'missing/native'), dirname(root)]) {
+  for (const unsafeNative of [root, join(root, 'missing/native'), dirname(root), parse(root).root]) {
     assert.throws(() => vendor({ native: unsafeNative, web: safeWeb }), /unsafe native vendor destination/);
     assertSourceUntouched();
   }
+  assert.throws(() => vendor({ native: protectedNative, web: parse(root).root }),
+    /unsafe web vendor destination/);
+  assertSourceUntouched();
 
   assert.throws(() => vendor({ native: join(cleanRoom, 'same'), web: join(cleanRoom, 'same') }),
     /must not overlap/);
