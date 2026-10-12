@@ -58,10 +58,11 @@ if want native; then
     mkdir -p "$scratch/headers/DenCoreFFI"
     cp Swift/Headers/DenCoreFFI.h Swift/Headers/module.modulemap "$scratch/headers/DenCoreFFI/"
     targets=(aarch64-apple-darwin aarch64-apple-tvos aarch64-apple-tvos-sim aarch64-apple-ios aarch64-apple-ios-sim)
-    # One invocation, so cargo compiles the targets concurrently instead of one fat-LTO build after another.
-    target_flags=()
-    for target in "${targets[@]}"; do target_flags+=(--target "$target"); done
-    cargo build --locked --release -p den-core-native --lib "${target_flags[@]}"
+    # Cargo 1.95 accepts only one --target per build. Build sequentially so each archive is produced reliably;
+    # the target-specific output directories preserve every library for XCFramework assembly below.
+    for target in "${targets[@]}"; do
+        cargo build --locked --release -p den-core-native --lib --target "$target"
+    done
     for target in "${targets[@]}"; do
         mkdir -p "$scratch/$target"
         cp "$root/target/$target/release/libden_core_native.a" "$scratch/$target/"
@@ -91,4 +92,7 @@ if want wasm; then
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_assistant \
         target/wasm32-unknown-unknown/release/den_core_web_assistant.wasm
 fi
-if [[ " $* " == *" --vendor "* ]]; then node scripts/vendor.mjs; fi
+if [[ " $* " == *" --vendor "* ]]; then
+    node scripts/vendor.mjs
+    node scripts/test-vendor.mjs
+fi
