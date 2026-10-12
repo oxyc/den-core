@@ -79,6 +79,36 @@
         "approvals": {"movie:550": {"value": "tombstone", "at": [20, 0, "a1b2c3d4e5f60718"], "futureEntryFact": "kept"}},
         "futureDocumentFact": "new"
       }
+    },
+    {
+      "name": "migration planner cleans a losing candidate before activation",
+      "request": {
+        "op": "profiles_migration_next",
+        "input": {
+          "state": "ready-to-commit",
+          "observed": "committed",
+          "candidateLibrary": "candidate-a",
+          "winnerLibrary": "winner-b",
+          "winnerVerified": true,
+          "candidateRetired": false
+        }
+      },
+      "ok": "retire-losing-candidate"
+    },
+    {
+      "name": "reset planner waits for every live profile verification",
+      "request": {
+        "op": "profiles_reset_next",
+        "input": {
+          "householdCommitted": false,
+          "oldHouseholdRetired": false,
+          "profiles": [
+            {"oldKey": "owner-old", "newKey": "owner-new", "oldVersion": 1, "newVersion": 2, "deleted": false, "verified": true, "oldRetired": false},
+            {"oldKey": "kid-old", "newKey": "kid-new", "oldVersion": 1, "newVersion": 2, "deleted": false, "verified": false, "oldRetired": false}
+          ]
+        }
+      },
+      "ok": "move-live-profiles"
     }
   ]
 }
