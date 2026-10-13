@@ -542,50 +542,142 @@ fn optional_bool(input: &Map<String, Value>, key: &str) -> Result<bool, String> 
     })
 }
 
-fn optional_string<'a>(
-    input: &'a Map<String, Value>,
-    key: &str,
-) -> Result<Option<&'a str>, String> {
-    input
-        .get(key)
-        .map(|value| value.as_str().ok_or("invalid_evidence".into()))
-        .transpose()
-}
-
 /// Decide the next pure initial-split effect from durable observations. This operation performs no effect itself.
 pub fn migration_next(input: &Value) -> Result<Value, String> {
     let input = object(input, "invalid_evidence")?;
-    let state = input["state"].as_str().ok_or("invalid_evidence")?;
-    let observed = input["observed"].as_str().ok_or("invalid_evidence")?;
-    let candidate = optional_string(input, "candidateLibrary")?;
-    let winner = optional_string(input, "winnerLibrary")?;
+    let state = input
+        .get("state")
+        .and_then(Value::as_str)
+        .ok_or("invalid_state")?;
+    if !matches!(
+        state,
+        "idle"
+            | "fenced"
+            | "backed-up"
+            | "owner-copied"
+            | "ready-to-commit"
+            | "commit-unknown"
+            | "adopting"
+            | "cleaning-loser"
+            | "active"
+            | "restore-required"
+    ) {
+        return Err("invalid_state".into());
+    }
+    let observed = input
+        .get("observed")
+        .and_then(Value::as_str)
+        .ok_or("invalid_observation")?;
+    if !matches!(observed, "legacy" | "committed" | "corrupt") {
+        return Err("invalid_observation".into());
+    }
+    for name in [
+        "explicitIntent",
+        "backupVerified",
+        "ownerVerified",
+        "winnerVerified",
+        "candidateRetired",
+    ] {
+        optional_bool(input, name)?;
+    }
+    let candidate = input
+        .get("candidateKey")
+        .map(validate_candidate_key)
+        .transpose()?;
+    let candidate_attempt = match input.get("candidateAttempt") {
+        Some(value) => Some(profile_id(value).ok_or("invalid_candidate_attempt")?),
+        None => None,
+    };
+    if candidate_attempt.is_some() && candidate.is_none() {
+        return Err("invalid_candidate_attempt".into());
+    }
     let candidate_retired = optional_bool(input, "candidateRetired")?;
+    if candidate_retired && candidate.is_none() {
+        return Err("invalid_evidence".into());
+    }
+    let owner_verified = optional_bool(input, "ownerVerified")?;
+    let candidate_head = input.get("candidateHead");
+    if owner_verified {
+        if candidate.is_none() {
+            return Err("invalid_evidence".into());
+        }
+        if candidate_head.is_none_or(|head| !valid_digest(head)) {
+            return Err("invalid_copy_head".into());
+        }
+    } else if candidate_head.is_some() {
+        return Err("invalid_copy_head".into());
+    }
+    let fence_changed = if observed == "legacy" && state != "idle" {
+        let fence = migration_fence(input.get("fence"))?;
+        let observed_fence = migration_fence(input.get("observedFence"))?;
+        fence != observed_fence
+    } else {
+        false
+    };
+
     let answer = if observed == "committed" {
-        if winner.is_none() {
-            "invalid_evidence"
-        } else if candidate.is_some() && candidate != winner && !candidate_retired {
+        let directory = input
+            .get("directory")
+            .ok_or("committed_directory_missing")?;
+        validate_directory(directory, true)?;
+        if candidate.is_some() && candidate_attempt.is_none() {
+            return Err("invalid_candidate_attempt".into());
+        }
+        let live_keys = directory["profiles"]
+            .as_object()
+            .expect("validated profiles")
+            .values()
+            .filter(|profile| profile["deleted"]["value"] == false)
+            .filter_map(|profile| profile["library"]["value"]["key"].as_str())
+            .collect::<BTreeSet<_>>();
+        if candidate.is_some_and(|key| live_keys.contains(key)) {
+            if candidate_retired {
+                return Err("committed_key_retired".into());
+            }
+            let owner = directory["owner"].as_str().expect("validated owner");
+            let migration = &directory["migration"];
+            let owns_winner = candidate
+                == directory["profiles"][owner]["library"]["value"]["key"].as_str()
+                && candidate_attempt == migration["attempt"].as_str()
+                && owner_verified
+                && candidate_head == Some(&migration["ownerHead"]);
+            if owns_winner {
+                if !optional_bool(input, "winnerVerified")? {
+                    "verify-winner"
+                } else {
+                    "activate"
+                }
+            } else if state == "cleaning-loser" {
+                "cleanup_targets_winner"
+            } else {
+                return Err("winner_evidence_mismatch".into());
+            }
+        } else if candidate.is_some() && !candidate_retired {
             "retire-losing-candidate"
-        } else if candidate == winner
-            && candidate.is_some()
-            && optional_bool(input, "cleanupRequested")?
-        {
-            "cleanup_targets_winner"
         } else if !optional_bool(input, "winnerVerified")? {
             "verify-winner"
         } else {
             "activate"
         }
-    } else if state == "commit-unknown" {
-        "read-household"
     } else if observed == "corrupt" {
+        if input.contains_key("directory") {
+            return Err("invalid_evidence".into());
+        }
         if optional_bool(input, "backupVerified")? {
             "restore-backup"
         } else {
             "recovery-blocked"
         }
-    } else if observed != "legacy" {
-        "invalid_observation"
-    } else if optional_string(input, "fence")? == Some("changed") {
+    } else if input.contains_key("directory") {
+        return Err("invalid_evidence".into());
+    } else if state == "idle" {
+        if !optional_bool(input, "explicitIntent")? {
+            return Err("explicit_intent_required".into());
+        }
+        "acquire-fence"
+    } else if state == "commit-unknown" {
+        "read-household"
+    } else if fence_changed {
         if candidate.is_some() && !candidate_retired {
             "retire-losing-candidate"
         } else {
@@ -595,20 +687,44 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         && !optional_bool(input, "backupVerified")?)
         || (matches!(state, "owner-copied" | "ready-to-commit") && candidate.is_none())
     {
-        "invalid_evidence"
-    } else if state == "ready-to-commit" && !optional_bool(input, "ownerVerified")? {
+        return Err("invalid_evidence".into());
+    } else if state == "ready-to-commit" && !owner_verified {
         "verify-owner-library"
     } else {
         match state {
-            "idle" => "acquire-fence",
             "fenced" => "create-backup",
             "backed-up" => "create-owner-library",
             "owner-copied" => "verify-owner-library",
             "ready-to-commit" => "commit-fenced-household",
-            _ => "invalid_state",
+            _ => return Err("invalid_state".into()),
         }
     };
     Ok(json!(answer))
+}
+
+fn migration_fence(value: Option<&Value>) -> Result<&Map<String, Value>, String> {
+    let fence = value
+        .and_then(Value::as_object)
+        .ok_or("invalid_migration_fence")?;
+    if !exact_members(fence, &["generation", "head"])
+        || fence["generation"]
+            .as_u64()
+            .filter(|generation| *generation <= MAX_SAFE_INTEGER)
+            .is_none()
+        || !valid_digest(&fence["head"])
+    {
+        return Err("invalid_migration_fence".into());
+    }
+    Ok(fence)
+}
+
+fn validate_candidate_key(value: &Value) -> Result<&str, String> {
+    let key = value.as_str().ok_or("invalid_library_key")?;
+    let bytes = codec::unbase64(key).map_err(|_| "invalid_library_key")?;
+    if bytes.len() != 32 || key != standard_base64(&bytes) {
+        return Err("invalid_library_key".into());
+    }
+    Ok(key)
 }
 
 /// Decide the next pure compound-reset effect. The caller remains responsible for every returned effect.

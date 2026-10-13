@@ -103,19 +103,43 @@
       }
     },
     {
-      "name": "migration planner cleans a losing candidate before activation",
+      "name": "migration planner never cleans a committed profile key",
       "request": {
         "op": "profiles_migration_next",
         "input": {
-          "state": "ready-to-commit",
+          "state": "cleaning-loser",
           "observed": "committed",
-          "candidateLibrary": "candidate-a",
-          "winnerLibrary": "winner-b",
+          "candidateAttempt": "fedcba9876543210fedcba9876543210",
+          "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
           "winnerVerified": true,
-          "candidateRetired": false
+          "candidateRetired": false,
+          "directory": {
+            "format": 4,
+            "kind": "profiles",
+            "schema": 1,
+            "owner": "00112233445566778899aabbccddeeff",
+            "migration": {
+              "version": 1,
+              "attempt": "0123456789abcdef0123456789abcdef",
+              "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+              "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+              "ownerProfile": "00112233445566778899aabbccddeeff",
+              "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "profiles": {
+              "00112233445566778899aabbccddeeff": {
+                "id": "00112233445566778899aabbccddeeff",
+                "role": "owner",
+                "display": {"value": {"name": "Owner"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+                "library": {"value": {"keyVersion": 1, "key": "ERERERERERERERERERERERERERERERERERERERERERE="}, "at": [1, 1, "a1b2c3d4e5f60718"]},
+                "policy": {"value": {"maximumAge": null, "unknownRatings": "allow"}, "at": [1, 2, "a1b2c3d4e5f60718"]},
+                "deleted": {"value": false, "at": [1, 3, "a1b2c3d4e5f60718"]}
+              }
+            }
+          }
         }
       },
-      "ok": "retire-losing-candidate"
+      "ok": "cleanup_targets_winner"
     },
     {
       "name": "reset planner is bound to the committed directory and names pending profiles",
