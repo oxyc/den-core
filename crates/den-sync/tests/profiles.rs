@@ -38,8 +38,15 @@ fn mutate(document: &Value, mutation: &Value) -> Value {
             .expect("vector mutation object");
         let value = map.remove(key).expect("vector mutation key");
         map.insert(rename.into(), value);
+    } else if let Some(target) = document.pointer_mut(path) {
+        *target = mutation["value"].clone();
     } else {
-        *document.pointer_mut(path).expect("vector mutation path") = mutation["value"].clone();
+        let (parent, key) = path.rsplit_once('/').expect("mutation path has key");
+        document
+            .pointer_mut(parent)
+            .and_then(Value::as_object_mut)
+            .expect("vector mutation parent object")
+            .insert(key.into(), mutation["value"].clone());
     }
     document
 }
@@ -105,6 +112,153 @@ fn den_spec_migration_digests_match_canonical_bytes_and_sha256() {
         }));
         assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
     }
+}
+
+#[test]
+fn den_spec_migration_row_partitions_match() {
+    let Some(vectors) = vectors() else { return };
+    let Some(cases) = vectors
+        .get("migrationPartitionCases")
+        .and_then(Value::as_array)
+    else {
+        // This PR depends on den-spec #52; keep the core branch testable until that contract lands.
+        return;
+    };
+    for case in cases {
+        let response = request(json!({
+            "op":"profiles_migration_partition_rows",
+            "input":case["input"]
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
+        } else {
+            assert_eq!(
+                response["ok"], case["expect"],
+                "{}: {response}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn den_spec_migration_materialization_matches() {
+    let Some(vectors) = vectors() else { return };
+    let cases = vectors["migrationMaterializeCases"]
+        .as_array()
+        .expect("den-spec materialization cases");
+    for case in cases {
+        let response = request(json!({
+            "op":"profiles_migration_materialize_plaintext",
+            "input":case["input"]
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
+        } else {
+            assert_eq!(
+                response["ok"], case["expect"],
+                "{}: {response}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn den_spec_migration_authorization_fingerprints_match() {
+    let Some(vectors) = vectors() else { return };
+    let cases = vectors["migrationAuthorizationFingerprintCases"]
+        .as_array()
+        .expect("den-spec authorization fingerprint cases");
+    for case in cases {
+        let response = request(json!({
+            "op":"profiles_migration_authorization_fingerprint",
+            "input":case["input"]
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
+        } else {
+            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+        }
+    }
+}
+
+#[test]
+fn den_spec_migration_directory_construction_matches() {
+    let Some(vectors) = vectors() else { return };
+    let Some(cases) = vectors
+        .get("migrationDirectoryConstructorCases")
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+    let base = &vectors["migrationDirectoryConstructorInput"];
+    for case in cases {
+        let mut input = base.clone();
+        for mutation in case["mutations"].as_array().into_iter().flatten() {
+            input = mutate(&input, mutation);
+        }
+        if let Some(pointer) = case.get("remove").and_then(Value::as_str) {
+            input = remove(&input, pointer);
+        }
+        let response = request(json!({
+            "op":"profiles_migration_construct_directory",
+            "input":input
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
+        } else {
+            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+            assert_eq!(
+                request(json!({
+                    "op":"profiles_validate", "document":response["ok"], "stored":true
+                }))["ok"],
+                response["ok"],
+                "{} must be valid for storage",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn migration_row_partition_rejects_ambiguous_authenticated_evidence() {
+    let stamp = json!([1, 0, "a1b2c3d4e5f60718"]);
+    let key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let base = |opened: Value| {
+        json!({
+            "base":1,
+            "ownerPolicyAt":stamp,
+            "rows":[{"k":key, "seq":1, "v":"sealed", "opened":opened}]
+        })
+    };
+    assert_eq!(
+        request(
+            json!({"op":"profiles_migration_partition_rows", "input":base(json!({
+                "status":"row", "name":"set:prefs", "legacy":false,
+                "row":{"kind":"future", "schema":1}
+            }))})
+        )["error"],
+        "newer_profile_row"
+    );
+    assert_eq!(
+        request(
+            json!({"op":"profiles_migration_partition_rows", "input":base(json!({
+                "status":"document", "name":"title:movie:550",
+                "document":{"format":4,"kind":"title","schema":1,"title":{"type":"movie","id":550}},
+                "dropped":[{"kind":"future"}]
+            }))})
+        )["error"],
+        "invalid_source_row"
+    );
+    assert_eq!(
+        request(
+            json!({"op":"profiles_migration_partition_rows", "input":base(json!({
+                "status":"unreadable", "reason":"aead"
+            }))})
+        )["error"],
+        "unreadable_source_row"
+    );
 }
 
 #[test]

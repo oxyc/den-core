@@ -27,5 +27,21 @@ for (const fixture of fixtures) {
     count++;
   }
 }
+const profileFixture = fixtures.at(-1);
+for (const guard of profileFixture.partitionIdentityGuards) {
+  for (const status of ['newer', 'future']) {
+    const opened = status === 'newer'
+      ? {status: 'newer', reason: 'framing', name: guard.identity}
+      : {status: 'row', name: guard.identity, legacy: false, row: {kind: 'future', schema: 1}};
+    const request = {op: 'profiles_migration_partition_rows', input: {
+      base: 1,
+      ownerPolicyAt: [1, 0, 'a1b2c3d4e5f60718'],
+      rows: [{k: 'a'.repeat(64), seq: 1, v: 'sealed', opened}],
+    }};
+    assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))),
+      {version: 1, error: guard.error}, `${guard.name} ${status}`);
+    count++;
+  }
+}
 assert.ok(assistantCount > 0);
 console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} in the assistant module)`);
