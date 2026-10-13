@@ -11,7 +11,7 @@ function files(dir) {
 }
 const inputs = ['Cargo.toml', 'Cargo.lock', ...files(join(root, 'crates')).map((f) => relative(root, f)),
   ...files(join(root, 'bindings')).map((f) => relative(root, f)),
-  'scripts/build-bindings.sh', 'scripts/test-vendor.mjs', 'scripts/vendor.mjs',
+  'scripts/build-bindings.sh', 'scripts/rustc-apple-deployment.sh', 'scripts/test-vendor.mjs', 'scripts/vendor.mjs',
   'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts'];
 inputs.push('LICENSE');
 const sources = Object.fromEntries(inputs.sort().map((file) => [file, sha(readFileSync(join(root, file)))]));
