@@ -35,6 +35,7 @@ pub use library_v3::{
 };
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
+    migration_authorization as profiles_migration_authorization,
     migration_authorization_fingerprint as profiles_migration_authorization_fingerprint,
     migration_construct_directory as profiles_migration_construct_directory,
     migration_digest as profiles_migration_digest,
@@ -265,6 +266,10 @@ enum Request {
     },
     /// Profiles v1: choose the next initial-split effect from validated durable observations.
     ProfilesMigrationNext {
+        input: Value,
+    },
+    /// Profiles v1: construct one exact-attempt split authorization or bind it to verified commit evidence.
+    ProfilesMigrationAuthorization {
         input: Value,
     },
     /// Profiles v1: calculate one canonical migration evidence digest without storage or network effects.
@@ -920,6 +925,9 @@ fn run(request: Request) -> Result<Value, String> {
             at.as_ref(),
         ),
         Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
+        Request::ProfilesMigrationAuthorization { input } => {
+            profiles::migration_authorization(&input)
+        }
         Request::ProfilesMigrationDigest { kind, input } => {
             profiles::migration_digest(&kind, &input)
         }

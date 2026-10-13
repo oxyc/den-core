@@ -63,6 +63,163 @@ fn remove(document: &Value, pointer: &str) -> Value {
     document
 }
 
+fn migration_input(vectors: &Value, case: &Value) -> Value {
+    let mut input = case.clone();
+    if case.get("observed").and_then(Value::as_str) == Some("committed")
+        && !case
+            .get("omitDirectory")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        input["directory"] = vectors["validDirectories"][0]["document"].clone();
+        if let Some(mutation) = case.get("directoryMutation") {
+            input["directory"] = mutate(&input["directory"], mutation);
+        }
+    }
+    if case.get("observed").and_then(Value::as_str) == Some("legacy")
+        && case.get("state").and_then(Value::as_str) != Some("idle")
+    {
+        input["fence"] = vectors["migrationFence"].clone();
+        if !case
+            .get("omitObservedFence")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            input["observedFence"] = vectors["migrationFence"].clone();
+        }
+        if let Some(mutation) = case.get("fenceMutation") {
+            input["fence"] = mutate(&input["fence"], mutation);
+        }
+        if let Some(mutation) = case.get("observedFenceMutation") {
+            input["observedFence"] = mutate(&input["observedFence"], mutation);
+        }
+    }
+    let state = case.get("state").and_then(Value::as_str);
+    let observed = case.get("observed").and_then(Value::as_str);
+    let needs_authorization = (state == Some("idle")
+        && case
+            .get("explicitIntent")
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+        || state == Some("commit-unknown")
+        || (observed == Some("legacy") && !matches!(state, Some("idle" | "restore-required")));
+    if needs_authorization {
+        let fixture = &vectors["migrationAuthorization"];
+        let intent = fixture["intent"].clone();
+        input["attempt"] = intent["attempt"].clone();
+        input["householdId"] = intent["householdId"].clone();
+        if state == Some("idle") {
+            input["observedFence"] = intent["source"].clone();
+        }
+        if state == Some("awaiting-confirmation") {
+            input
+                .as_object_mut()
+                .unwrap()
+                .entry("backupDigest")
+                .or_insert_with(|| fixture["evidence"]["backupDigest"].clone());
+            input
+                .as_object_mut()
+                .unwrap()
+                .entry("stagedDigest")
+                .or_insert_with(|| fixture["evidence"]["stagedDigest"].clone());
+            input
+                .as_object_mut()
+                .unwrap()
+                .entry("wireMin")
+                .or_insert(json!(5));
+        }
+        if case
+            .get("commitAuthorized")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            let mut evidence = fixture["evidence"].clone();
+            if state == Some("commit-unknown") {
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("fence")
+                    .or_insert_with(|| intent["source"].clone());
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("backupVerified")
+                    .or_insert(json!(true));
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("candidateKey")
+                    .or_insert_with(|| evidence["candidateKey"].clone());
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("candidateHead")
+                    .or_insert_with(|| evidence["candidateHead"].clone());
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("ownerVerified")
+                    .or_insert(json!(true));
+            }
+            for key in [
+                "candidateKey",
+                "candidateHead",
+                "backupDigest",
+                "stagedDigest",
+                "wireMin",
+            ] {
+                if let Some(value) = input.get(key) {
+                    evidence[key] = value.clone();
+                } else if matches!(key, "backupDigest" | "stagedDigest" | "wireMin") {
+                    input[key] = evidence[key].clone();
+                }
+            }
+            evidence["fence"] = input
+                .get("fence")
+                .cloned()
+                .unwrap_or_else(|| intent["source"].clone());
+            let response = request(json!({
+                "op":"profiles_migration_authorization",
+                "input":{"intent":intent, "evidence":evidence}
+            }));
+            input["splitAuthorization"] = response
+                .get("ok")
+                .cloned()
+                .unwrap_or_else(|| fixture["prepared"].clone());
+        } else {
+            input["splitAuthorization"] = fixture["prepared"].clone();
+        }
+        if let Some(mutation) = case.get("splitAuthorizationMutation") {
+            input["splitAuthorization"] = mutate(&input["splitAuthorization"], mutation);
+        }
+        if case
+            .get("omitSplitAuthorization")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            input.as_object_mut().unwrap().remove("splitAuthorization");
+        }
+        if let Some(attempt) = case.get("plannerAttempt") {
+            input["attempt"] = attempt.clone();
+        }
+    }
+    if case
+        .get("omitState")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        input.as_object_mut().unwrap().remove("state");
+    }
+    if case
+        .get("omitObserved")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        input.as_object_mut().unwrap().remove("observed");
+    }
+    input
+}
+
 #[test]
 fn den_spec_profile_directories_validate() {
     let Some(vectors) = vectors() else { return };
@@ -514,52 +671,23 @@ fn den_spec_whole_directory_merges_converge_or_reject_identity_conflicts() {
 #[test]
 fn den_spec_profile_lifecycle_decisions() {
     let Some(vectors) = vectors() else { return };
-    let base = &vectors["validDirectories"][0]["document"];
+    let fixture = &vectors["migrationAuthorization"];
+    assert_eq!(
+        request(json!({
+            "op":"profiles_migration_authorization",
+            "input":{"intent":fixture["intent"], "evidence":Value::Null}
+        }))["ok"],
+        fixture["prepared"]
+    );
+    assert_eq!(
+        request(json!({
+            "op":"profiles_migration_authorization",
+            "input":{"intent":fixture["intent"], "evidence":fixture["evidence"]}
+        }))["ok"],
+        fixture["bound"]
+    );
     for case in vectors["migrationCases"].as_array().unwrap() {
-        let mut input = case.clone();
-        if case.get("observed").and_then(Value::as_str) == Some("committed")
-            && !case
-                .get("omitDirectory")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        {
-            input["directory"] = base.clone();
-            if let Some(mutation) = case.get("directoryMutation") {
-                input["directory"] = mutate(&input["directory"], mutation);
-            }
-        }
-        if case.get("observed").and_then(Value::as_str) == Some("legacy")
-            && case.get("state").and_then(Value::as_str) != Some("idle")
-        {
-            input["fence"] = vectors["migrationFence"].clone();
-            if !case
-                .get("omitObservedFence")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                input["observedFence"] = vectors["migrationFence"].clone();
-            }
-            if let Some(mutation) = case.get("fenceMutation") {
-                input["fence"] = mutate(&input["fence"], mutation);
-            }
-            if let Some(mutation) = case.get("observedFenceMutation") {
-                input["observedFence"] = mutate(&input["observedFence"], mutation);
-            }
-        }
-        if case
-            .get("omitState")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            input.as_object_mut().unwrap().remove("state");
-        }
-        if case
-            .get("omitObserved")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            input.as_object_mut().unwrap().remove("observed");
-        }
+        let input = migration_input(&vectors, case);
         let response = request(json!({"op":"profiles_migration_next", "input":input}));
         if let Some(error) = case.get("error") {
             assert_eq!(&response["error"], error, "{}", case["name"]);
