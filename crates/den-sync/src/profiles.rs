@@ -11,6 +11,22 @@ use unicode_normalization::UnicodeNormalization;
 const ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "owner", "migration", "profiles"];
 const ENTRY_MEMBERS: &[&str] = &["id", "role", "display", "library", "policy", "deleted"];
 const APPROVAL_ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "kid", "approvals"];
+const PROFILE_PREFERENCE_KEYS: &[&str] = &[
+    "den.excludedGenreIDs",
+    "den.excludedLanguages",
+    "den.preferredSubtitleLanguage",
+    "den.hasExplicitSubtitlePreference",
+    "den.shownSubtitleLanguages",
+    "den.maxSubtitlesPerLanguage",
+    "den.preferredAudioLanguage",
+    "den.autoSkipSegments",
+    "den.autoplayTrailers",
+    "den.hideAnime",
+    "den.hideWatched",
+    "den.minReleaseYear",
+    "den.enabledRatingSources",
+    "den.shownWarningCategories",
+];
 
 fn object<'a>(value: &'a Value, error: &str) -> Result<&'a Map<String, Value>, String> {
     value.as_object().ok_or_else(|| error.into())
@@ -643,6 +659,32 @@ pub fn reset_next(input: &Value) -> Result<Value, String> {
         "complete"
     };
     Ok(json!(answer))
+}
+
+/// Split one legacy `set:prefs.values` object without interpreting its stamped values.
+///
+/// Exact assigned personal keys move to Owner. The legacy maturity input is returned separately for policy
+/// normalization. Every other key, including future keys, stays in the household so an older client cannot leak
+/// an unassigned setting into one profile.
+pub fn partition_preferences(values: &Value) -> Result<Value, String> {
+    let values = values.as_object().ok_or("invalid_preferences")?;
+    let mut household = Map::new();
+    let mut owner = Map::new();
+    let mut owner_maturity = Value::Null;
+    for (key, value) in values {
+        if PROFILE_PREFERENCE_KEYS.contains(&key.as_str()) {
+            owner.insert(key.clone(), value.clone());
+        } else if key == "den.maturityCeiling" {
+            owner_maturity = value.clone();
+        } else {
+            household.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(json!({
+        "household": household,
+        "owner": owner,
+        "ownerMaturity": owner_maturity,
+    }))
 }
 
 /// Public typed equivalents for Rust callers; JSON callers use the versioned `evaluate` envelope.

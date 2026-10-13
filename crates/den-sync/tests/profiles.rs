@@ -309,6 +309,46 @@ fn den_spec_profile_lifecycle_decisions() {
 }
 
 #[test]
+fn den_spec_profile_preferences_partition_without_interpreting_values() {
+    let Some(vectors) = vectors() else { return };
+    for case in vectors["settingsPartitionCases"].as_array().unwrap() {
+        let response = request(json!({
+            "op":"profiles_partition_preferences",
+            "values":case["values"]
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+        } else {
+            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+        }
+    }
+}
+
+#[test]
+fn profile_preference_partition_is_exact_and_preserves_stamped_extensions() {
+    let stamped = json!({
+        "value":{"futureTypedValue":{"nested":true}},
+        "at":[1800000000000_i64,0,"a1b2c3d4e5f60718"],
+        "futureStampedMember":"kept"
+    });
+    let response = request(json!({
+        "op":"profiles_partition_preferences",
+        "values":{
+            "den.hideWatched":stamped,
+            "den.hideWatched.future":stamped,
+            "future.preference":stamped
+        }
+    }));
+    assert_eq!(response["ok"]["owner"]["den.hideWatched"], stamped);
+    assert_eq!(
+        response["ok"]["household"]["den.hideWatched.future"], stamped,
+        "prefixes never assign future keys to a profile"
+    );
+    assert_eq!(response["ok"]["household"]["future.preference"], stamped);
+    assert_eq!(response["ok"]["ownerMaturity"], Value::Null);
+}
+
+#[test]
 fn den_spec_profile_merges_converge() {
     let Some(vectors) = vectors() else { return };
     let base = &vectors["validDirectories"][0]["document"];

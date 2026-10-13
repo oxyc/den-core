@@ -81,6 +81,28 @@
       }
     },
     {
+      "name": "preference partition moves only assigned personal keys to Owner",
+      "request": {
+        "op": "profiles_partition_preferences",
+        "values": {
+          "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+          "den.hideWatched": {"value": {"bool": true}, "at": [2, 0, "a1b2c3d4e5f60718"]},
+          "den.maturityCeiling": {"value": {"string": "pg13"}, "at": [3, 0, "a1b2c3d4e5f60718"]},
+          "future.preference": {"value": {"future": true}, "at": [4, 0, "a1b2c3d4e5f60718"]}
+        }
+      },
+      "ok": {
+        "household": {
+          "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+          "future.preference": {"value": {"future": true}, "at": [4, 0, "a1b2c3d4e5f60718"]}
+        },
+        "owner": {
+          "den.hideWatched": {"value": {"bool": true}, "at": [2, 0, "a1b2c3d4e5f60718"]}
+        },
+        "ownerMaturity": {"value": {"string": "pg13"}, "at": [3, 0, "a1b2c3d4e5f60718"]}
+      }
+    },
+    {
       "name": "migration planner cleans a losing candidate before activation",
       "request": {
         "op": "profiles_migration_next",
