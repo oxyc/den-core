@@ -959,12 +959,15 @@ pub fn migration_partition_rows(input: &Value) -> Result<Value, String> {
 
         match status {
             "unreadable" => return Err("unreadable_source_row".into()),
+            _ if name.is_some_and(legacy_profile_name) => {
+                return Err("legacy_source_row".into());
+            }
+            _ if name.is_some_and(profile_control_name) => {
+                return Err("profiles_already_present".into());
+            }
             "newer" => {
                 if name.is_some_and(profile_scoped_name) {
                     return Err("newer_profile_row".into());
-                }
-                if name.is_some_and(profile_control_name) {
-                    return Err("profiles_already_present".into());
                 }
                 household.push(preserve_projection(&source, key, sealed));
                 destinations.push("household");
@@ -1330,6 +1333,14 @@ fn profile_scoped_name(name: &str) -> bool {
 
 fn profile_control_name(name: &str) -> bool {
     name == "profiles" || name.starts_with("kid-title-approvals:")
+}
+
+fn legacy_profile_name(name: &str) -> bool {
+    name.starts_with("rec:")
+        || name.starts_with("wat:")
+        || name.starts_with("snt:")
+        || name.starts_with("ep:")
+        || name.starts_with("set:tracker-event:")
 }
 
 /// Canonical SHA-256 evidence for the four profiles-v1 §8.1 migration structures. This operation is pure: it

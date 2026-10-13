@@ -2,7 +2,17 @@
   "version": 1,
   "denSpecMigrationDigestHead": "f715764f6eab2eb1d22187d05cc86053942119ee",
   "denSpecMigrationPartitionHead": "36bf5ce0b14e2d827e87927577b4ba12d0e55c8a",
+  "denSpecMigrationPartitionIdentityHead": "d8dc21e4df56e1edd07ee2903385810c87dd1636",
   "denSpecMigrationDirectoryConstructorHead": "124711b601675bc274040a437d557e453601032c",
+  "partitionIdentityGuards": [
+    {"name": "rec", "identity": "rec:movie:550", "error": "legacy_source_row"},
+    {"name": "wat", "identity": "wat:movie:550", "error": "legacy_source_row"},
+    {"name": "snt", "identity": "snt:movie:550", "error": "legacy_source_row"},
+    {"name": "ep", "identity": "ep:tv:1399:1:1", "error": "legacy_source_row"},
+    {"name": "tracker event", "identity": "set:tracker-event:1", "error": "legacy_source_row"},
+    {"name": "profile directory", "identity": "profiles", "error": "profiles_already_present"},
+    {"name": "Kid approvals", "identity": "kid-title-approvals:11112222333344445555666677778888", "error": "profiles_already_present"}
+  ],
   "cases": [
     {
       "name": "initial Owner directory construction crosses native and web bindings",
