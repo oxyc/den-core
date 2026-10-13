@@ -35,8 +35,11 @@ pub use library_v3::{
 };
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
+    migration_authorization_fingerprint as profiles_migration_authorization_fingerprint,
     migration_construct_directory as profiles_migration_construct_directory,
-    migration_digest as profiles_migration_digest, migration_next as profiles_migration_next,
+    migration_digest as profiles_migration_digest,
+    migration_materialize_plaintext as profiles_migration_materialize_plaintext,
+    migration_next as profiles_migration_next,
     migration_partition_rows as profiles_migration_partition_rows,
     partition_preferences as profiles_partition_preferences, policy_relation, profiles_merge,
     profiles_validate, reset_next as profiles_reset_next,
@@ -275,6 +278,14 @@ enum Request {
     },
     /// Profiles v1: construct and stored-validate the first Owner-only directory.
     ProfilesMigrationConstructDirectory {
+        input: Value,
+    },
+    /// Profiles v1: validate a materialized projection and return its canonical seal-ready bytes.
+    ProfilesMigrationMaterializePlaintext {
+        input: Value,
+    },
+    /// Profiles v1: reproduce the provider's non-secret backup authorization representation.
+    ProfilesMigrationAuthorizationFingerprint {
         input: Value,
     },
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
@@ -913,6 +924,12 @@ fn run(request: Request) -> Result<Value, String> {
         }
         Request::ProfilesMigrationConstructDirectory { input } => {
             profiles::migration_construct_directory(&input)
+        }
+        Request::ProfilesMigrationMaterializePlaintext { input } => {
+            profiles::migration_materialize_plaintext(&input)
+        }
+        Request::ProfilesMigrationAuthorizationFingerprint { input } => {
+            profiles::migration_authorization_fingerprint(&input)
         }
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilesPartitionPreferences { values } => {

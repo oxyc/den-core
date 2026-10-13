@@ -1119,6 +1119,82 @@ pub fn migration_construct_directory(input: &Value) -> Result<Value, String> {
     validate_directory(&document, true)
 }
 
+/// Turn one canonical migration projection into the exact bytes clients seal. Settings remain raw JCS; v4
+/// documents use the existing document encoder. This boundary is pure and accepts no caller-selected bytes.
+pub fn migration_materialize_plaintext(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_materialize_input")?;
+    if !exact_members(input, &["name", "row"]) {
+        return Err("invalid_materialize_input".into());
+    }
+    let name = input["name"]
+        .as_str()
+        .filter(|name| !name.is_empty())
+        .ok_or("invalid_materialize_input")?;
+    let row = &input["row"];
+    let kind = row
+        .as_object()
+        .and_then(|row| row.get("kind"))
+        .and_then(Value::as_str)
+        .ok_or("invalid_materialize_input")?;
+    let jcs = jcs::jcs(row);
+    let plaintext = match kind {
+        "set" => {
+            if row["schema"].as_u64() != Some(2) {
+                return Err("invalid_materialize_input".into());
+            }
+            validate_settings_row(row).map_err(|_| "invalid_materialize_input")?;
+            let actual = crate::wire::name(row).map_err(|_| "invalid_materialize_input")?;
+            if actual != name {
+                return Err("materialize_name_mismatch".into());
+            }
+            jcs.clone()
+        }
+        "title" | "season" | "delivery" => {
+            if row["format"].as_u64() != Some(4) {
+                return Err("invalid_materialize_input".into());
+            }
+            let (identity, _) =
+                crate::library_v4::checked(row).map_err(|_| "invalid_materialize_input")?;
+            if identity.name() != name {
+                return Err("materialize_name_mismatch".into());
+            }
+            let encoded =
+                crate::library_v4::encode(row, false).map_err(|_| "invalid_materialize_input")?;
+            let plaintext = encoded["plaintext"]
+                .as_str()
+                .ok_or("invalid_materialize_input")?;
+            codec::unbase64(plaintext).map_err(|_| "invalid_materialize_input")?
+        }
+        _ => return Err("unsupported_materialize_kind".into()),
+    };
+    Ok(json!({"jcs":codec::base64(&jcs), "plaintext":codec::base64(&plaintext)}))
+}
+
+/// Reproduce den-edge's deployed backup authority representation without exposing either credential to the
+/// manifest. Inputs are canonical library-v2 credential text and are hashed independently as UTF-8.
+pub fn migration_authorization_fingerprint(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_authorization_fingerprint")?;
+    if !exact_members(input, &["token", "member"]) {
+        return Err("invalid_authorization_fingerprint".into());
+    }
+    let token = input["token"]
+        .as_str()
+        .filter(|value| valid_lower_hex(value, 64))
+        .ok_or("invalid_authorization_fingerprint")?;
+    let member = match &input["member"] {
+        Value::Null => None,
+        Value::String(value) if valid_lower_hex(value, 64) => Some(value.as_str()),
+        _ => return Err("invalid_authorization_fingerprint".into()),
+    };
+    let hash = |value: &str| {
+        Sha256::digest(value.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    Ok(json!({"tokenHash":hash(token), "memberHash":member.map(hash)}))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn partition_settings_row(
     logical: &Value,

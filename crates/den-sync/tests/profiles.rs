@@ -132,6 +132,52 @@ fn den_spec_migration_row_partitions_match() {
         if let Some(error) = case.get("error") {
             assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
         } else {
+            assert_eq!(
+                response["ok"], case["expect"],
+                "{}: {response}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn den_spec_migration_materialization_matches() {
+    let Some(vectors) = vectors() else { return };
+    let cases = vectors["migrationMaterializeCases"]
+        .as_array()
+        .expect("den-spec materialization cases");
+    for case in cases {
+        let response = request(json!({
+            "op":"profiles_migration_materialize_plaintext",
+            "input":case["input"]
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
+        } else {
+            assert_eq!(
+                response["ok"], case["expect"],
+                "{}: {response}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn den_spec_migration_authorization_fingerprints_match() {
+    let Some(vectors) = vectors() else { return };
+    let cases = vectors["migrationAuthorizationFingerprintCases"]
+        .as_array()
+        .expect("den-spec authorization fingerprint cases");
+    for case in cases {
+        let response = request(json!({
+            "op":"profiles_migration_authorization_fingerprint",
+            "input":case["input"]
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
+        } else {
             assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
         }
     }
