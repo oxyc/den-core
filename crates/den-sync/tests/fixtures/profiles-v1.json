@@ -1210,6 +1210,22 @@
       "expect": "no-op"
     },
     {
+      "name": "old explicit-intent input without exact authorization fails closed",
+      "state": "idle",
+      "observed": "legacy",
+      "explicitIntent": true,
+      "omitSplitAuthorization": true,
+      "error": "migration_authorization_required"
+    },
+    {
+      "name": "authorization cannot be copied to another attempt",
+      "state": "idle",
+      "observed": "legacy",
+      "explicitIntent": true,
+      "plannerAttempt": "fedcba9876543210fedcba9876543210",
+      "error": "migration_authorization_mismatch"
+    },
+    {
       "name": "backup precedes any Owner destination write",
       "state": "fenced",
       "observed": "legacy",
@@ -1231,7 +1247,7 @@
       "expect": "verify-owner-library"
     },
     {
-      "name": "prepared journal stops for final confirmation",
+      "name": "prepared journal records its exact commit binding without another prompt",
       "state": "awaiting-confirmation",
       "observed": "legacy",
       "backupVerified": true,
@@ -1239,17 +1255,17 @@
       "ownerVerified": true,
       "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "commitAuthorized": false,
-      "expect": "await-final-confirmation"
+      "expect": "record-commit-binding"
     },
     {
-      "name": "unconfirmed prepared journal still stops after restart",
+      "name": "restart resumes the exact authorized attempt without another prompt",
       "state": "awaiting-confirmation",
       "observed": "legacy",
       "backupVerified": true,
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
       "ownerVerified": true,
       "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "expect": "await-final-confirmation"
+      "expect": "record-commit-binding"
     },
     {
       "name": "authorization cannot be recorded before preparation finishes",
@@ -1263,7 +1279,7 @@
       "error": "premature_commit_authorization"
     },
     {
-      "name": "ready state without durable final authorization cannot commit",
+      "name": "ready state without the durable exact-attempt binding cannot commit",
       "state": "ready-to-commit",
       "observed": "legacy",
       "backupVerified": true,
@@ -1274,7 +1290,7 @@
       "error": "commit_authorization_required"
     },
     {
-      "name": "only a confirmed head-bound verified Owner permits commit",
+      "name": "the PIN-authorized exact-attempt binding permits automatic commit",
       "state": "ready-to-commit",
       "observed": "legacy",
       "backupVerified": true,
@@ -1283,6 +1299,21 @@
       "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "commitAuthorized": true,
       "expect": "commit-fenced-household"
+    },
+    {
+      "name": "tampered exact-attempt binding cannot commit",
+      "state": "ready-to-commit",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "splitAuthorizationMutation": {
+        "path": "/commitBinding",
+        "value": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "error": "migration_authorization_mismatch"
     },
     {
       "name": "verified Owner without a copied head is rejected",
@@ -1489,8 +1520,12 @@
       "name": "superseded unknown commit still requires a fresh household read",
       "state": "commit-unknown",
       "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateAttempt": "0123456789abcdef0123456789abcdef",
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "directoryMutation": {
+        "path": "/migration/attempt",
+        "value": "fedcba9876543210fedcba9876543210"
+      },
       "winnerVerified": true,
       "commitAuthorized": true,
       "attemptLookup": "superseded",
@@ -1498,7 +1533,23 @@
       "expect": "read-household"
     },
     {
-      "name": "superseded unknown commit cleans its loser after the fresh read",
+      "name": "superseded unknown commit cleans its exact authorized loser after the fresh read",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "0123456789abcdef0123456789abcdef",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "directoryMutation": {
+        "path": "/migration/attempt",
+        "value": "fedcba9876543210fedcba9876543210"
+      },
+      "winnerVerified": true,
+      "commitAuthorized": true,
+      "attemptLookup": "superseded",
+      "householdFresh": true,
+      "expect": "retire-losing-candidate"
+    },
+    {
+      "name": "superseded lookup cannot substitute a caller-supplied candidate attempt",
       "state": "commit-unknown",
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
@@ -1507,7 +1558,7 @@
       "commitAuthorized": true,
       "attemptLookup": "superseded",
       "householdFresh": true,
-      "expect": "retire-losing-candidate"
+      "error": "terminal_directory_mismatch"
     },
     {
       "name": "superseded lookup cannot name the same attempt as the fresh directory",
@@ -1518,6 +1569,24 @@
       "winnerVerified": true,
       "commitAuthorized": true,
       "attemptLookup": "superseded",
+      "householdFresh": true,
+      "error": "terminal_directory_mismatch"
+    },
+    {
+      "name": "committed lookup cannot substitute the directory attempt for the authorized attempt",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "directoryMutation": {
+        "path": "/migration/attempt",
+        "value": "fedcba9876543210fedcba9876543210"
+      },
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "winnerVerified": false,
+      "commitAuthorized": true,
+      "attemptLookup": "committed",
       "householdFresh": true,
       "error": "terminal_directory_mismatch"
     },
@@ -2539,5 +2608,59 @@
       "remove": "/owner/policy",
       "error": "invalid_directory_constructor"
     }
-  ]
+  ],
+  "denSpecOneShotAuthorizationHead": "bc2536b6fa549fab1978af0a170a2545a9beba90",
+  "migrationAuthorization": {
+    "intent": {
+      "version": 1,
+      "action": "enable-profiles",
+      "attempt": "0123456789abcdef0123456789abcdef",
+      "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
+      "source": {
+        "generation": 7,
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "prepared": {
+      "intent": {
+        "version": 1,
+        "action": "enable-profiles",
+        "attempt": "0123456789abcdef0123456789abcdef",
+        "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
+        "source": {
+          "generation": 7,
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "intentDigest": "8dc337fda7f596b065a0b94f119ac361316a748d02a001871299ca0949e96c3a",
+      "commitBinding": null
+    },
+    "evidence": {
+      "attempt": "0123456789abcdef0123456789abcdef",
+      "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
+      "fence": {
+        "generation": 7,
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "backupDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "stagedDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "wireMin": 5
+    },
+    "bound": {
+      "intent": {
+        "version": 1,
+        "action": "enable-profiles",
+        "attempt": "0123456789abcdef0123456789abcdef",
+        "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
+        "source": {
+          "generation": 7,
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "intentDigest": "8dc337fda7f596b065a0b94f119ac361316a748d02a001871299ca0949e96c3a",
+      "commitBinding": "e7de29e9391ed9e7ea519ee437a1afe72ec4956bd852f474c78d743312ef867b"
+    }
+  }
 }

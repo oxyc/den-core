@@ -76,6 +76,16 @@ for (const case_ of profileFixture.migrationDirectoryConstructorCases) {
   assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))), expected, case_.name);
   count++;
 }
+for (const [evidence, expected] of [
+  [null, profileFixture.migrationAuthorization.prepared],
+  [profileFixture.migrationAuthorization.evidence, profileFixture.migrationAuthorization.bound],
+]) {
+  const request = {op: 'profiles_migration_authorization', input: {
+    intent: profileFixture.migrationAuthorization.intent, evidence,
+  }};
+  assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))), {version: 1, ok: expected});
+  count++;
+}
 const migrationInput = case_ => {
   const input = clone(case_);
   if (case_.observed === 'committed' && !case_.omitDirectory) {
@@ -89,6 +99,47 @@ const migrationInput = case_ => {
     if (case_.observedFenceMutation) {
       input.observedFence = mutate(input.observedFence, case_.observedFenceMutation);
     }
+  }
+  const needsAuthorization = (case_.state === 'idle' && case_.explicitIntent) ||
+    case_.state === 'commit-unknown' ||
+    (case_.observed === 'legacy' && !['idle', 'restore-required'].includes(case_.state));
+  if (needsAuthorization) {
+    const authorization = profileFixture.migrationAuthorization;
+    const intent = clone(authorization.intent);
+    input.attempt = intent.attempt;
+    input.householdId = intent.householdId;
+    if (case_.state === 'idle') input.observedFence = clone(intent.source);
+    if (case_.state === 'awaiting-confirmation') {
+      input.backupDigest ??= authorization.evidence.backupDigest;
+      input.stagedDigest ??= authorization.evidence.stagedDigest;
+      input.wireMin ??= 5;
+    }
+    if (case_.commitAuthorized) {
+      const evidence = clone(authorization.evidence);
+      if (case_.state === 'commit-unknown') {
+        input.fence ??= clone(intent.source);
+        input.backupVerified ??= true;
+        input.candidateKey ??= evidence.candidateKey;
+        input.candidateHead ??= evidence.candidateHead;
+        input.ownerVerified ??= true;
+      }
+      for (const key of ['candidateKey', 'candidateHead', 'backupDigest', 'stagedDigest', 'wireMin']) {
+        if (key in input) evidence[key] = input[key];
+        else if (['backupDigest', 'stagedDigest', 'wireMin'].includes(key)) input[key] = evidence[key];
+      }
+      evidence.fence = clone(input.fence ?? intent.source);
+      const answer = JSON.parse(evaluate(JSON.stringify({
+        op: 'profiles_migration_authorization', input: {intent, evidence},
+      })));
+      input.splitAuthorization = answer.ok ?? clone(authorization.prepared);
+    } else {
+      input.splitAuthorization = clone(authorization.prepared);
+    }
+    if (case_.splitAuthorizationMutation) {
+      input.splitAuthorization = mutate(input.splitAuthorization, case_.splitAuthorizationMutation);
+    }
+    if (case_.omitSplitAuthorization) delete input.splitAuthorization;
+    if (case_.plannerAttempt) input.attempt = case_.plannerAttempt;
   }
   if (case_.omitState) delete input.state;
   if (case_.omitObserved) delete input.observed;

@@ -543,6 +543,133 @@ fn optional_bool(input: &Map<String, Value>, key: &str) -> Result<bool, String> 
     })
 }
 
+fn sha256_hex(value: &Value) -> String {
+    Sha256::digest(jcs::jcs(value))
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Construct one durable authorization for a PIN-verified Enable Profiles action, optionally bound to its final
+/// immutable commit evidence. This operation is pure and never verifies a PIN itself.
+pub fn migration_authorization(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_migration_authorization")?;
+    if !exact_members(input, &["intent", "evidence"]) {
+        return Err("invalid_migration_authorization".into());
+    }
+    let intent = object(&input["intent"], "invalid_migration_authorization")?;
+    if !exact_members(
+        intent,
+        &["version", "action", "attempt", "householdId", "source"],
+    ) || intent["version"].as_u64() != Some(1)
+        || intent["action"].as_str() != Some("enable-profiles")
+        || !valid_profile_id(intent["attempt"].as_str().unwrap_or(""))
+        || !valid_profile_id(intent["householdId"].as_str().unwrap_or(""))
+    {
+        return Err("invalid_migration_authorization".into());
+    }
+    let source = intent["source"]
+        .as_object()
+        .ok_or("invalid_migration_authorization")?;
+    if !exact_members(source, &["generation", "head"])
+        || source["generation"]
+            .as_u64()
+            .filter(|generation| *generation <= MAX_SAFE_INTEGER)
+            .is_none()
+        || !valid_digest(&source["head"])
+    {
+        return Err("invalid_migration_authorization".into());
+    }
+    let intent = Value::Object(intent.clone());
+    let intent_digest = sha256_hex(&intent);
+    if input["evidence"].is_null() {
+        return Ok(json!({
+            "intent": intent,
+            "intentDigest": intent_digest,
+            "commitBinding": Value::Null,
+        }));
+    }
+    let evidence = object(&input["evidence"], "invalid_migration_authorization")?;
+    if !exact_members(
+        evidence,
+        &[
+            "attempt",
+            "householdId",
+            "fence",
+            "backupDigest",
+            "candidateKey",
+            "candidateHead",
+            "stagedDigest",
+            "wireMin",
+        ],
+    ) || evidence["attempt"] != intent["attempt"]
+        || evidence["householdId"] != intent["householdId"]
+        || evidence["fence"] != intent["source"]
+        || !valid_digest(&evidence["backupDigest"])
+        || !valid_digest(&evidence["candidateHead"])
+        || !valid_digest(&evidence["stagedDigest"])
+        || evidence["wireMin"].as_u64() != Some(5)
+    {
+        return Err("invalid_migration_authorization".into());
+    }
+    validate_candidate_key(&evidence["candidateKey"])?;
+    let mut binding = evidence.clone();
+    binding.insert("authorization".into(), json!(intent_digest));
+    Ok(json!({
+        "intent": intent,
+        "intentDigest": intent_digest,
+        "commitBinding": sha256_hex(&Value::Object(binding)),
+    }))
+}
+
+fn validate_split_authorization(input: &Map<String, Value>) -> Result<(), String> {
+    let authorization = input
+        .get("splitAuthorization")
+        .and_then(Value::as_object)
+        .ok_or("migration_authorization_required")?;
+    if !exact_members(authorization, &["intent", "intentDigest", "commitBinding"]) {
+        return Err("migration_authorization_required".into());
+    }
+    let prepared = migration_authorization(&json!({
+        "intent": authorization["intent"],
+        "evidence": Value::Null,
+    }))?;
+    if authorization["intentDigest"] != prepared["intentDigest"] {
+        return Err("invalid_migration_authorization".into());
+    }
+    let intent = prepared["intent"]
+        .as_object()
+        .expect("validated authorization intent");
+    if input.get("attempt") != Some(&intent["attempt"])
+        || input.get("householdId") != Some(&intent["householdId"])
+    {
+        return Err("migration_authorization_mismatch".into());
+    }
+    if !optional_bool(input, "commitAuthorized")? {
+        if !authorization["commitBinding"].is_null() {
+            return Err("premature_commit_authorization".into());
+        }
+        return Ok(());
+    }
+    let bound = migration_authorization(&json!({
+        "intent": Value::Object(intent.clone()),
+        "evidence": {
+            "attempt": intent["attempt"],
+            "householdId": intent["householdId"],
+            "fence": input.get("fence").cloned().unwrap_or(Value::Null),
+            "backupDigest": input.get("backupDigest").cloned().unwrap_or(Value::Null),
+            "candidateKey": input.get("candidateKey").cloned().unwrap_or(Value::Null),
+            "candidateHead": input.get("candidateHead").cloned().unwrap_or(Value::Null),
+            "stagedDigest": input.get("stagedDigest").cloned().unwrap_or(Value::Null),
+            "wireMin": input.get("wireMin").cloned().unwrap_or(Value::Null),
+        },
+    }))?;
+    if authorization["commitBinding"] != bound["commitBinding"] {
+        return Err("migration_authorization_mismatch".into());
+    }
+    Ok(())
+}
+
 /// Decide the next pure initial-split effect from durable observations. This operation performs no effect itself.
 pub fn migration_next(input: &Value) -> Result<Value, String> {
     let input = object(input, "invalid_evidence")?;
@@ -608,6 +735,18 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
     if state == "commit-unknown" && !commit_authorized {
         return Err("commit_authorization_required".into());
     }
+    let authorization_required = (state == "idle" && optional_bool(input, "explicitIntent")?)
+        || (state == "commit-unknown" && lookup.is_some() && household_fresh)
+        || (input.get("observed").and_then(Value::as_str) == Some("legacy")
+            && !matches!(state, "idle" | "commit-unknown" | "restore-required"));
+    if authorization_required && state == "idle" {
+        migration_fence(input.get("observedFence"))
+            .map_err(|_| "migration_authorization_source_required")?;
+        validate_split_authorization(input)?;
+        if input["observedFence"] != input["splitAuthorization"]["intent"]["source"] {
+            return Err("migration_authorization_source_changed".into());
+        }
+    }
     if state == "commit-unknown" {
         if lookup.is_none() {
             return Ok(json!("lookup-attempt"));
@@ -666,13 +805,33 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
     } else if candidate_head.is_some() {
         return Err("invalid_copy_head".into());
     }
-    let fence_changed = if observed == "legacy" && state != "idle" {
-        let fence = migration_fence(input.get("fence"))?;
-        let observed_fence = migration_fence(input.get("observedFence"))?;
-        fence != observed_fence
+    if state == "commit-unknown"
+        && observed == "corrupt"
+        && matches!(lookup, Some("committed" | "superseded"))
+    {
+        return Err("terminal_household_mismatch".into());
+    }
+    if authorization_required && state != "idle" {
+        validate_split_authorization(input)?;
+    }
+    if state == "commit-unknown"
+        && matches!(lookup, Some("committed" | "superseded"))
+        && household_fresh
+        && candidate_attempt != input["splitAuthorization"]["intent"]["attempt"].as_str()
+    {
+        return Err("terminal_directory_mismatch".into());
+    }
+    let (fence, observed_fence) = if observed == "legacy" && state != "idle" {
+        (
+            Some(Value::Object(migration_fence(input.get("fence"))?.clone())),
+            Some(Value::Object(
+                migration_fence(input.get("observedFence"))?.clone(),
+            )),
+        )
     } else {
-        false
+        (None, None)
     };
+    let fence_changed = fence != observed_fence;
 
     let answer = if observed == "committed" {
         let directory = input
@@ -780,20 +939,29 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         }
     } else if state == "commit-unknown" {
         match lookup {
-            Some("open") if !fence_changed => "retry-bound-commit",
+            Some("open")
+                if !fence_changed
+                    && observed_fence.as_ref()
+                        == Some(&input["splitAuthorization"]["intent"]["source"]) =>
+            {
+                "retry-bound-commit"
+            }
             Some("open") if candidate.is_some() && !candidate_retired => "retire-losing-candidate",
-            Some("open") => "restart",
+            Some("open") => "invalidate-authorization",
             Some("aborted") if candidate.is_some() && !candidate_retired => {
                 "retire-losing-candidate"
             }
             Some("aborted") => "discard-journal",
             _ => return Err("terminal_household_mismatch".into()),
         }
-    } else if fence_changed {
+    } else if state != "restore-required"
+        && (fence_changed
+            || observed_fence.as_ref() != Some(&input["splitAuthorization"]["intent"]["source"]))
+    {
         if candidate.is_some() && !candidate_retired {
             "retire-losing-candidate"
         } else {
-            "restart"
+            "invalidate-authorization"
         }
     } else if (matches!(
         state,
@@ -807,12 +975,27 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         return Err("invalid_evidence".into());
     } else if matches!(state, "awaiting-confirmation" | "ready-to-commit") && !owner_verified {
         "verify-owner-library"
+    } else if state == "awaiting-confirmation" {
+        let intent = &input["splitAuthorization"]["intent"];
+        migration_authorization(&json!({
+            "intent": intent,
+            "evidence": {
+                "attempt": intent["attempt"],
+                "householdId": intent["householdId"],
+                "fence": fence.expect("validated legacy fence"),
+                "backupDigest": input.get("backupDigest").cloned().unwrap_or(Value::Null),
+                "candidateKey": input.get("candidateKey").cloned().unwrap_or(Value::Null),
+                "candidateHead": input.get("candidateHead").cloned().unwrap_or(Value::Null),
+                "stagedDigest": input.get("stagedDigest").cloned().unwrap_or(Value::Null),
+                "wireMin": input.get("wireMin").cloned().unwrap_or(Value::Null),
+            },
+        }))?;
+        "record-commit-binding"
     } else {
         match state {
             "fenced" => "create-backup",
             "backed-up" => "create-owner-library",
             "owner-copied" => "verify-owner-library",
-            "awaiting-confirmation" => "await-final-confirmation",
             "ready-to-commit" => "commit-fenced-household",
             _ => return Err("invalid_state".into()),
         }

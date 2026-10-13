@@ -52,6 +52,92 @@ mod tests {
                 input["observedFence"] = mutate(input["observedFence"].clone(), mutation);
             }
         }
+        let state = case.get("state").and_then(Value::as_str);
+        let observed = case.get("observed").and_then(Value::as_str);
+        let needs_authorization = (state == Some("idle")
+            && case["explicitIntent"].as_bool().unwrap_or(false))
+            || state == Some("commit-unknown")
+            || (observed == Some("legacy") && !matches!(state, Some("idle" | "restore-required")));
+        if needs_authorization {
+            let authorization = &fixture["migrationAuthorization"];
+            let intent = authorization["intent"].clone();
+            input["attempt"] = intent["attempt"].clone();
+            input["householdId"] = intent["householdId"].clone();
+            if state == Some("idle") {
+                input["observedFence"] = intent["source"].clone();
+            }
+            if state == Some("awaiting-confirmation") {
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("backupDigest")
+                    .or_insert_with(|| authorization["evidence"]["backupDigest"].clone());
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("stagedDigest")
+                    .or_insert_with(|| authorization["evidence"]["stagedDigest"].clone());
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("wireMin")
+                    .or_insert(json!(5));
+            }
+            if case["commitAuthorized"].as_bool().unwrap_or(false) {
+                let mut evidence = authorization["evidence"].clone();
+                if state == Some("commit-unknown") {
+                    for (key, value) in [
+                        ("fence", intent["source"].clone()),
+                        ("backupVerified", json!(true)),
+                        ("candidateKey", evidence["candidateKey"].clone()),
+                        ("candidateHead", evidence["candidateHead"].clone()),
+                        ("ownerVerified", json!(true)),
+                    ] {
+                        input.as_object_mut().unwrap().entry(key).or_insert(value);
+                    }
+                }
+                for key in [
+                    "candidateKey",
+                    "candidateHead",
+                    "backupDigest",
+                    "stagedDigest",
+                    "wireMin",
+                ] {
+                    if let Some(value) = input.get(key) {
+                        evidence[key] = value.clone();
+                    } else if matches!(key, "backupDigest" | "stagedDigest" | "wireMin") {
+                        input[key] = evidence[key].clone();
+                    }
+                }
+                evidence["fence"] = input
+                    .get("fence")
+                    .cloned()
+                    .unwrap_or_else(|| intent["source"].clone());
+                let response: Value = serde_json::from_str(&evaluate(
+                    json!({
+                        "op":"profiles_migration_authorization",
+                        "input":{"intent":intent, "evidence":evidence}
+                    })
+                    .to_string(),
+                ))
+                .unwrap();
+                input["splitAuthorization"] = response
+                    .get("ok")
+                    .cloned()
+                    .unwrap_or_else(|| authorization["prepared"].clone());
+            } else {
+                input["splitAuthorization"] = authorization["prepared"].clone();
+            }
+            if let Some(mutation) = case.get("splitAuthorizationMutation") {
+                input["splitAuthorization"] = mutate(input["splitAuthorization"].clone(), mutation);
+            }
+            if case["omitSplitAuthorization"].as_bool().unwrap_or(false) {
+                input.as_object_mut().unwrap().remove("splitAuthorization");
+            }
+            if let Some(attempt) = case.get("plannerAttempt") {
+                input["attempt"] = attempt.clone();
+            }
+        }
         if case["omitState"].as_bool().unwrap_or(false) {
             input.as_object_mut().unwrap().remove("state");
         }
@@ -100,6 +186,18 @@ mod tests {
                     guard["name"]
                 );
             }
+        }
+        let authorization = &fixture["migrationAuthorization"];
+        for (evidence, expected) in [
+            (Value::Null, &authorization["prepared"]),
+            (authorization["evidence"].clone(), &authorization["bound"]),
+        ] {
+            let request = json!({
+                "op":"profiles_migration_authorization",
+                "input":{"intent":authorization["intent"], "evidence":evidence}
+            });
+            let response: Value = serde_json::from_str(&evaluate(request.to_string())).unwrap();
+            assert_eq!(response, json!({"version":1, "ok":expected}));
         }
         for case in fixture["migrationCases"].as_array().unwrap() {
             let request = json!({
