@@ -35,6 +35,7 @@ pub use library_v3::{
 };
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
+    create_next as profiles_create_next, materialize as profiles_materialize,
     migration_authorization as profiles_migration_authorization,
     migration_authorization_fingerprint as profiles_migration_authorization_fingerprint,
     migration_construct_directory as profiles_migration_construct_directory,
@@ -263,6 +264,14 @@ enum Request {
         value: Option<Value>,
         #[serde(default)]
         at: Option<Value>,
+    },
+    /// Profiles v1: turn one stored-valid directory into canonical library-v4 document bytes.
+    ProfilesMaterialize {
+        document: Value,
+    },
+    /// Profiles v1: choose the next crash-safe persistent Kid creation effect.
+    ProfilesCreateNext {
+        input: Value,
     },
     /// Profiles v1: choose the next initial-split effect from validated durable observations.
     ProfilesMigrationNext {
@@ -924,6 +933,8 @@ fn run(request: Request) -> Result<Value, String> {
             value.as_ref(),
             at.as_ref(),
         ),
+        Request::ProfilesMaterialize { document } => profiles::materialize(&document),
+        Request::ProfilesCreateNext { input } => profiles::create_next(&input),
         Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
         Request::ProfilesMigrationAuthorization { input } => {
             profiles::migration_authorization(&input)

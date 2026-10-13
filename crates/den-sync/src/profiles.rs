@@ -300,6 +300,66 @@ pub fn validate_input(document: &Value, stored: bool) -> Result<Value, String> {
     validate_directory(document, stored)
 }
 
+fn depth_within(value: &Value, maximum: usize) -> bool {
+    let mut pending = vec![(value, 0usize)];
+    while let Some((value, parent_depth)) = pending.pop() {
+        let depth = parent_depth + 1;
+        let children: Vec<&Value> = match value {
+            Value::Array(items) => items.iter().collect(),
+            Value::Object(map) => map.values().collect(),
+            _ => continue,
+        };
+        if depth > maximum {
+            return false;
+        }
+        pending.extend(children.into_iter().map(|child| (child, depth)));
+    }
+    true
+}
+
+/// Validate one stored profile directory and return the only seal-ready library-v4 document bytes.
+pub fn materialize(document: &Value) -> Result<Value, String> {
+    let root = document
+        .as_object()
+        .ok_or_else(|| "invalid_profiles_materialize".to_string())?;
+    if !root.contains_key("migration") {
+        return Err("profiles_migration_required".into());
+    }
+    // Bound arbitrary stored extensions before validation clones the directory or
+    // any recursive serializer sees it.
+    if !depth_within(document, codec::MAX_DEPTH) {
+        return Err("invalid_profiles_materialize".into());
+    }
+    let directory = validate_directory(document, true)
+        .map_err(|_| "invalid_profiles_materialize".to_string())?;
+    let canonical = jcs::jcs(&directory);
+    if canonical.len() > codec::MAX_JCS {
+        return Err("profiles_materialize_too_large".into());
+    }
+    let plaintext =
+        codec::compress(&directory).map_err(|_| "profiles_materialize_too_large".to_string())?;
+    let inflated = plaintext
+        .strip_prefix(&[codec::COMPRESSED])
+        .ok_or("profiles_materialize_roundtrip")
+        .and_then(|compressed| {
+            codec::inflate(compressed).map_err(|_| "profiles_materialize_roundtrip")
+        })?;
+    let decoded: Value = serde_json::from_slice(&inflated)
+        .map_err(|_| "profiles_materialize_roundtrip".to_string())?;
+    if !depth_within(&decoded, codec::MAX_DEPTH)
+        || validate_directory(&decoded, true).is_err()
+        || inflated != canonical
+        || jcs::jcs(&decoded) != canonical
+    {
+        return Err("profiles_materialize_roundtrip".into());
+    }
+    Ok(json!({
+        "directory": directory,
+        "jcs": codec::base64(&canonical),
+        "plaintext": codec::base64(&plaintext),
+    }))
+}
+
 fn rank(set: &Map<String, Value>) -> (bool, Vec<u8>) {
     (!set.is_empty(), jcs::jcs(&Value::Object(set.clone())))
 }
@@ -449,12 +509,27 @@ pub fn apply(
         if profiles.contains_key(profile) {
             return Err("profile_exists".into());
         }
-        let candidate = entry_value.ok_or("invalid_operation_input")?;
-        entry(candidate)?;
-        if candidate["id"].as_str() != Some(profile) || candidate["deleted"]["value"] != false {
-            return Err("invalid_profile".into());
+        let mut candidate = entry_value.ok_or("invalid_operation_input")?.clone();
+        let candidate_object = candidate.as_object().ok_or("invalid_create_profile")?;
+        if candidate_object.get("id").and_then(Value::as_str) != Some(profile)
+            || candidate_object.get("role").and_then(Value::as_str) != Some("kid")
+            || candidate["library"]["value"]["keyVersion"].as_u64() != Some(1)
+            || candidate["deleted"]["value"].as_bool() != Some(false)
+        {
+            return Err("invalid_create_profile".into());
         }
-        profiles.insert(profile.into(), candidate.clone());
+        let maximum_age = candidate_object
+            .get("policy")
+            .and_then(Value::as_object)
+            .and_then(|policy| policy.get("value"))
+            .and_then(Value::as_object)
+            .and_then(|policy| policy.get("maximumAge"))
+            .and_then(Value::as_u64)
+            .filter(|age| *age <= 18)
+            .ok_or("invalid_create_policy")?;
+        candidate["policy"]["value"]["maximumAge"] = json!(maximum_age);
+        candidate["policy"]["value"]["unknownRatings"] = json!("block");
+        profiles.insert(profile.into(), candidate);
         return validate_directory(&result, true);
     }
 
@@ -511,6 +586,225 @@ pub fn apply(
         _ => return Err("invalid_operation".into()),
     }
     validate_directory(&result, true)
+}
+
+fn create_journal_entry(value: &Value) -> Result<(String, String, Value), String> {
+    let journal = object(value, "invalid_create_journal")?;
+    if !exact_members(
+        journal,
+        &[
+            "version",
+            "profile",
+            "key",
+            "display",
+            "libraryAt",
+            "maximumAge",
+            "policyAt",
+            "deletedAt",
+        ],
+    ) || journal["version"].as_u64() != Some(1)
+    {
+        return Err("invalid_create_journal".into());
+    }
+    let profile = profile_id(&journal["profile"])
+        .ok_or("invalid_create_journal")?
+        .to_owned();
+    let key = journal["key"]
+        .as_str()
+        .ok_or("invalid_create_journal")?
+        .to_owned();
+    let key_bytes = codec::unbase64(&key).map_err(|_| "invalid_create_journal")?;
+    if key_bytes.len() != 32 || key != standard_base64(&key_bytes) {
+        return Err("invalid_create_journal".into());
+    }
+    let maximum_age = journal["maximumAge"]
+        .as_u64()
+        .filter(|age| *age <= 18)
+        .ok_or("invalid_create_journal")?;
+    let display_value = object(&journal["display"], "invalid_create_journal")?;
+    if !exact_members(display_value, &["value", "at"])
+        || stamp(&display_value["at"]).is_err()
+        || display(&journal["display"]).is_err()
+        || stamp(&journal["libraryAt"]).is_err()
+        || stamp(&journal["policyAt"]).is_err()
+        || stamp(&journal["deletedAt"]).is_err()
+    {
+        return Err("invalid_create_journal".into());
+    }
+    let profile_entry = json!({
+        "id": profile,
+        "role": "kid",
+        "display": journal["display"].clone(),
+        "library": {
+            "value": {"keyVersion": 1, "key": key},
+            "at": journal["libraryAt"].clone(),
+        },
+        "policy": {
+            "value": {"maximumAge": maximum_age, "unknownRatings": "block"},
+            "at": journal["policyAt"].clone(),
+        },
+        "deleted": {"value": false, "at": journal["deletedAt"].clone()},
+    });
+    entry(&profile_entry).map_err(|_| "invalid_create_journal")?;
+    Ok((profile, key, profile_entry))
+}
+
+fn create_authority(value: &Value) -> Result<(u64, String), String> {
+    let authority = object(value, "invalid_create_authority")?;
+    if !exact_members(authority, &["base", "generation"])
+        || authority["base"]
+            .as_u64()
+            .filter(|base| *base <= MAX_SAFE_INTEGER)
+            .is_none()
+    {
+        return Err("invalid_create_authority".into());
+    }
+    let generation = authority["generation"]
+        .as_str()
+        .filter(|generation| {
+            !generation.is_empty()
+                && generation.trim() == *generation
+                && generation.chars().count() <= 256
+        })
+        .ok_or("invalid_create_authority")?;
+    Ok((authority["base"].as_u64().unwrap(), generation.into()))
+}
+
+fn create_bool(input: &Map<String, Value>, key: &str) -> Result<bool, String> {
+    input.get(key).map_or(Ok(false), |value| {
+        value.as_bool().ok_or("invalid_create_evidence".into())
+    })
+}
+
+/// Decide the next pure crash-safe Kid creation effect from one durable journal and authenticated observations.
+pub fn create_next(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_create_evidence")?;
+    let state = input
+        .get("state")
+        .and_then(Value::as_str)
+        .ok_or("invalid_create_state")?;
+    if !matches!(
+        state,
+        "idle"
+            | "journaled"
+            | "library-created"
+            | "ready"
+            | "committed"
+            | "conflict"
+            | "cas-unknown"
+            | "cancelling"
+            | "active"
+    ) {
+        return Err("invalid_create_state".into());
+    }
+    for key in ["explicitIntent", "householdFresh", "candidateRetired"] {
+        create_bool(input, key)?;
+    }
+    if state == "idle" && !create_bool(input, "explicitIntent")? {
+        return Ok(json!({"effect":"no-op"}));
+    }
+
+    let (profile, key, entry) = create_journal_entry(input.get("journal").unwrap_or(&Value::Null))?;
+    match state {
+        "idle" => return Ok(json!({"effect":"persist-journal"})),
+        "journaled" => {
+            return Ok(json!({"effect":"create-profile-library", "profile":profile, "key":key}));
+        }
+        "library-created" => {
+            return Ok(json!({"effect":"apply-create", "profile":profile, "entry":entry}));
+        }
+        _ => {}
+    }
+
+    let candidate = validate_directory(input.get("candidate").unwrap_or(&Value::Null), true)
+        .map_err(|_| "invalid_create_candidate".to_string())?;
+    let candidate_entry = candidate["profiles"]
+        .as_object()
+        .and_then(|profiles| profiles.get(&profile))
+        .ok_or("create_candidate_mismatch")?;
+    if jcs::jcs(candidate_entry) != jcs::jcs(&entry) {
+        return Err("create_candidate_mismatch".into());
+    }
+
+    let cas = |directory: Value, authority: &Value| -> Result<Value, String> {
+        let (base, generation) = create_authority(authority)?;
+        Ok(json!({
+            "effect":"cas-directory",
+            "base":base,
+            "generation":generation,
+            "directory":directory,
+        }))
+    };
+    if state == "ready" {
+        return cas(candidate, input.get("authority").unwrap_or(&Value::Null));
+    }
+    if !create_bool(input, "householdFresh")? {
+        return Ok(json!({"effect":"read-directory"}));
+    }
+    let current = validate_directory(input.get("current").unwrap_or(&Value::Null), true)
+        .map_err(|_| "invalid_create_current".to_string())?;
+    let authority = input.get("authority").unwrap_or(&Value::Null);
+    create_authority(authority)?;
+    let merged = merge(&candidate, &current).map_err(|_| "create_directory_conflict")?;
+    let candidate_won = jcs::jcs(&merged) == jcs::jcs(&current);
+    let current_profiles = current["profiles"]
+        .as_object()
+        .expect("validated current profiles");
+    let current_keys: BTreeSet<&str> = current_profiles
+        .values()
+        .filter(|entry| entry["deleted"]["value"] == false)
+        .filter_map(|entry| entry["library"]["value"]["key"].as_str())
+        .collect();
+    let retired = create_bool(input, "candidateRetired")?;
+    if retired && current_keys.contains(key.as_str()) {
+        return Err("create_key_referenced".into());
+    }
+    let authoritative = current_profiles.get(&profile);
+    let displaced = authoritative.is_some_and(|entry| {
+        entry["deleted"]["value"] == true
+            || entry["library"]["value"]["key"].as_str() != Some(key.as_str())
+    });
+    let retire_displaced = || {
+        (displaced && !current_keys.contains(key.as_str()) && !retired)
+            .then(|| json!({"effect":"retire-profile-library", "profile":profile, "key":key}))
+    };
+
+    if state == "cancelling" {
+        if let Some(authoritative) = authoritative {
+            if !candidate_won {
+                return Err("create_directory_conflict".into());
+            }
+            if let Some(effect) = retire_displaced() {
+                return Ok(effect);
+            }
+            if authoritative["deleted"]["value"] == true {
+                return Ok(json!({"effect":"discard-journal"}));
+            }
+            return Ok(json!({"effect":"adopt", "directory":current}));
+        }
+        if current_keys.contains(key.as_str()) {
+            return Err("create_key_referenced".into());
+        }
+        if !retired {
+            return Ok(json!({"effect":"retire-profile-library", "profile":profile, "key":key}));
+        }
+        return Ok(json!({"effect":"discard-journal"}));
+    }
+
+    if candidate_won {
+        if let Some(effect) = retire_displaced() {
+            return Ok(effect);
+        }
+        if authoritative.is_some_and(|entry| entry["deleted"]["value"] == true) || state == "active"
+        {
+            return Ok(json!({"effect":"discard-journal"}));
+        }
+        return Ok(json!({"effect":"adopt", "directory":current}));
+    }
+    if matches!(state, "committed" | "active") {
+        return Err("create_not_committed".into());
+    }
+    cas(merged, authority)
 }
 
 fn replace_stamped_object(
