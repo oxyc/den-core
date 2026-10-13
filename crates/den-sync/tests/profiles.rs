@@ -293,23 +293,48 @@ fn den_spec_profile_lifecycle_decisions() {
     let base = &vectors["validDirectories"][0]["document"];
     for case in vectors["migrationCases"].as_array().unwrap() {
         let mut input = case.clone();
-        if case["observed"] == "committed"
+        if case.get("observed").and_then(Value::as_str) == Some("committed")
             && !case
                 .get("omitDirectory")
                 .and_then(Value::as_bool)
                 .unwrap_or(false)
         {
             input["directory"] = base.clone();
+            if let Some(mutation) = case.get("directoryMutation") {
+                input["directory"] = mutate(&input["directory"], mutation);
+            }
         }
-        if case["observed"] == "legacy" && case["state"] != "idle" {
+        if case.get("observed").and_then(Value::as_str) == Some("legacy")
+            && case.get("state").and_then(Value::as_str) != Some("idle")
+        {
             input["fence"] = vectors["migrationFence"].clone();
-            input["observedFence"] = vectors["migrationFence"].clone();
+            if !case
+                .get("omitObservedFence")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                input["observedFence"] = vectors["migrationFence"].clone();
+            }
             if let Some(mutation) = case.get("fenceMutation") {
                 input["fence"] = mutate(&input["fence"], mutation);
             }
             if let Some(mutation) = case.get("observedFenceMutation") {
                 input["observedFence"] = mutate(&input["observedFence"], mutation);
             }
+        }
+        if case
+            .get("omitState")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            input.as_object_mut().unwrap().remove("state");
+        }
+        if case
+            .get("omitObserved")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            input.as_object_mut().unwrap().remove("observed");
         }
         let response = request(json!({"op":"profiles_migration_next", "input":input}));
         if let Some(error) = case.get("error") {

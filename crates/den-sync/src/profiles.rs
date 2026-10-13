@@ -545,7 +545,10 @@ fn optional_bool(input: &Map<String, Value>, key: &str) -> Result<bool, String> 
 /// Decide the next pure initial-split effect from durable observations. This operation performs no effect itself.
 pub fn migration_next(input: &Value) -> Result<Value, String> {
     let input = object(input, "invalid_evidence")?;
-    let state = input["state"].as_str().ok_or("invalid_evidence")?;
+    let state = input
+        .get("state")
+        .and_then(Value::as_str)
+        .ok_or("invalid_state")?;
     if !matches!(
         state,
         "idle"
@@ -561,7 +564,10 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
     ) {
         return Err("invalid_state".into());
     }
-    let observed = input["observed"].as_str().ok_or("invalid_evidence")?;
+    let observed = input
+        .get("observed")
+        .and_then(Value::as_str)
+        .ok_or("invalid_observation")?;
     if !matches!(observed, "legacy" | "committed" | "corrupt") {
         return Err("invalid_observation".into());
     }
@@ -578,6 +584,13 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         .get("candidateKey")
         .map(validate_candidate_key)
         .transpose()?;
+    let candidate_attempt = match input.get("candidateAttempt") {
+        Some(value) => Some(profile_id(value).ok_or("invalid_candidate_attempt")?),
+        None => None,
+    };
+    if candidate_attempt.is_some() && candidate.is_none() {
+        return Err("invalid_candidate_attempt".into());
+    }
     let candidate_retired = optional_bool(input, "candidateRetired")?;
     if candidate_retired && candidate.is_none() {
         return Err("invalid_evidence".into());
@@ -607,6 +620,9 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
             .get("directory")
             .ok_or("committed_directory_missing")?;
         validate_directory(directory, true)?;
+        if candidate.is_some() && candidate_attempt.is_none() {
+            return Err("invalid_candidate_attempt".into());
+        }
         let live_keys = directory["profiles"]
             .as_object()
             .expect("validated profiles")
@@ -618,7 +634,24 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
             if candidate_retired {
                 return Err("committed_key_retired".into());
             }
-            "cleanup_targets_winner"
+            let owner = directory["owner"].as_str().expect("validated owner");
+            let migration = &directory["migration"];
+            let owns_winner = candidate
+                == directory["profiles"][owner]["library"]["value"]["key"].as_str()
+                && candidate_attempt == migration["attempt"].as_str()
+                && owner_verified
+                && candidate_head == Some(&migration["ownerHead"]);
+            if owns_winner {
+                if !optional_bool(input, "winnerVerified")? {
+                    "verify-winner"
+                } else {
+                    "activate"
+                }
+            } else if state == "cleaning-loser" {
+                "cleanup_targets_winner"
+            } else {
+                return Err("winner_evidence_mismatch".into());
+            }
         } else if candidate.is_some() && !candidate_retired {
             "retire-losing-candidate"
         } else if !optional_bool(input, "winnerVerified")? {
@@ -642,14 +675,14 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
             return Err("explicit_intent_required".into());
         }
         "acquire-fence"
+    } else if state == "commit-unknown" {
+        "read-household"
     } else if fence_changed {
         if candidate.is_some() && !candidate_retired {
             "retire-losing-candidate"
         } else {
             "restart"
         }
-    } else if state == "commit-unknown" {
-        "read-household"
     } else if (matches!(state, "backed-up" | "owner-copied" | "ready-to-commit")
         && !optional_bool(input, "backupVerified")?)
         || (matches!(state, "owner-copied" | "ready-to-commit") && candidate.is_none())

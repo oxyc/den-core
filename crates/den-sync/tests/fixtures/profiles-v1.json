@@ -107,8 +107,9 @@
       "request": {
         "op": "profiles_migration_next",
         "input": {
-          "state": "ready-to-commit",
+          "state": "cleaning-loser",
           "observed": "committed",
+          "candidateAttempt": "fedcba9876543210fedcba9876543210",
           "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
           "winnerVerified": true,
           "candidateRetired": false,
