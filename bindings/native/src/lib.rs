@@ -233,5 +233,55 @@ mod tests {
                 case.get("name").unwrap_or(&case["household"])
             );
         }
+
+        // The generic native transport must expose the two Kid-creation operations
+        // without learning any profile policy of its own.
+        let materialize: Value = serde_json::from_str(&evaluate(
+            json!({"op":"profiles_materialize", "document":fixture["migrationBase"]}).to_string(),
+        ))
+        .unwrap();
+        assert_eq!(materialize["ok"]["directory"], fixture["migrationBase"]);
+        assert!(materialize["ok"]["jcs"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+        assert!(materialize["ok"]["plaintext"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+
+        let journal = json!({
+            "version":1,
+            "profile":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "key":"VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=",
+            "display":{"value":{"name":"Sam","avatar":"fox"},
+                       "at":[1800000005000_u64,0,"a1b2c3d4e5f60718"]},
+            "libraryAt":[1800000005000_u64,1,"a1b2c3d4e5f60718"],
+            "maximumAge":8,
+            "policyAt":[1800000005000_u64,2,"a1b2c3d4e5f60718"],
+            "deletedAt":[1800000005000_u64,3,"a1b2c3d4e5f60718"]
+        });
+        for (input, effect) in [
+            (json!({"state":"idle", "explicitIntent":false}), "no-op"),
+            (
+                json!({"state":"idle", "explicitIntent":true, "journal":journal}),
+                "persist-journal",
+            ),
+        ] {
+            let response: Value = serde_json::from_str(&evaluate(
+                json!({"op":"profiles_create_next", "input":input}).to_string(),
+            ))
+            .unwrap();
+            assert_eq!(response["ok"]["effect"], effect);
+        }
+
+        let depth = 1_500;
+        let mut wire = String::from(
+            r#"{"op":"profiles_materialize","document":{"migration":{},"futureNested":"#,
+        );
+        wire.push_str(&r#"{"next":"#.repeat(depth));
+        wire.push_str("null");
+        wire.push_str(&"}".repeat(depth));
+        wire.push_str("}}");
+        let response: Value = serde_json::from_str(&evaluate(wire)).unwrap();
+        assert_eq!(response, json!({"version":1, "error":"invalid_request"}));
     }
 }

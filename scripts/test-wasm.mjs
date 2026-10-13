@@ -160,5 +160,37 @@ for (const case_ of [
   assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))), expected, case_.name ?? case_.household);
   count++;
 }
+
+// The generic WASM transport exposes the same Kid creation operations and keeps
+// serde's recursion guard at the transport boundary.
+const materialize = JSON.parse(evaluate(JSON.stringify({
+  op: 'profiles_materialize', document: profileFixture.migrationBase,
+})));
+assert.deepEqual(materialize.ok.directory, profileFixture.migrationBase);
+assert.ok(materialize.ok.jcs.length > 0);
+assert.ok(materialize.ok.plaintext.length > 0);
+count++;
+const createJournal = {
+  version: 1,
+  profile: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  key: 'VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=',
+  display: {value: {name: 'Sam', avatar: 'fox'}, at: [1800000005000, 0, 'a1b2c3d4e5f60718']},
+  libraryAt: [1800000005000, 1, 'a1b2c3d4e5f60718'],
+  maximumAge: 8,
+  policyAt: [1800000005000, 2, 'a1b2c3d4e5f60718'],
+  deletedAt: [1800000005000, 3, 'a1b2c3d4e5f60718'],
+};
+for (const [input, effect] of [
+  [{state: 'idle', explicitIntent: false}, 'no-op'],
+  [{state: 'idle', explicitIntent: true, journal: createJournal}, 'persist-journal'],
+]) {
+  const response = JSON.parse(evaluate(JSON.stringify({op: 'profiles_create_next', input})));
+  assert.equal(response.ok.effect, effect);
+  count++;
+}
+const deepWire = '{"op":"profiles_materialize","document":{"migration":{},"futureNested":' +
+  '{"next":'.repeat(1500) + 'null' + '}'.repeat(1500) + '}}';
+assert.deepEqual(JSON.parse(evaluate(deepWire)), {version: 1, error: 'invalid_request'});
+count++;
 assert.ok(assistantCount > 0);
 console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} in the assistant module)`);

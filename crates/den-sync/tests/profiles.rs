@@ -1,11 +1,36 @@
 //! Household profiles v1 through the shared JSON boundary, against den-spec's normative vectors.
 
-use den_sync::evaluate;
+use den_sync::{evaluate, profiles_materialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 fn request(value: Value) -> Value {
     serde_json::from_str(&evaluate(&value.to_string())).unwrap()
+}
+
+fn unbase64(text: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut accumulator, mut bits) = (0u32, 0u32);
+    for byte in text.trim_end_matches('=').bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'-' | b'+' => 62,
+            b'_' | b'/' => 63,
+            _ => panic!("invalid fixture base64"),
+        };
+        accumulator = (accumulator << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((accumulator >> bits) as u8);
+            accumulator &= (1 << bits) - 1;
+        }
+    }
+    assert!(bits < 6);
+    out
 }
 
 fn vectors() -> Option<Value> {
@@ -527,6 +552,216 @@ fn den_spec_profile_directory_operations_construct_canonical_documents() {
         if let Some(value) = expected.get("libraryKeyVersion") {
             assert_eq!(
                 &entry["library"]["value"]["keyVersion"], value,
+                "{}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn profile_create_requires_a_fresh_live_key_version_one_kid() {
+    let Some(vectors) = vectors() else { return };
+    let base = &vectors["validDirectories"][0]["document"];
+    let create = vectors["directoryOperationCases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["operation"] == "create")
+        .expect("Kid create vector");
+    for (pointer, value) in [
+        ("/library/value/keyVersion", json!(2)),
+        ("/deleted/value", json!(true)),
+    ] {
+        let mut entry = create["entry"].clone();
+        *entry.pointer_mut(pointer).unwrap() = value;
+        let response = request(json!({
+            "op":"profiles_apply",
+            "document":base,
+            "operation":"create",
+            "profile":create["profile"],
+            "entry":entry,
+        }));
+        assert_eq!(response["error"], "invalid_create_profile", "{pointer}");
+    }
+}
+
+#[test]
+fn den_spec_profiles_materialization_is_stored_bounded_and_round_trips() {
+    let Some(vectors) = vectors() else { return };
+    let base = &vectors["validDirectories"][0]["document"];
+    for case in vectors["profilesMaterializeCases"].as_array().unwrap() {
+        let mut document = base.clone();
+        if let Some(pointer) = case.get("remove").and_then(Value::as_str) {
+            document = remove(&document, pointer);
+        }
+        if let Some(mutation) = case.get("mutation") {
+            document = mutate(&document, mutation);
+        }
+        if let Some(size) = case.get("oversizeExtensionBytes").and_then(Value::as_u64) {
+            document["materializeLimitProbe"] = json!("x".repeat(size as usize));
+        }
+        if let Some(depth) = case.get("nestedExtensionDepth").and_then(Value::as_u64) {
+            let mut nested = Value::Object(Default::default());
+            for _ in 0..depth {
+                nested = json!({"next":nested});
+            }
+            document["futureNested"] = nested;
+        }
+        // Call the operation directly for adversarially deep Values. The shared JSON
+        // envelope is exercised separately below, while serde_json deliberately
+        // rejects extreme wire nesting before dispatch.
+        let response = match profiles_materialize(&document) {
+            Ok(value) => json!({"ok":value}),
+            Err(error) => json!({"error":error}),
+        };
+        if case.get("roundTripMutation").is_some() {
+            let result = response
+                .get("ok")
+                .unwrap_or_else(|| panic!("{}: {response}", case["name"]));
+            assert_eq!(result["directory"], document, "{}", case["name"]);
+            assert_eq!(unbase64(result["plaintext"].as_str().unwrap())[0], 0);
+        } else if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+        } else {
+            let result = response
+                .get("ok")
+                .unwrap_or_else(|| panic!("{}: {response}", case["name"]));
+            assert_eq!(result["directory"], document, "{}", case["name"]);
+            let jcs = unbase64(result["jcs"].as_str().unwrap());
+            assert_eq!(jcs.len(), case["expectJcsBytes"].as_u64().unwrap() as usize);
+            let digest: String = Sha256::digest(&jcs)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            assert_eq!(digest, case["expectJcsSha256"]);
+            assert_eq!(unbase64(result["plaintext"].as_str().unwrap())[0], 0);
+        }
+    }
+}
+
+#[test]
+fn profiles_materialize_json_envelope_rejects_adversarial_depth_fail_closed() {
+    // Keep serde_json's transport recursion guard enabled. The pure operation has
+    // its normative `invalid_profiles_materialize` error above; an input too deep
+    // to reach dispatch is rejected earlier as `invalid_request` by both bindings.
+    let depth = 1_500;
+    let mut wire =
+        String::from(r#"{"op":"profiles_materialize","document":{"migration":{},"futureNested":"#);
+    wire.push_str(&r#"{"next":"#.repeat(depth));
+    wire.push_str("null");
+    wire.push_str(&"}".repeat(depth));
+    wire.push_str("}}");
+    let response: Value = serde_json::from_str(&evaluate(&wire)).unwrap();
+    assert_eq!(response, json!({"version":1, "error":"invalid_request"}));
+}
+
+fn profile_create_input(vectors: &Value, case: &Value) -> Value {
+    let journal = vectors["profileCreateJournal"].clone();
+    let base = vectors["validDirectories"][0]["document"].clone();
+    let profile = journal["profile"].as_str().unwrap().to_owned();
+    let entry_response = request(json!({
+        "op":"profiles_create_next",
+        "input":{"state":"library-created", "journal":journal}
+    }));
+    let entry = entry_response["ok"]["entry"].clone();
+    let candidate = request(json!({
+        "op":"profiles_apply", "document":base, "operation":"create",
+        "profile":profile, "entry":entry,
+    }))["ok"]
+        .clone();
+    let mut input = case.clone();
+    for key in [
+        "name",
+        "expect",
+        "error",
+        "omitJournal",
+        "omitCurrent",
+        "current",
+        "journalMutation",
+        "authorityMutation",
+        "candidateMutation",
+    ] {
+        input.as_object_mut().unwrap().remove(key);
+    }
+    if !case["omitJournal"].as_bool().unwrap_or(false) {
+        input["journal"] = journal.clone();
+        if let Some(mutation) = case.get("journalMutation") {
+            input["journal"] = mutate(&input["journal"], mutation);
+        }
+    }
+    if matches!(
+        case["state"].as_str(),
+        Some("ready" | "committed" | "conflict" | "cas-unknown" | "cancelling" | "active")
+    ) {
+        input["candidate"] = candidate.clone();
+        if let Some(mutation) = case.get("candidateMutation") {
+            input["candidate"] = mutate(&input["candidate"], mutation);
+        }
+        input["authority"] = vectors["profileCreateAuthority"].clone();
+        if let Some(mutation) = case.get("authorityMutation") {
+            input["authority"] = mutate(&input["authority"], mutation);
+        }
+    }
+    if !case["omitCurrent"].as_bool().unwrap_or(false) {
+        match case.get("current").and_then(Value::as_str) {
+            Some("candidate") => input["current"] = candidate,
+            Some("base") => input["current"] = base,
+            Some("renamed-candidate") => {
+                let mut current = candidate;
+                current["profiles"][&profile]["display"] = json!({
+                    "value":{"name":"Sam Two", "avatar":"fox"},
+                    "at":[1800000006000_i64,0,"0f1e2d3c4b5a6978"]
+                });
+                input["current"] = current;
+            }
+            Some("rekeyed-candidate") => {
+                let mut current = candidate;
+                current["profiles"][&profile]["library"] = json!({
+                    "value":{"keyVersion":2,
+                        "key":"ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmY="},
+                    "at":[1800000006000_i64,0,"0f1e2d3c4b5a6978"]
+                });
+                input["current"] = current;
+            }
+            Some("tombstoned-candidate") => {
+                let mut current = candidate;
+                current["profiles"][&profile]["deleted"] = json!({
+                    "value":true, "at":[1800000006000_i64,0,"0f1e2d3c4b5a6978"]
+                });
+                input["current"] = current;
+            }
+            Some(other) => panic!("unknown profile create current fixture: {other}"),
+            None => {}
+        }
+    }
+    input
+}
+
+#[test]
+fn den_spec_kid_create_lifecycle_is_crash_safe_and_directory_authoritative() {
+    let Some(vectors) = vectors() else { return };
+    for case in vectors["profileCreateCases"].as_array().unwrap() {
+        let input = profile_create_input(&vectors, case);
+        let response = request(json!({"op":"profiles_create_next", "input":input}));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+            continue;
+        }
+        assert_eq!(response["ok"]["effect"], case["expect"], "{}", case["name"]);
+        if case["expect"] == "cas-directory" {
+            assert_eq!(
+                json!({"base":response["ok"]["base"],
+                       "generation":response["ok"]["generation"]}),
+                vectors["profileCreateAuthority"],
+                "{}",
+                case["name"]
+            );
+        }
+        if case["expect"] == "apply-create" {
+            assert_eq!(
+                response["ok"]["entry"]["policy"]["value"],
+                json!({"maximumAge":8, "unknownRatings":"block"}),
                 "{}",
                 case["name"]
             );
