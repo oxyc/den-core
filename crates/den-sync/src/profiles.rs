@@ -880,6 +880,458 @@ pub fn partition_preferences(values: &Value) -> Result<Value, String> {
     }))
 }
 
+/// Canonically account every authenticated row in a fenced legacy household into the initial household/Owner
+/// topology. The caller opens and name-binds ciphertext; this pure boundary refuses unreadable or ambiguous evidence
+/// and never performs encryption, storage, or I/O.
+pub fn migration_partition_rows(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_partition_input")?;
+    if !exact_members(input, &["base", "ownerPolicyAt", "rows"]) {
+        return Err("invalid_partition_input".into());
+    }
+    let base = input["base"]
+        .as_u64()
+        .filter(|base| *base <= MAX_SAFE_INTEGER)
+        .ok_or("invalid_partition_input")?;
+    stamp(&input["ownerPolicyAt"]).map_err(|_| "invalid_partition_input")?;
+    let rows = input["rows"].as_array().ok_or("invalid_partition_input")?;
+    for value in rows {
+        let row = object(value, "invalid_source_row")?;
+        if !exact_members(row, &["k", "seq", "v", "opened"])
+            || row["k"]
+                .as_str()
+                .is_none_or(|key| !valid_lower_hex(key, 64))
+            || row["seq"]
+                .as_u64()
+                .is_none_or(|sequence| sequence == 0 || sequence > base)
+            || !row["v"].is_string()
+            || !row["opened"].is_object()
+        {
+            return Err("invalid_source_row".into());
+        }
+    }
+    let mut rows = rows.iter().collect::<Vec<_>>();
+    rows.sort_by(|a, b| {
+        a["k"]
+            .as_str()
+            .expect("source rows prevalidated")
+            .as_bytes()
+            .cmp(
+                b["k"]
+                    .as_str()
+                    .expect("source rows prevalidated")
+                    .as_bytes(),
+            )
+    });
+
+    let mut keys = BTreeSet::new();
+    let mut sequences = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    let mut household = Vec::new();
+    let mut owner = Vec::new();
+    let mut accounting = Vec::new();
+    let mut owner_policy = json!({
+        "value": normalize_legacy(None)?,
+        "at": input["ownerPolicyAt"].clone(),
+    });
+
+    for value in rows {
+        let row = object(value, "invalid_source_row")?;
+        let key = row["k"].as_str().expect("source rows prevalidated");
+        let sequence = row["seq"].as_u64().expect("source rows prevalidated");
+        let sealed = row["v"].as_str().expect("source rows prevalidated");
+        if !keys.insert(key) || !sequences.insert(sequence) {
+            return Err("invalid_source_row".into());
+        }
+        let opened = object(&row["opened"], "invalid_source_row")?;
+        let status = opened["status"].as_str().ok_or("invalid_source_row")?;
+        let name = match opened.get("name") {
+            Some(Value::String(name)) if !name.is_empty() => {
+                if !names.insert(name.as_str()) {
+                    return Err("duplicate_logical_name".into());
+                }
+                Some(name.as_str())
+            }
+            Some(Value::Null) | None => None,
+            _ => return Err("invalid_source_row".into()),
+        };
+        let source = json!({"k": key, "seq": sequence});
+        let mut destinations = Vec::new();
+
+        match status {
+            "unreadable" => return Err("unreadable_source_row".into()),
+            "newer" => {
+                if name.is_some_and(profile_scoped_name) {
+                    return Err("newer_profile_row".into());
+                }
+                if name.is_some_and(profile_control_name) {
+                    return Err("profiles_already_present".into());
+                }
+                household.push(preserve_projection(&source, key, sealed));
+                destinations.push("household");
+            }
+            "document" => {
+                if !exact_members(opened, &["status", "name", "document", "dropped"])
+                    || opened["dropped"]
+                        .as_array()
+                        .is_none_or(|dropped| !dropped.is_empty())
+                {
+                    return Err("invalid_source_row".into());
+                }
+                let logical = opened.get("document").ok_or("invalid_source_row")?;
+                let logical_name =
+                    crate::library_v4::name(logical).map_err(|_| "invalid_source_row")?;
+                let (_, checked) =
+                    crate::library_v4::checked(logical).map_err(|_| "invalid_source_row")?;
+                if name != Some(logical_name.as_str()) || Value::Object(checked) != *logical {
+                    return Err("invalid_source_row".into());
+                }
+                match logical["kind"].as_str() {
+                    Some("title" | "season" | "delivery") => {
+                        owner.push(materialize_projection(
+                            &source,
+                            &logical_name,
+                            logical.clone(),
+                        ));
+                        destinations.push("owner");
+                    }
+                    Some("profiles" | "kid-title-approvals") => {
+                        return Err("profiles_already_present".into());
+                    }
+                    _ => return Err("ambiguous_source_row".into()),
+                }
+            }
+            "row" => {
+                if !exact_members(opened, &["status", "name", "legacy", "row"])
+                    || !opened["legacy"].is_boolean()
+                {
+                    return Err("invalid_source_row".into());
+                }
+                let logical = opened.get("row").ok_or("invalid_source_row")?;
+                let logical_object = object(logical, "invalid_source_row")?;
+                let kind = logical_object
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .ok_or("invalid_source_row")?;
+                if opened["legacy"] == true || matches!(kind, "rec" | "wat" | "snt" | "ep") {
+                    return Err("legacy_source_row".into());
+                }
+                if matches!(kind, "profiles" | "kid-title-approvals") {
+                    return Err("profiles_already_present".into());
+                }
+                if kind != "set" {
+                    if name.is_some_and(profile_scoped_name) {
+                        return Err("newer_profile_row".into());
+                    }
+                    household.push(preserve_projection(&source, key, sealed));
+                    destinations.push("household");
+                } else {
+                    partition_settings_row(
+                        logical,
+                        name,
+                        &source,
+                        key,
+                        sealed,
+                        &mut household,
+                        &mut owner,
+                        &mut owner_policy,
+                        &mut destinations,
+                    )?;
+                }
+            }
+            _ => return Err("invalid_source_row".into()),
+        }
+        accounting.push(json!({"k":key, "seq":sequence, "destinations":destinations}));
+    }
+
+    Ok(json!({
+        "household": household,
+        "owner": owner,
+        "ownerPolicy": owner_policy,
+        "accounting": accounting,
+    }))
+}
+
+/// Construct the first Owner-only directory from explicit verified inputs, then validate it with the stored
+/// directory rules. Identity bindings are derived from one Owner id; no clock, randomness, sealing, or I/O occurs.
+pub fn migration_construct_directory(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_directory_constructor")?;
+    if !exact_members(
+        input,
+        &["attempt", "source", "backup", "owner", "ownerHead"],
+    ) {
+        return Err("invalid_directory_constructor".into());
+    }
+    let owner = object(&input["owner"], "invalid_directory_constructor")?;
+    if !exact_members(
+        owner,
+        &[
+            "id",
+            "display",
+            "libraryKey",
+            "libraryAt",
+            "policy",
+            "deletedAt",
+        ],
+    ) {
+        return Err("invalid_directory_constructor".into());
+    }
+    let owner_id = profile_id(&owner["id"]).ok_or("invalid_profile")?;
+    for field in ["display", "policy"] {
+        let stamped = object(&owner[field], "invalid_directory_constructor")?;
+        if !exact_members(stamped, &["value", "at"]) {
+            return Err("invalid_directory_constructor".into());
+        }
+        stamp(&stamped["at"])?;
+    }
+    stamp(&owner["libraryAt"])?;
+    stamp(&owner["deletedAt"])?;
+
+    let document = json!({
+        "format": 4,
+        "kind": "profiles",
+        "schema": 1,
+        "owner": owner_id,
+        "migration": {
+            "version": 1,
+            "attempt": input["attempt"].clone(),
+            "source": input["source"].clone(),
+            "backup": input["backup"].clone(),
+            "ownerProfile": owner_id,
+            "ownerHead": input["ownerHead"].clone(),
+        },
+        "profiles": {
+            (owner_id): {
+                "id": owner_id,
+                "role": "owner",
+                "display": owner["display"].clone(),
+                "library": {
+                    "value": {"keyVersion": 1, "key": owner["libraryKey"].clone()},
+                    "at": owner["libraryAt"].clone(),
+                },
+                "policy": owner["policy"].clone(),
+                "deleted": {"value": false, "at": owner["deletedAt"].clone()},
+            }
+        },
+    });
+    validate_directory(&document, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn partition_settings_row(
+    logical: &Value,
+    opened_name: Option<&str>,
+    source: &Value,
+    key: &str,
+    sealed: &str,
+    household: &mut Vec<Value>,
+    owner: &mut Vec<Value>,
+    owner_policy: &mut Value,
+    destinations: &mut Vec<&'static str>,
+) -> Result<(), String> {
+    let row = object(logical, "invalid_source_row")?;
+    if row.get("schema").and_then(Value::as_u64) != Some(2) {
+        return Err("invalid_source_row".into());
+    }
+    let setting = row
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .ok_or("invalid_source_row")?;
+    let logical_name = crate::wire::name(logical).map_err(|_| "invalid_source_row")?;
+    let values = row
+        .get("values")
+        .and_then(Value::as_object)
+        .ok_or("invalid_source_row")?;
+    if opened_name != Some(logical_name.as_str()) {
+        return Err("invalid_source_row".into());
+    }
+    if setting.starts_with("tracker-event:") {
+        return Err("legacy_source_row".into());
+    }
+    validate_settings_row(logical)?;
+
+    match setting {
+        "prefs" => {
+            let partition = partition_preferences(&Value::Object(values.clone()))?;
+            let household_values = partition["household"]
+                .as_object()
+                .expect("partition output");
+            let owner_values = partition["owner"].as_object().expect("partition output");
+            if !household_values.is_empty() {
+                household.push(settings_projection(
+                    source,
+                    &logical_name,
+                    row,
+                    household_values,
+                ));
+                destinations.push("household");
+            }
+            if !owner_values.is_empty() {
+                owner.push(settings_projection(
+                    source,
+                    &logical_name,
+                    row,
+                    owner_values,
+                ));
+                destinations.push("owner");
+            }
+            if !partition["ownerMaturity"].is_null() {
+                let maturity = object(&partition["ownerMaturity"], "invalid_legacy_policy")?;
+                if !exact_members(maturity, &["value", "at"]) || stamp(&maturity["at"]).is_err() {
+                    return Err("invalid_legacy_policy".into());
+                }
+                let legacy = match &maturity["value"] {
+                    Value::Null => None,
+                    Value::Object(value)
+                        if exact_members(value, &["string"]) && value["string"].is_string() =>
+                    {
+                        value["string"].as_str()
+                    }
+                    _ => return Err("invalid_legacy_policy".into()),
+                };
+                *owner_policy = json!({
+                    "value": normalize_legacy(legacy)?,
+                    "at": maturity["at"].clone(),
+                });
+                destinations.push("ownerPolicy");
+            }
+        }
+        "keys" => {
+            let mut household_values = values.clone();
+            let mut owner_values = Map::new();
+            if let Some(simkl) = household_values.remove("simkl") {
+                owner_values.insert("simkl".into(), simkl);
+            }
+            if !household_values.is_empty() {
+                household.push(settings_projection(
+                    source,
+                    &logical_name,
+                    row,
+                    &household_values,
+                ));
+                destinations.push("household");
+            }
+            if !owner_values.is_empty() {
+                owner.push(settings_projection(
+                    source,
+                    &logical_name,
+                    row,
+                    &owner_values,
+                ));
+                destinations.push("owner");
+            }
+        }
+        "trackers" | "assistant-applied" => {
+            owner.push(materialize_projection(
+                source,
+                &logical_name,
+                logical.clone(),
+            ));
+            destinations.push("owner");
+        }
+        _ if setting.starts_with("deliver:") || setting.starts_with("handoff:") => {
+            owner.push(materialize_projection(
+                source,
+                &logical_name,
+                logical.clone(),
+            ));
+            destinations.push("owner");
+        }
+        _ => {
+            household.push(preserve_projection(source, key, sealed));
+            destinations.push("household");
+        }
+    }
+    Ok(())
+}
+
+fn validate_settings_row(logical: &Value) -> Result<(), String> {
+    let values = logical["values"]
+        .as_object()
+        .ok_or("invalid_settings_row")?;
+    for stamped in values.values() {
+        let stamped = stamped.as_object().ok_or("invalid_settings_row")?;
+        if !stamped.contains_key("value") || !stamped.contains_key("at") {
+            return Err("invalid_settings_row".into());
+        }
+        stamp(&stamped["at"]).map_err(|_| "invalid_settings_row")?;
+        validate_config_value(&stamped["value"])?;
+    }
+    // The shared merge is the existing canonical validation boundary for the setting names with specialized
+    // semantics (delivery, assistant grants/read/play, and downloads). Merging a row with itself is pure and does
+    // not alter the partition output; it only rejects malformed specialized state.
+    crate::wire::merge(logical, logical).map_err(|_| "invalid_settings_row")?;
+    Ok(())
+}
+
+fn validate_config_value(value: &Value) -> Result<(), String> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let tagged = value.as_object().ok_or("invalid_settings_row")?;
+    if tagged.len() != 1 {
+        return Err("invalid_settings_row".into());
+    }
+    let (tag, value) = tagged.iter().next().expect("one tagged value");
+    let signed_safe = |value: &Value| {
+        value
+            .as_i64()
+            .is_some_and(|value| value.unsigned_abs() <= MAX_SAFE_INTEGER)
+    };
+    let valid = match tag.as_str() {
+        "bool" => value.is_boolean(),
+        "int" => signed_safe(value),
+        "string" => value.is_string(),
+        "ints" => value
+            .as_array()
+            .is_some_and(|values| values.iter().all(signed_safe)),
+        "strings" => value
+            .as_array()
+            .is_some_and(|values| values.iter().all(Value::is_string)),
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err("invalid_settings_row".into())
+    }
+}
+
+fn settings_projection(
+    source: &Value,
+    name: &str,
+    row: &Map<String, Value>,
+    values: &Map<String, Value>,
+) -> Value {
+    let mut row = row.clone();
+    row.insert("values".into(), Value::Object(values.clone()));
+    materialize_projection(source, name, Value::Object(row))
+}
+
+fn preserve_projection(source: &Value, key: &str, sealed: &str) -> Value {
+    json!({"source":source, "mode":"preserve", "k":key, "v":sealed})
+}
+
+fn materialize_projection(source: &Value, name: &str, row: Value) -> Value {
+    json!({"source":source, "mode":"materialize", "name":name, "row":row})
+}
+
+fn profile_scoped_name(name: &str) -> bool {
+    name.starts_with("title:")
+        || name.starts_with("season:")
+        || name.starts_with("dlv:")
+        || name.starts_with("set:deliver:")
+        || name.starts_with("set:handoff:")
+        || matches!(
+            name,
+            "set:prefs" | "set:keys" | "set:trackers" | "set:assistant-applied"
+        )
+}
+
+fn profile_control_name(name: &str) -> bool {
+    name == "profiles" || name.starts_with("kid-title-approvals:")
+}
+
 /// Canonical SHA-256 evidence for the four profiles-v1 §8.1 migration structures. This operation is pure: it
 /// validates and normalizes the typed input, sorts rows by raw UTF-8 key bytes, then hashes RFC 8785 JCS.
 pub fn migration_digest(kind: &str, input: &Value) -> Result<Value, String> {

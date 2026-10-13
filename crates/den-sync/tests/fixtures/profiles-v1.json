@@ -1,7 +1,117 @@
 {
   "version": 1,
   "denSpecMigrationDigestHead": "f715764f6eab2eb1d22187d05cc86053942119ee",
+  "denSpecMigrationPartitionHead": "36bf5ce0b14e2d827e87927577b4ba12d0e55c8a",
+  "denSpecMigrationDirectoryConstructorHead": "124711b601675bc274040a437d557e453601032c",
   "cases": [
+    {
+      "name": "initial Owner directory construction crosses native and web bindings",
+      "request": {
+        "op": "profiles_migration_construct_directory",
+        "input": {
+          "attempt": "0123456789abcdef0123456789abcdef",
+          "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+          "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+          "owner": {
+            "id": "00112233445566778899aabbccddeeff",
+            "display": {"value": {"name": "Cindy", "futureDisplayFact": true}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+            "libraryKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+            "libraryAt": [1, 1, "a1b2c3d4e5f60718"],
+            "policy": {"value": {"maximumAge": 13, "unknownRatings": "allow", "futurePolicyFact": true}, "at": [1, 2, "a1b2c3d4e5f60718"]},
+            "deletedAt": [1, 3, "a1b2c3d4e5f60718"]
+          },
+          "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "ok": {
+        "format": 4, "kind": "profiles", "schema": 1,
+        "owner": "00112233445566778899aabbccddeeff",
+        "migration": {
+          "version": 1,
+          "attempt": "0123456789abcdef0123456789abcdef",
+          "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+          "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+          "ownerProfile": "00112233445566778899aabbccddeeff",
+          "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "profiles": {
+          "00112233445566778899aabbccddeeff": {
+            "id": "00112233445566778899aabbccddeeff", "role": "owner",
+            "display": {"value": {"name": "Cindy", "futureDisplayFact": true}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+            "library": {"value": {"keyVersion": 1, "key": "ERERERERERERERERERERERERERERERERERERERERERE="}, "at": [1, 1, "a1b2c3d4e5f60718"]},
+            "policy": {"value": {"maximumAge": 13, "unknownRatings": "allow", "futurePolicyFact": true}, "at": [1, 2, "a1b2c3d4e5f60718"]},
+            "deleted": {"value": false, "at": [1, 3, "a1b2c3d4e5f60718"]}
+          }
+        }
+      }
+    },
+    {
+      "name": "initial Owner directory construction rejects a noncanonical key through every binding",
+      "request": {
+        "op": "profiles_migration_construct_directory",
+        "input": {
+          "attempt": "0123456789abcdef0123456789abcdef",
+          "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+          "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+          "owner": {
+            "id": "00112233445566778899aabbccddeeff",
+            "display": {"value": {"name": "Cindy"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+            "libraryKey": "c2hvcnQ=",
+            "libraryAt": [1, 1, "a1b2c3d4e5f60718"],
+            "policy": {"value": {"maximumAge": 13, "unknownRatings": "allow"}, "at": [1, 2, "a1b2c3d4e5f60718"]},
+            "deletedAt": [1, 3, "a1b2c3d4e5f60718"]
+          },
+          "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "error": "invalid_library_key"
+    },
+    {
+      "name": "Owner assistant receipt partition crosses native and web bindings",
+      "request": {
+        "op": "profiles_migration_partition_rows",
+        "input": {
+          "base": 1,
+          "ownerPolicyAt": [1, 0, "a1b2c3d4e5f60718"],
+          "rows": [{
+            "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "seq": 1,
+            "v": "sealed-applied",
+            "opened": {
+              "status": "row", "name": "set:assistant-applied", "legacy": false,
+              "row": {"kind": "set", "schema": 2, "name": "assistant-applied", "values": {}}
+            }
+          }]
+        }
+      },
+      "ok": {
+        "household": [],
+        "owner": [{
+          "source": {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1},
+          "mode": "materialize", "name": "set:assistant-applied",
+          "row": {"kind": "set", "schema": 2, "name": "assistant-applied", "values": {}}
+        }],
+        "ownerPolicy": {"value": {"maximumAge": null, "unknownRatings": "allow"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+        "accounting": [{"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "destinations": ["owner"]}]
+      }
+    },
+    {
+      "name": "unknown profile-named row rejects across native and web bindings",
+      "request": {
+        "op": "profiles_migration_partition_rows",
+        "input": {
+          "base": 1,
+          "ownerPolicyAt": [1, 0, "a1b2c3d4e5f60718"],
+          "rows": [{
+            "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "seq": 1,
+            "v": "sealed",
+            "opened": {"status": "row", "name": "set:prefs", "legacy": false, "row": {"kind": "future", "schema": 1}}
+          }]
+        }
+      },
+      "error": "newer_profile_row"
+    },
     {
       "name": "household source authority crosses native and web bindings",
       "request": {

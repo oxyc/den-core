@@ -35,7 +35,9 @@ pub use library_v3::{
 };
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
+    migration_construct_directory as profiles_migration_construct_directory,
     migration_digest as profiles_migration_digest, migration_next as profiles_migration_next,
+    migration_partition_rows as profiles_migration_partition_rows,
     partition_preferences as profiles_partition_preferences, policy_relation, profiles_merge,
     profiles_validate, reset_next as profiles_reset_next,
     validate_input as profiles_validate_input,
@@ -265,6 +267,14 @@ enum Request {
     /// Profiles v1: calculate one canonical migration evidence digest without storage or network effects.
     ProfilesMigrationDigest {
         kind: String,
+        input: Value,
+    },
+    /// Profiles v1: account every authenticated legacy row into household/Owner migration material.
+    ProfilesMigrationPartitionRows {
+        input: Value,
+    },
+    /// Profiles v1: construct and stored-validate the first Owner-only directory.
+    ProfilesMigrationConstructDirectory {
         input: Value,
     },
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
@@ -897,6 +907,12 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
         Request::ProfilesMigrationDigest { kind, input } => {
             profiles::migration_digest(&kind, &input)
+        }
+        Request::ProfilesMigrationPartitionRows { input } => {
+            profiles::migration_partition_rows(&input)
+        }
+        Request::ProfilesMigrationConstructDirectory { input } => {
+            profiles::migration_construct_directory(&input)
         }
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilesPartitionPreferences { values } => {
