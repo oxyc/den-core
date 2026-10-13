@@ -131,6 +131,33 @@ fn migration_digest_rejects_duplicate_rows_and_unknown_kinds() {
 }
 
 #[test]
+fn migration_backup_id_limit_counts_unicode_characters() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/profiles-v1.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .and_then(|cases| {
+            cases
+                .iter()
+                .find(|case| case["request"]["kind"] == "backup")
+        })
+        .expect("pinned backup migration digest case");
+    let mut input = case["request"]["input"].clone();
+    input["id"] = json!("é".repeat(256));
+    let accepted = request(json!({
+        "op":"profiles_migration_digest", "kind":"backup", "input":input
+    }));
+    assert!(accepted["ok"]
+        .as_str()
+        .is_some_and(|digest| digest.len() == 64));
+
+    input["id"] = json!("é".repeat(257));
+    assert_eq!(
+        request(json!({"op":"profiles_migration_digest", "kind":"backup", "input":input}))["error"],
+        "invalid_migration_digest"
+    );
+}
+
+#[test]
 fn den_spec_profile_directory_operations_construct_canonical_documents() {
     let Some(vectors) = vectors() else { return };
     let base = &vectors["validDirectories"][0]["document"];

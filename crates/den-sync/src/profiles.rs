@@ -953,7 +953,7 @@ fn backup_digest_input(input: &Map<String, Value>) -> Result<Value, String> {
     if !exact_members(input, MEMBERS)
         || !input["id"]
             .as_str()
-            .is_some_and(|id| !id.is_empty() && id.len() <= 256)
+            .is_some_and(|id| (1..=256).contains(&id.chars().count()))
         || !valid_profile_id(input["householdId"].as_str().unwrap_or(""))
         || !valid_profile_id(input["attempt"].as_str().unwrap_or(""))
     {
