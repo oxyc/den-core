@@ -814,6 +814,13 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
     if authorization_required && state != "idle" {
         validate_split_authorization(input)?;
     }
+    if state == "commit-unknown"
+        && matches!(lookup, Some("committed" | "superseded"))
+        && household_fresh
+        && candidate_attempt != input["splitAuthorization"]["intent"]["attempt"].as_str()
+    {
+        return Err("terminal_directory_mismatch".into());
+    }
     let (fence, observed_fence) = if observed == "legacy" && state != "idle" {
         (
             Some(Value::Object(migration_fence(input.get("fence"))?.clone())),
