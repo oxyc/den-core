@@ -35,8 +35,10 @@ pub use library_v3::{
 };
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
-    migration_next as profiles_migration_next, policy_relation, profiles_merge, profiles_validate,
-    reset_next as profiles_reset_next, validate_input as profiles_validate_input,
+    migration_next as profiles_migration_next,
+    partition_preferences as profiles_partition_preferences, policy_relation, profiles_merge,
+    profiles_validate, reset_next as profiles_reset_next,
+    validate_input as profiles_validate_input,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -263,6 +265,10 @@ enum Request {
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
     ProfilesResetNext {
         input: Value,
+    },
+    /// Profiles v1: partition the legacy `set:prefs.values` object for household and Owner destinations.
+    ProfilesPartitionPreferences {
+        values: Value,
     },
     /// Profiles v1: translate the legacy Owner maturity ceiling into the normalized policy.
     ProfilePolicyNormalizeLegacy {
@@ -885,6 +891,9 @@ fn run(request: Request) -> Result<Value, String> {
         ),
         Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
+        Request::ProfilesPartitionPreferences { values } => {
+            profiles::partition_preferences(&values)
+        }
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
             profiles::normalize_legacy(legacy.as_deref())
         }
