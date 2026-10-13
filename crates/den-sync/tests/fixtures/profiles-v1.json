@@ -2,6 +2,23 @@
   "version": 1,
   "cases": [
     {
+      "name": "Owner migration head crosses native and web bindings",
+      "request": {
+        "op": "profiles_migration_digest",
+        "kind": "owner",
+        "input": {
+          "libraryId": "fedcba9876543210fedcba9876543210",
+          "base": 2,
+          "wireMin": 4,
+          "rows": [
+            {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "seq": 2, "v": "sealed-β"},
+            {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "v": "sealed-a"}
+          ]
+        }
+      },
+      "ok": "8d91158e1f4928a0df53257d027014537dd3f3c058c7dcb65b70483214fbe8e5"
+    },
+    {
       "name": "legacy pg13 becomes numeric age 13",
       "request": {"op": "profile_policy_normalize_legacy", "legacy": "pg13"},
       "ok": {"maximumAge": 13, "unknownRatings": "allow"}

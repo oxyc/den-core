@@ -88,6 +88,35 @@ fn den_spec_profile_directories_validate() {
 }
 
 #[test]
+fn den_spec_migration_digests_match_canonical_bytes_and_sha256() {
+    let Some(vectors) = vectors() else { return };
+    for case in vectors["migrationDigestCases"].as_array().unwrap() {
+        let response = request(json!({
+            "op": "profiles_migration_digest",
+            "kind": case["kind"],
+            "input": case["input"],
+        }));
+        assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+    }
+}
+
+#[test]
+fn migration_digest_rejects_duplicate_rows_and_unknown_kinds() {
+    let Some(vectors) = vectors() else { return };
+    let case = &vectors["migrationDigestCases"][0];
+    let mut input = case["input"].clone();
+    input["rows"][1]["k"] = input["rows"][0]["k"].clone();
+    assert_eq!(
+        request(json!({"op":"profiles_migration_digest", "kind":"source", "input":input}))["error"],
+        "invalid_migration_digest"
+    );
+    assert_eq!(
+        request(json!({"op":"profiles_migration_digest", "kind":"other", "input":{}}))["error"],
+        "invalid_migration_digest_kind"
+    );
+}
+
+#[test]
 fn den_spec_profile_directory_operations_construct_canonical_documents() {
     let Some(vectors) = vectors() else { return };
     let base = &vectors["validDirectories"][0]["document"];
