@@ -1,6 +1,70 @@
 {
   "version": 1,
+  "denSpecMigrationDigestHead": "f715764f6eab2eb1d22187d05cc86053942119ee",
   "cases": [
+    {
+      "name": "household source authority crosses native and web bindings",
+      "request": {
+        "op": "profiles_migration_digest",
+        "kind": "source",
+        "input": {
+          "libraryId": "0123456789abcdef0123456789abcdef", "generation": 7, "base": 2, "wireMin": 4,
+          "rows": [
+            {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "seq": 2, "v": "sealed-β"},
+            {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "v": "sealed-a"}
+          ]
+        }
+      },
+      "ok": "768265809617d97f163f9bfe9bc4be81855bfa4d24888f29877aa91e54c28ee8"
+    },
+    {
+      "name": "immutable backup manifest crosses native and web bindings",
+      "request": {
+        "op": "profiles_migration_digest",
+        "kind": "backup",
+        "input": {
+          "id": "backup-0123456789abcdef", "householdId": "0123456789abcdef0123456789abcdef",
+          "attempt": "11111111111111111111111111111111",
+          "source": {"generation": 7, "base": 2, "head": "1111111111111111111111111111111111111111111111111111111111111111", "rewrite": "rewrite-0123456789abcdef"},
+          "wireMin": 4,
+          "authorization": {"tokenHash": "2222222222222222222222222222222222222222222222222222222222222222", "memberHash": "3333333333333333333333333333333333333333333333333333333333333333"},
+          "rows": [
+            {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "seq": 2, "v": "sealed-β"},
+            {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "v": "sealed-a"}
+          ]
+        }
+      },
+      "ok": "68056362a0662435c032689d482345fd119016d9b7a34e66971769c070c65b82"
+    },
+    {
+      "name": "staged household rows cross native and web bindings",
+      "request": {
+        "op": "profiles_migration_digest",
+        "kind": "staged",
+        "input": {"rows": [
+          {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "v": "sealed-β"},
+          {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "v": "sealed-a"}
+        ]}
+      },
+      "ok": "ce6925812e2cf7942d0121d34a73f4642d12b30b7bbd5b91c12e67266ced6fd3"
+    },
+    {
+      "name": "Owner migration head crosses native and web bindings",
+      "request": {
+        "op": "profiles_migration_digest",
+        "kind": "owner",
+        "input": {
+          "libraryId": "fedcba9876543210fedcba9876543210",
+          "base": 2,
+          "wireMin": 4,
+          "rows": [
+            {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "seq": 2, "v": "sealed-β"},
+            {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "v": "sealed-a"}
+          ]
+        }
+      },
+      "ok": "8d91158e1f4928a0df53257d027014537dd3f3c058c7dcb65b70483214fbe8e5"
+    },
     {
       "name": "legacy pg13 becomes numeric age 13",
       "request": {"op": "profile_policy_normalize_legacy", "legacy": "pg13"},

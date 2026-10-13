@@ -35,7 +35,7 @@ pub use library_v3::{
 };
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
-    migration_next as profiles_migration_next,
+    migration_digest as profiles_migration_digest, migration_next as profiles_migration_next,
     partition_preferences as profiles_partition_preferences, policy_relation, profiles_merge,
     profiles_validate, reset_next as profiles_reset_next,
     validate_input as profiles_validate_input,
@@ -260,6 +260,11 @@ enum Request {
     },
     /// Profiles v1: choose the next initial-split effect from validated durable observations.
     ProfilesMigrationNext {
+        input: Value,
+    },
+    /// Profiles v1: calculate one canonical migration evidence digest without storage or network effects.
+    ProfilesMigrationDigest {
+        kind: String,
         input: Value,
     },
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
@@ -890,6 +895,9 @@ fn run(request: Request) -> Result<Value, String> {
             at.as_ref(),
         ),
         Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
+        Request::ProfilesMigrationDigest { kind, input } => {
+            profiles::migration_digest(&kind, &input)
+        }
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilesPartitionPreferences { values } => {
             profiles::partition_preferences(&values)

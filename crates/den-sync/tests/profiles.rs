@@ -88,6 +88,76 @@ fn den_spec_profile_directories_validate() {
 }
 
 #[test]
+fn den_spec_migration_digests_match_canonical_bytes_and_sha256() {
+    let Some(vectors) = vectors() else { return };
+    let Some(cases) = vectors
+        .get("migrationDigestCases")
+        .and_then(Value::as_array)
+    else {
+        // The binding fixture pins den-spec PR #51's exact-head cases while this dependent PR is reviewed.
+        return;
+    };
+    for case in cases {
+        let response = request(json!({
+            "op": "profiles_migration_digest",
+            "kind": case["kind"],
+            "input": case["input"],
+        }));
+        assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+    }
+}
+
+#[test]
+fn migration_digest_rejects_duplicate_rows_and_unknown_kinds() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/profiles-v1.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .and_then(|cases| {
+            cases
+                .iter()
+                .find(|case| case["request"]["kind"] == "source")
+        })
+        .expect("pinned source migration digest case");
+    let mut input = case["request"]["input"].clone();
+    input["rows"][1]["k"] = input["rows"][0]["k"].clone();
+    assert_eq!(
+        request(json!({"op":"profiles_migration_digest", "kind":"source", "input":input}))["error"],
+        "invalid_migration_digest"
+    );
+    assert_eq!(
+        request(json!({"op":"profiles_migration_digest", "kind":"other", "input":{}}))["error"],
+        "invalid_migration_digest_kind"
+    );
+}
+
+#[test]
+fn migration_backup_id_limit_counts_unicode_characters() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/profiles-v1.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .and_then(|cases| {
+            cases
+                .iter()
+                .find(|case| case["request"]["kind"] == "backup")
+        })
+        .expect("pinned backup migration digest case");
+    let mut input = case["request"]["input"].clone();
+    input["id"] = json!("é".repeat(256));
+    let accepted = request(json!({
+        "op":"profiles_migration_digest", "kind":"backup", "input":input
+    }));
+    assert!(accepted["ok"]
+        .as_str()
+        .is_some_and(|digest| digest.len() == 64));
+
+    input["id"] = json!("é".repeat(257));
+    assert_eq!(
+        request(json!({"op":"profiles_migration_digest", "kind":"backup", "input":input}))["error"],
+        "invalid_migration_digest"
+    );
+}
+
+#[test]
 fn den_spec_profile_directory_operations_construct_canonical_documents() {
     let Some(vectors) = vectors() else { return };
     let base = &vectors["validDirectories"][0]["document"];

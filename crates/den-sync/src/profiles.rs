@@ -4,6 +4,7 @@
 use crate::library_v4::{codec, jcs};
 use crate::wire::{Stamp, MAX_SAFE_INTEGER};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_normalization::UnicodeNormalization;
@@ -877,6 +878,179 @@ pub fn partition_preferences(values: &Value) -> Result<Value, String> {
         "owner": owner,
         "ownerMaturity": owner_maturity,
     }))
+}
+
+/// Canonical SHA-256 evidence for the four profiles-v1 §8.1 migration structures. This operation is pure: it
+/// validates and normalizes the typed input, sorts rows by raw UTF-8 key bytes, then hashes RFC 8785 JCS.
+pub fn migration_digest(kind: &str, input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_migration_digest")?;
+    let normalized = match kind {
+        "source" => snapshot_digest_input(input, true)?,
+        "owner" => snapshot_digest_input(input, false)?,
+        "staged" => {
+            if !exact_members(input, &["rows"]) {
+                return Err("invalid_migration_digest".into());
+            }
+            let rows = digest_rows(&input["rows"], false, None)?;
+            if rows.is_empty() {
+                return Err("invalid_migration_digest".into());
+            }
+            Value::Array(rows)
+        }
+        "backup" => backup_digest_input(input)?,
+        _ => return Err("invalid_migration_digest_kind".into()),
+    };
+    let digest = Sha256::digest(jcs::jcs(&normalized));
+    Ok(json!(digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()))
+}
+
+fn snapshot_digest_input(input: &Map<String, Value>, source: bool) -> Result<Value, String> {
+    let members = if source {
+        &["libraryId", "generation", "base", "wireMin", "rows"][..]
+    } else {
+        &["libraryId", "base", "wireMin", "rows"][..]
+    };
+    if !exact_members(input, members)
+        || !valid_profile_id(input["libraryId"].as_str().unwrap_or(""))
+    {
+        return Err("invalid_migration_digest".into());
+    }
+    let base = digest_integer(&input["base"], false)?;
+    let mut answer = Map::from_iter([
+        ("libraryId".into(), input["libraryId"].clone()),
+        ("base".into(), json!(base)),
+        (
+            "wireMin".into(),
+            json!(digest_integer(&input["wireMin"], true)?),
+        ),
+        (
+            "rows".into(),
+            Value::Array(digest_rows(&input["rows"], true, Some(base))?),
+        ),
+    ]);
+    if source {
+        answer.insert(
+            "generation".into(),
+            json!(digest_integer(&input["generation"], false)?),
+        );
+    }
+    Ok(Value::Object(answer))
+}
+
+fn backup_digest_input(input: &Map<String, Value>) -> Result<Value, String> {
+    const MEMBERS: &[&str] = &[
+        "id",
+        "householdId",
+        "attempt",
+        "source",
+        "wireMin",
+        "authorization",
+        "rows",
+    ];
+    if !exact_members(input, MEMBERS)
+        || !input["id"]
+            .as_str()
+            .is_some_and(|id| (1..=256).contains(&id.chars().count()))
+        || !valid_profile_id(input["householdId"].as_str().unwrap_or(""))
+        || !valid_profile_id(input["attempt"].as_str().unwrap_or(""))
+    {
+        return Err("invalid_migration_digest".into());
+    }
+    let source = object(&input["source"], "invalid_migration_digest")?;
+    let authorization = object(&input["authorization"], "invalid_migration_digest")?;
+    if !exact_members(source, &["generation", "base", "head", "rewrite"])
+        || !source["head"].as_str().is_some_and(valid_digest_text)
+        || !source["rewrite"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+        || !exact_members(authorization, &["tokenHash", "memberHash"])
+        || !authorization["tokenHash"]
+            .as_str()
+            .is_some_and(valid_digest_text)
+        || !(authorization["memberHash"].is_null()
+            || authorization["memberHash"]
+                .as_str()
+                .is_some_and(valid_digest_text))
+    {
+        return Err("invalid_migration_digest".into());
+    }
+    let base = digest_integer(&source["base"], false)?;
+    Ok(json!({
+        "id": input["id"],
+        "householdId": input["householdId"],
+        "attempt": input["attempt"],
+        "source": {
+            "generation": digest_integer(&source["generation"], false)?,
+            "base": base,
+            "head": source["head"],
+            "rewrite": source["rewrite"],
+        },
+        "wireMin": digest_integer(&input["wireMin"], true)?,
+        "authorization": authorization,
+        "rows": digest_rows(&input["rows"], true, Some(base))?,
+    }))
+}
+
+fn digest_rows(value: &Value, sequenced: bool, base: Option<u64>) -> Result<Vec<Value>, String> {
+    let rows = value.as_array().ok_or("invalid_migration_digest")?;
+    let mut keys = BTreeSet::new();
+    let mut sequences = BTreeSet::new();
+    let mut answer = Vec::with_capacity(rows.len());
+    for value in rows {
+        let row = object(value, "invalid_migration_digest")?;
+        let members = if sequenced {
+            &["k", "seq", "v"][..]
+        } else {
+            &["k", "v"][..]
+        };
+        let key = row
+            .get("k")
+            .and_then(Value::as_str)
+            .ok_or("invalid_migration_digest")?;
+        if !exact_members(row, members)
+            || !valid_lower_hex(key, 64)
+            || !keys.insert(key.to_owned())
+            || row.get("v").and_then(Value::as_str).is_none()
+        {
+            return Err("invalid_migration_digest".into());
+        }
+        if sequenced {
+            let sequence = digest_integer(&row["seq"], true)?;
+            if !sequences.insert(sequence) || sequence > base.ok_or("invalid_migration_digest")? {
+                return Err("invalid_migration_digest".into());
+            }
+        }
+        answer.push(value.clone());
+    }
+    answer.sort_by(|a, b| {
+        a["k"]
+            .as_str()
+            .unwrap()
+            .as_bytes()
+            .cmp(b["k"].as_str().unwrap().as_bytes())
+    });
+    Ok(answer)
+}
+
+fn digest_integer(value: &Value, positive: bool) -> Result<u64, String> {
+    value
+        .as_u64()
+        .filter(|number| *number <= MAX_SAFE_INTEGER && (!positive || *number != 0))
+        .ok_or_else(|| "invalid_migration_digest".into())
+}
+
+fn valid_digest_text(value: &str) -> bool {
+    valid_lower_hex(value, 64)
+}
+
+fn valid_lower_hex(value: &str, length: usize) -> bool {
+    value.len() == length
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 /// Public typed equivalents for Rust callers; JSON callers use the versioned `evaluate` envelope.
