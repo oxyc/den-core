@@ -5,7 +5,7 @@ use crate::library_v4::{codec, jcs};
 use crate::wire::{Stamp, MAX_SAFE_INTEGER};
 use serde_json::{json, Map, Value};
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use unicode_normalization::UnicodeNormalization;
 
 const ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "owner", "migration", "profiles"];
@@ -614,51 +614,127 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
 /// Decide the next pure compound-reset effect. The caller remains responsible for every returned effect.
 pub fn reset_next(input: &Value) -> Result<Value, String> {
     let input = object(input, "invalid_evidence")?;
-    let profiles = input["profiles"].as_array().ok_or("invalid_evidence")?;
+    let directory = input.get("directory").ok_or("invalid_evidence")?;
+    validate_directory(directory, true)?;
+    let directory_profiles = directory["profiles"]
+        .as_object()
+        .expect("validated profiles");
+    let live_ids = directory_profiles
+        .iter()
+        .filter(|(_, entry)| entry["deleted"]["value"] == false)
+        .map(|(id, _)| id.as_str())
+        .collect::<BTreeSet<_>>();
+    let fence = input
+        .get("fence")
+        .and_then(Value::as_object)
+        .ok_or("invalid_reset_fence")?;
+    if !exact_members(fence, &["generation", "head"])
+        || fence["generation"]
+            .as_u64()
+            .filter(|generation| *generation <= MAX_SAFE_INTEGER)
+            .is_none()
+        || !valid_digest(&fence["head"])
+    {
+        return Err("invalid_reset_fence".into());
+    }
+    let profiles = input["profiles"]
+        .as_array()
+        .ok_or("invalid_reset_profiles")?;
+    let mut evidence = BTreeMap::new();
+    for profile in profiles {
+        let profile = object(profile, "invalid_reset_profiles")?;
+        let id = profile
+            .get("profile")
+            .and_then(profile_id)
+            .ok_or("invalid_reset_profiles")?;
+        if evidence.insert(id, profile).is_some() {
+            return Err("invalid_reset_profiles".into());
+        }
+    }
+    if evidence.keys().copied().collect::<BTreeSet<_>>() != live_ids {
+        return Err("invalid_reset_profiles".into());
+    }
+
     let mut old_keys = BTreeSet::new();
     let mut new_keys = BTreeSet::new();
-    let mut all_verified = true;
-    let mut all_retired = true;
-    for profile in profiles {
-        let profile = object(profile, "invalid_evidence")?;
-        let deleted = profile["deleted"].as_bool().ok_or("invalid_evidence")?;
-        if deleted {
-            continue;
+    let mut pending = Vec::new();
+    let mut unretired = Vec::new();
+    for id in &live_ids {
+        let profile = evidence[id];
+        let current = &directory_profiles[*id]["library"]["value"];
+        let old_version = profile["oldVersion"]
+            .as_u64()
+            .ok_or("invalid_reset_profiles")?;
+        let new_version = profile["newVersion"]
+            .as_u64()
+            .ok_or("invalid_reset_profiles")?;
+        let old_key = profile["oldKey"].as_str().ok_or("invalid_reset_profiles")?;
+        if current["keyVersion"].as_u64() != Some(old_version)
+            || current["key"].as_str() != Some(old_key)
+        {
+            return Err("profile_state_mismatch".into());
         }
-        let old_version = profile["oldVersion"].as_u64().ok_or("invalid_evidence")?;
-        let new_version = profile["newVersion"].as_u64().ok_or("invalid_evidence")?;
         if old_version.checked_add(1) != Some(new_version) {
-            return Ok(json!("invalid_key_version"));
+            return Err("invalid_key_version".into());
         }
-        let old_key = profile["oldKey"].as_str().ok_or("invalid_evidence")?;
-        let new_key = profile["newKey"].as_str().ok_or("invalid_evidence")?;
+        let new_key = profile["newKey"].as_str().ok_or("invalid_library_key")?;
+        let new_key_bytes = codec::unbase64(new_key).map_err(|_| "invalid_library_key")?;
+        if new_key_bytes.len() != 32 || new_key != standard_base64(&new_key_bytes) {
+            return Err("invalid_library_key".into());
+        }
         old_keys.insert(old_key);
         if !new_keys.insert(new_key) {
-            return Ok(json!("reused_key"));
+            return Err("reused_key".into());
         }
-        all_verified &= profile["verified"].as_bool().ok_or("invalid_evidence")?;
-        all_retired &= profile["oldRetired"].as_bool().ok_or("invalid_evidence")?;
+        let verified = profile["verified"]
+            .as_bool()
+            .ok_or("invalid_reset_profiles")?;
+        let retired = profile["oldRetired"]
+            .as_bool()
+            .ok_or("invalid_reset_profiles")?;
+        if verified {
+            if !valid_digest(&profile["copiedHead"]) {
+                return Err("invalid_copy_head".into());
+            }
+        } else if !profile["copiedHead"].is_null() {
+            return Err("invalid_copy_head".into());
+        }
+        if !verified {
+            pending.push(*id);
+        }
+        if !retired {
+            unretired.push(*id);
+        }
     }
     if old_keys.iter().any(|key| new_keys.contains(key)) {
-        return Ok(json!("reused_key"));
+        return Err("reused_key".into());
     }
-    let answer = if !all_verified {
-        "move-live-profiles"
-    } else if !input["householdCommitted"]
+    let household_committed = input["householdCommitted"]
         .as_bool()
-        .ok_or("invalid_evidence")?
-    {
-        "commit-successor-household"
-    } else if !all_retired
-        || !input["oldHouseholdRetired"]
-            .as_bool()
-            .ok_or("invalid_evidence")?
-    {
-        "retire-old-libraries"
+        .ok_or("invalid_reset_profiles")?;
+    let old_household_retired = input["oldHouseholdRetired"]
+        .as_bool()
+        .ok_or("invalid_reset_profiles")?;
+    if !household_committed && (old_household_retired || unretired.len() != live_ids.len()) {
+        return Err("premature_retirement".into());
+    }
+    if household_committed && !pending.is_empty() {
+        return Err("commit_without_verification".into());
+    }
+    let answer = if !pending.is_empty() {
+        json!({"effect":"move-live-profiles", "profiles":pending})
+    } else if !household_committed {
+        json!({"effect":"commit-successor-household"})
+    } else if !unretired.is_empty() || !old_household_retired {
+        json!({
+            "effect":"retire-old-libraries",
+            "profiles":unretired,
+            "household":!old_household_retired,
+        })
     } else {
-        "complete"
+        json!({"effect":"complete"})
     };
-    Ok(json!(answer))
+    Ok(answer)
 }
 
 /// Split one legacy `set:prefs.values` object without interpreting its stamped values.

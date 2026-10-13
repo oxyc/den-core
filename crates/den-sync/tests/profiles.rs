@@ -299,12 +299,45 @@ fn den_spec_profile_lifecycle_decisions() {
         );
     }
     for case in vectors["resetCases"].as_array().unwrap() {
-        assert_eq!(
-            request(json!({"op":"profiles_reset_next", "input":case}))["ok"],
-            case["expect"],
-            "{}",
-            case["name"]
-        );
+        let mut directory = vectors["validDirectories"][0]["document"].clone();
+        if let Some(mutation) = case.get("directoryMutate") {
+            directory = mutate(&directory, mutation);
+        }
+        let mut fence = vectors["resetFence"].clone();
+        if let Some(mutation) = case.get("fenceMutate") {
+            fence = mutate(&fence, mutation);
+        }
+        let mut profiles = vectors["resetProfiles"].clone();
+        for mutation in case["profileMutations"].as_array().into_iter().flatten() {
+            profiles = mutate(&profiles, mutation);
+        }
+        if let Some(profile) = case.get("removeProfile").and_then(Value::as_str) {
+            profiles.as_object_mut().unwrap().remove(profile);
+        }
+        let mut profile_evidence = profiles
+            .as_object()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        if let Some(profile) = case.get("duplicateProfile").and_then(Value::as_str) {
+            profile_evidence.push(profiles[profile].clone());
+        }
+        let response = request(json!({
+            "op":"profiles_reset_next",
+            "input":{
+                "directory":directory,
+                "fence":fence,
+                "profiles":profile_evidence,
+                "householdCommitted":case["householdCommitted"],
+                "oldHouseholdRetired":case["oldHouseholdRetired"]
+            }
+        }));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+        } else {
+            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+        }
     }
 }
 
