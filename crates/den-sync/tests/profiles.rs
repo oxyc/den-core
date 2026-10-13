@@ -211,9 +211,9 @@ fn den_spec_migration_directory_construction_matches() {
             assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
             assert_eq!(
                 request(json!({
-                    "op":"profiles_validate", "document":response["ok"], "stored":true
+                    "op":"profiles_validate", "document":response["ok"]["directory"], "stored":true
                 }))["ok"],
-                response["ok"],
+                response["ok"]["directory"],
                 "{} must be valid for storage",
                 case["name"]
             );
@@ -606,6 +606,25 @@ fn den_spec_profile_lifecycle_decisions() {
             assert_eq!(&response["error"], error, "{}", case["name"]);
         } else {
             assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+        }
+    }
+}
+
+#[test]
+fn den_spec_profile_capability_decisions() {
+    let Some(vectors) = vectors() else { return };
+    let contract = &vectors["profileCapabilityContract"];
+    for case in contract["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(contract["mixedHost"].as_array().unwrap())
+    {
+        let response = request(json!({"op":"profiles_capability", "input":case["input"]}));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+        } else {
+            assert_eq!(&response["ok"], &case["expect"], "{}", case["name"]);
         }
     }
 }

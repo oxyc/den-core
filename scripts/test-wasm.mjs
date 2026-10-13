@@ -43,5 +43,71 @@ for (const guard of profileFixture.partitionIdentityGuards) {
     count++;
   }
 }
+const clone = value => structuredClone(value);
+const mutate = (document, mutation) => {
+  const result = clone(document);
+  const parts = mutation.path.split('/').slice(1);
+  const key = parts.pop();
+  let parent = result;
+  for (const part of parts) parent = parent[part];
+  if ('rename' in mutation) {
+    parent[mutation.rename] = parent[key];
+    delete parent[key];
+  } else {
+    parent[key] = clone(mutation.value);
+  }
+  return result;
+};
+for (const case_ of profileFixture.migrationDirectoryConstructorCases) {
+  let input = clone(profileFixture.migrationDirectoryConstructorInput);
+  for (const mutation of case_.mutations ?? []) input = mutate(input, mutation);
+  if (case_.remove) {
+    const parts = case_.remove.split('/').slice(1);
+    const key = parts.pop();
+    let parent = input;
+    for (const part of parts) parent = parent[part];
+    delete parent[key];
+  }
+  const request = {op: 'profiles_migration_construct_directory', input};
+  // The JSON boundary uses JCS, where ECMAScript serializes negative zero as `0`; normalize the fixture through
+  // the same JSON representation before comparing rather than relying on JavaScript's observable `-0` value.
+  const expected = 'error' in case_ ? {version: 1, error: case_.error} :
+    {version: 1, ok: JSON.parse(JSON.stringify(case_.expect))};
+  assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))), expected, case_.name);
+  count++;
+}
+const migrationInput = case_ => {
+  const input = clone(case_);
+  if (case_.observed === 'committed' && !case_.omitDirectory) {
+    input.directory = clone(profileFixture.migrationBase);
+    if (case_.directoryMutation) input.directory = mutate(input.directory, case_.directoryMutation);
+  }
+  if (case_.observed === 'legacy' && case_.state !== 'idle') {
+    input.fence = clone(profileFixture.migrationFence);
+    if (!case_.omitObservedFence) input.observedFence = clone(profileFixture.migrationFence);
+    if (case_.fenceMutation) input.fence = mutate(input.fence, case_.fenceMutation);
+    if (case_.observedFenceMutation) {
+      input.observedFence = mutate(input.observedFence, case_.observedFenceMutation);
+    }
+  }
+  if (case_.omitState) delete input.state;
+  if (case_.omitObserved) delete input.observed;
+  return input;
+};
+for (const case_ of profileFixture.migrationCases) {
+  const request = {op: 'profiles_migration_next', input: migrationInput(case_)};
+  const expected = 'error' in case_ ? {version: 1, error: case_.error} : {version: 1, ok: case_.expect};
+  assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))), expected, case_.name);
+  count++;
+}
+for (const case_ of [
+  ...profileFixture.profileCapabilityContract.cases,
+  ...profileFixture.profileCapabilityContract.mixedHost,
+]) {
+  const request = {op: 'profiles_capability', input: case_.input};
+  const expected = 'error' in case_ ? {version: 1, error: case_.error} : {version: 1, ok: case_.expect};
+  assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))), expected, case_.name ?? case_.household);
+  count++;
+}
 assert.ok(assistantCount > 0);
 console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} in the assistant module)`);

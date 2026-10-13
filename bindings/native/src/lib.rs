@@ -11,6 +11,56 @@ mod tests {
     use super::evaluate;
     use serde_json::{json, Value};
 
+    fn mutate(mut document: Value, mutation: &Value) -> Value {
+        let path = mutation["path"].as_str().unwrap();
+        let (parent, key) = path.rsplit_once('/').unwrap();
+        let map = document
+            .pointer_mut(parent)
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        if let Some(rename) = mutation.get("rename").and_then(Value::as_str) {
+            let value = map.remove(key).unwrap();
+            map.insert(rename.into(), value);
+        } else {
+            map.insert(key.into(), mutation["value"].clone());
+        }
+        document
+    }
+
+    fn migration_input(fixture: &Value, case: &Value) -> Value {
+        let mut input = case.clone();
+        if case.get("observed").and_then(Value::as_str) == Some("committed")
+            && !case["omitDirectory"].as_bool().unwrap_or(false)
+        {
+            input["directory"] = fixture["migrationBase"].clone();
+            if let Some(mutation) = case.get("directoryMutation") {
+                input["directory"] = mutate(input["directory"].clone(), mutation);
+            }
+        }
+        if case.get("observed").and_then(Value::as_str) == Some("legacy")
+            && case.get("state").and_then(Value::as_str) != Some("idle")
+        {
+            input["fence"] = fixture["migrationFence"].clone();
+            if !case["omitObservedFence"].as_bool().unwrap_or(false) {
+                input["observedFence"] = fixture["migrationFence"].clone();
+            }
+            if let Some(mutation) = case.get("fenceMutation") {
+                input["fence"] = mutate(input["fence"].clone(), mutation);
+            }
+            if let Some(mutation) = case.get("observedFenceMutation") {
+                input["observedFence"] = mutate(input["observedFence"].clone(), mutation);
+            }
+        }
+        if case["omitState"].as_bool().unwrap_or(false) {
+            input.as_object_mut().unwrap().remove("state");
+        }
+        if case["omitObserved"].as_bool().unwrap_or(false) {
+            input.as_object_mut().unwrap().remove("observed");
+        }
+        input
+    }
+
     #[test]
     fn shared_profile_contract_crosses_the_native_binding() {
         let fixture: Value = serde_json::from_str(include_str!(
@@ -50,6 +100,40 @@ mod tests {
                     guard["name"]
                 );
             }
+        }
+        for case in fixture["migrationCases"].as_array().unwrap() {
+            let request = json!({
+                "op":"profiles_migration_next",
+                "input":migration_input(&fixture, case),
+            });
+            let response: Value = serde_json::from_str(&evaluate(request.to_string())).unwrap();
+            let expected = if let Some(error) = case.get("error") {
+                json!({"version":1, "error":error})
+            } else {
+                json!({"version":1, "ok":case["expect"]})
+            };
+            assert_eq!(response, expected, "{}", case["name"]);
+        }
+        let capability = &fixture["profileCapabilityContract"];
+        for case in capability["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(capability["mixedHost"].as_array().unwrap())
+        {
+            let request = json!({"op":"profiles_capability", "input":case["input"]});
+            let response: Value = serde_json::from_str(&evaluate(request.to_string())).unwrap();
+            let expected = if let Some(error) = case.get("error") {
+                json!({"version":1, "error":error})
+            } else {
+                json!({"version":1, "ok":case["expect"]})
+            };
+            assert_eq!(
+                response,
+                expected,
+                "{}",
+                case.get("name").unwrap_or(&case["household"])
+            );
         }
     }
 }

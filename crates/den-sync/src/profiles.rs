@@ -556,6 +556,7 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
             | "fenced"
             | "backed-up"
             | "owner-copied"
+            | "awaiting-confirmation"
             | "ready-to-commit"
             | "commit-unknown"
             | "adopting"
@@ -565,6 +566,69 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
     ) {
         return Err("invalid_state".into());
     }
+    for name in [
+        "explicitIntent",
+        "backupVerified",
+        "ownerVerified",
+        "winnerVerified",
+        "candidateRetired",
+        "commitAuthorized",
+        "cancelRequested",
+        "attemptAborted",
+        "householdFresh",
+        "recoveryIntent",
+    ] {
+        optional_bool(input, name)?;
+    }
+    let lookup = match input.get("attemptLookup") {
+        Some(value) => match value.as_str() {
+            Some(value @ ("open" | "committed" | "superseded" | "aborted")) => Some(value),
+            _ => return Err("invalid_attempt_lookup".into()),
+        },
+        None => None,
+    };
+    let household_fresh = optional_bool(input, "householdFresh")?;
+    if household_fresh && lookup.is_none() {
+        return Err("invalid_attempt_lookup".into());
+    }
+    let commit_authorized = optional_bool(input, "commitAuthorized")?;
+    if commit_authorized
+        && matches!(
+            state,
+            "idle"
+                | "fenced"
+                | "backed-up"
+                | "owner-copied"
+                | "awaiting-confirmation"
+                | "restore-required"
+        )
+    {
+        return Err("premature_commit_authorization".into());
+    }
+    if state == "commit-unknown" && !commit_authorized {
+        return Err("commit_authorization_required".into());
+    }
+    if state == "commit-unknown" {
+        if lookup.is_none() {
+            return Ok(json!("lookup-attempt"));
+        }
+        if !household_fresh {
+            return Ok(json!("read-household"));
+        }
+    }
+    let cancel_requested = optional_bool(input, "cancelRequested")?;
+    if cancel_requested {
+        if !optional_bool(input, "attemptAborted")? {
+            return Ok(json!("abort-attempt"));
+        }
+        if lookup != Some("aborted") {
+            return Err("cancel_abort_mismatch".into());
+        }
+        if !household_fresh {
+            return Ok(json!("read-household"));
+        }
+    }
+
     let observed = input
         .get("observed")
         .and_then(Value::as_str)
@@ -572,14 +636,8 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
     if !matches!(observed, "legacy" | "committed" | "corrupt") {
         return Err("invalid_observation".into());
     }
-    for name in [
-        "explicitIntent",
-        "backupVerified",
-        "ownerVerified",
-        "winnerVerified",
-        "candidateRetired",
-    ] {
-        optional_bool(input, name)?;
+    if state == "ready-to-commit" && observed == "legacy" && !commit_authorized {
+        return Err("commit_authorization_required".into());
     }
     let candidate = input
         .get("candidateKey")
@@ -631,17 +689,49 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
             .filter(|profile| profile["deleted"]["value"] == false)
             .filter_map(|profile| profile["library"]["value"]["key"].as_str())
             .collect::<BTreeSet<_>>();
-        if candidate.is_some_and(|key| live_keys.contains(key)) {
+        let owns_winner = candidate
+            == directory["profiles"][directory["owner"].as_str().expect("validated owner")]
+                ["library"]["value"]["key"]
+                .as_str()
+            && candidate_attempt == directory["migration"]["attempt"].as_str()
+            && owner_verified
+            && candidate_head == Some(&directory["migration"]["ownerHead"]);
+        if candidate.is_some_and(|key| live_keys.contains(key)) && candidate_retired {
+            return Err("committed_key_retired".into());
+        }
+        if state == "commit-unknown" {
+            match lookup {
+                Some("committed") => {
+                    if !owns_winner {
+                        return Err("terminal_directory_mismatch".into());
+                    }
+                    if !optional_bool(input, "winnerVerified")? {
+                        "verify-winner"
+                    } else {
+                        "activate"
+                    }
+                }
+                Some("superseded") => {
+                    if candidate.is_none()
+                        || candidate_attempt == directory["migration"]["attempt"].as_str()
+                        || candidate.is_some_and(|key| live_keys.contains(key))
+                    {
+                        return Err("terminal_directory_mismatch".into());
+                    }
+                    if !optional_bool(input, "winnerVerified")? {
+                        "verify-winner"
+                    } else if !candidate_retired {
+                        "retire-losing-candidate"
+                    } else {
+                        "activate"
+                    }
+                }
+                _ => return Err("terminal_directory_mismatch".into()),
+            }
+        } else if candidate.is_some_and(|key| live_keys.contains(key)) {
             if candidate_retired {
                 return Err("committed_key_retired".into());
             }
-            let owner = directory["owner"].as_str().expect("validated owner");
-            let migration = &directory["migration"];
-            let owns_winner = candidate
-                == directory["profiles"][owner]["library"]["value"]["key"].as_str()
-                && candidate_attempt == migration["attempt"].as_str()
-                && owner_verified
-                && candidate_head == Some(&migration["ownerHead"]);
             if owns_winner {
                 if !optional_bool(input, "winnerVerified")? {
                     "verify-winner"
@@ -653,10 +743,10 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
             } else {
                 return Err("winner_evidence_mismatch".into());
             }
-        } else if candidate.is_some() && !candidate_retired {
-            "retire-losing-candidate"
         } else if !optional_bool(input, "winnerVerified")? {
             "verify-winner"
+        } else if candidate.is_some() && !candidate_retired {
+            "retire-losing-candidate"
         } else {
             "activate"
         }
@@ -664,43 +754,160 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         if input.contains_key("directory") {
             return Err("invalid_evidence".into());
         }
-        if optional_bool(input, "backupVerified")? {
-            "restore-backup"
+        if state == "commit-unknown" && matches!(lookup, Some("committed" | "superseded")) {
+            return Err("terminal_household_mismatch".into());
+        }
+        if state != "restore-required" || !optional_bool(input, "backupVerified")? {
+            "recovery-blocked"
+        } else if optional_bool(input, "recoveryIntent")? {
+            "open-recovery-attempt"
         } else {
             "recovery-blocked"
         }
     } else if input.contains_key("directory") {
         return Err("invalid_evidence".into());
     } else if state == "idle" {
-        if !optional_bool(input, "explicitIntent")? {
-            return Err("explicit_intent_required".into());
+        if optional_bool(input, "explicitIntent")? {
+            "acquire-fence"
+        } else {
+            "no-op"
         }
-        "acquire-fence"
+    } else if cancel_requested {
+        if candidate.is_some() && !candidate_retired {
+            "retire-losing-candidate"
+        } else {
+            "discard-journal"
+        }
     } else if state == "commit-unknown" {
-        "read-household"
+        match lookup {
+            Some("open") if !fence_changed => "retry-bound-commit",
+            Some("open") if candidate.is_some() && !candidate_retired => "retire-losing-candidate",
+            Some("open") => "restart",
+            Some("aborted") if candidate.is_some() && !candidate_retired => {
+                "retire-losing-candidate"
+            }
+            Some("aborted") => "discard-journal",
+            _ => return Err("terminal_household_mismatch".into()),
+        }
     } else if fence_changed {
         if candidate.is_some() && !candidate_retired {
             "retire-losing-candidate"
         } else {
             "restart"
         }
-    } else if (matches!(state, "backed-up" | "owner-copied" | "ready-to-commit")
-        && !optional_bool(input, "backupVerified")?)
-        || (matches!(state, "owner-copied" | "ready-to-commit") && candidate.is_none())
+    } else if (matches!(
+        state,
+        "backed-up" | "owner-copied" | "awaiting-confirmation" | "ready-to-commit"
+    ) && !optional_bool(input, "backupVerified")?)
+        || (matches!(
+            state,
+            "owner-copied" | "awaiting-confirmation" | "ready-to-commit"
+        ) && candidate.is_none())
     {
         return Err("invalid_evidence".into());
-    } else if state == "ready-to-commit" && !owner_verified {
+    } else if matches!(state, "awaiting-confirmation" | "ready-to-commit") && !owner_verified {
         "verify-owner-library"
     } else {
         match state {
             "fenced" => "create-backup",
             "backed-up" => "create-owner-library",
             "owner-copied" => "verify-owner-library",
+            "awaiting-confirmation" => "await-final-confirmation",
             "ready-to-commit" => "commit-fenced-household",
             _ => return Err("invalid_state".into()),
         }
     };
     Ok(json!(answer))
+}
+
+/// Resolve profiles support for one household. Deployment enrollment exposes only migration storage; a committed
+/// wire-5 directory derives runtime mode. This operation performs no authentication, routing, or storage effect.
+pub fn profile_capability(input: &Value) -> Result<Value, String> {
+    let input = object(input, "invalid_profile_capability")?;
+    if !exact_members(
+        input,
+        &[
+            "enrollment",
+            "wireMin",
+            "directory",
+            "request",
+            "wire",
+            "authenticated",
+        ],
+    ) {
+        return Err("invalid_profile_capability".into());
+    }
+    let enrollment = input["enrollment"]
+        .as_str()
+        .filter(|value| matches!(*value, "off" | "prepare"))
+        .ok_or("invalid_profile_capability")?;
+    let directory = input["directory"]
+        .as_str()
+        .filter(|value| matches!(*value, "absent" | "valid" | "invalid"))
+        .ok_or("invalid_profile_capability")?;
+    let request = input["request"]
+        .as_str()
+        .filter(|value| matches!(*value, "ordinary" | "migration"))
+        .ok_or("invalid_profile_capability")?;
+    let wire_min = input["wireMin"]
+        .as_u64()
+        .filter(|value| (1..=MAX_SAFE_INTEGER).contains(value))
+        .ok_or("invalid_profile_capability")?;
+    let wire = input["wire"]
+        .as_u64()
+        .filter(|value| (1..=MAX_SAFE_INTEGER).contains(value))
+        .ok_or("invalid_profile_capability")?;
+    let authenticated = input["authenticated"]
+        .as_bool()
+        .ok_or("invalid_profile_capability")?;
+
+    if wire_min > 5 {
+        return Ok(json!({"effect":"update-required", "requiredWire":wire_min}));
+    }
+    if wire_min < 5 {
+        if directory != "absent" {
+            return Err("inconsistent_profiles_state".into());
+        }
+        if request == "migration" && enrollment == "off" {
+            return Ok(json!({"state":enrollment, "effect":"not-found"}));
+        }
+        if request == "ordinary" && wire < wire_min {
+            return Ok(json!({"effect":"update-required", "requiredWire":wire_min}));
+        }
+        if request == "migration" && wire != 5 {
+            return Ok(
+                json!({"state":enrollment, "effect":"migration-wire-required", "requiredWire":5}),
+            );
+        }
+        if !authenticated {
+            return Ok(json!({"state":enrollment, "effect":"authentication-required"}));
+        }
+        return Ok(if request == "migration" {
+            json!({"state":enrollment, "effect":"migration-storage"})
+        } else {
+            json!({"state":enrollment, "effect":"serve-legacy"})
+        });
+    }
+
+    if wire < 5 {
+        return Ok(json!({"effect":"update-required", "requiredWire":5}));
+    }
+    if request == "migration" {
+        if wire != 5 {
+            return Ok(json!({"effect":"migration-wire-required", "requiredWire":5}));
+        }
+        if !authenticated {
+            return Ok(json!({"effect":"authentication-required"}));
+        }
+        return Ok(json!({"effect":"migration-storage"}));
+    }
+    if directory != "valid" {
+        return Err("runtime_directory_required".into());
+    }
+    if !authenticated {
+        return Ok(json!({"state":"runtime", "effect":"authentication-required"}));
+    }
+    Ok(json!({"state":"runtime", "effect":"serve-runtime"}))
 }
 
 fn migration_fence(value: Option<&Value>) -> Result<&Map<String, Value>, String> {
@@ -1116,7 +1323,23 @@ pub fn migration_construct_directory(input: &Value) -> Result<Value, String> {
             }
         },
     });
-    validate_directory(&document, true)
+    let directory = validate_directory(&document, true)?;
+    let canonical = jcs::jcs(&directory);
+    let plaintext = codec::compress(&directory).map_err(|_| "invalid_directory_constructor")?;
+    let inflated = plaintext
+        .strip_prefix(&[codec::COMPRESSED])
+        .ok_or("invalid_directory_constructor")
+        .and_then(|compressed| {
+            codec::inflate(compressed).map_err(|_| "invalid_directory_constructor".into())
+        })?;
+    if inflated != canonical {
+        return Err("invalid_directory_constructor".into());
+    }
+    Ok(json!({
+        "directory": directory,
+        "jcs": codec::base64(&canonical),
+        "plaintext": codec::base64(&plaintext),
+    }))
 }
 
 /// Turn one canonical migration projection into the exact bytes clients seal. Settings remain raw JCS; v4

@@ -41,9 +41,9 @@ pub use profiles::{
     migration_materialize_plaintext as profiles_migration_materialize_plaintext,
     migration_next as profiles_migration_next,
     migration_partition_rows as profiles_migration_partition_rows,
-    partition_preferences as profiles_partition_preferences, policy_relation, profiles_merge,
-    profiles_validate, reset_next as profiles_reset_next,
-    validate_input as profiles_validate_input,
+    partition_preferences as profiles_partition_preferences, policy_relation,
+    profile_capability as profiles_capability, profiles_merge, profiles_validate,
+    reset_next as profiles_reset_next, validate_input as profiles_validate_input,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -286,6 +286,10 @@ enum Request {
     },
     /// Profiles v1: reproduce the provider's non-secret backup authorization representation.
     ProfilesMigrationAuthorizationFingerprint {
+        input: Value,
+    },
+    /// Profiles v1: resolve one household's off/prepare/derived-runtime capability mode.
+    ProfilesCapability {
         input: Value,
     },
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
@@ -931,6 +935,7 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesMigrationAuthorizationFingerprint { input } => {
             profiles::migration_authorization_fingerprint(&input)
         }
+        Request::ProfilesCapability { input } => profiles::profile_capability(&input),
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilesPartitionPreferences { values } => {
             profiles::partition_preferences(&values)

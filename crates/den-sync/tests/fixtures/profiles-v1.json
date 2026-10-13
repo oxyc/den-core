@@ -4,91 +4,299 @@
   "denSpecMigrationPartitionHead": "36bf5ce0b14e2d827e87927577b4ba12d0e55c8a",
   "denSpecMigrationPartitionIdentityHead": "d8dc21e4df56e1edd07ee2903385810c87dd1636",
   "denSpecMigrationMaterializeHead": "0322c972b3b5f8dbe1d21475506484e9d07ab6bd",
-  "denSpecMigrationDirectoryConstructorHead": "124711b601675bc274040a437d557e453601032c",
+  "denSpecMigrationDirectoryConstructorHead": "bb7a3e44f5dc72523b7bc4faf1a724d3e0e7004d",
   "partitionIdentityGuards": [
-    {"name": "rec", "identity": "rec:movie:550", "error": "legacy_source_row"},
-    {"name": "wat", "identity": "wat:movie:550", "error": "legacy_source_row"},
-    {"name": "snt", "identity": "snt:movie:550", "error": "legacy_source_row"},
-    {"name": "ep", "identity": "ep:tv:1399:1:1", "error": "legacy_source_row"},
-    {"name": "tracker event", "identity": "set:tracker-event:1", "error": "legacy_source_row"},
-    {"name": "profile directory", "identity": "profiles", "error": "profiles_already_present"},
-    {"name": "Kid approvals", "identity": "kid-title-approvals:11112222333344445555666677778888", "error": "profiles_already_present"}
+    {
+      "name": "rec",
+      "identity": "rec:movie:550",
+      "error": "legacy_source_row"
+    },
+    {
+      "name": "wat",
+      "identity": "wat:movie:550",
+      "error": "legacy_source_row"
+    },
+    {
+      "name": "snt",
+      "identity": "snt:movie:550",
+      "error": "legacy_source_row"
+    },
+    {
+      "name": "ep",
+      "identity": "ep:tv:1399:1:1",
+      "error": "legacy_source_row"
+    },
+    {
+      "name": "tracker event",
+      "identity": "set:tracker-event:1",
+      "error": "legacy_source_row"
+    },
+    {
+      "name": "profile directory",
+      "identity": "profiles",
+      "error": "profiles_already_present"
+    },
+    {
+      "name": "Kid approvals",
+      "identity": "kid-title-approvals:11112222333344445555666677778888",
+      "error": "profiles_already_present"
+    }
   ],
   "cases": [
-    {"name":"a settings projection seals its exact RFC 8785 bytes","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"set:prefs","row":{"values":{"z":{"value":{"string":"é"},"at":[2,0,"a1b2c3d4e5f60718"]},"a":{"value":{"bool":true},"at":[1,0,"a1b2c3d4e5f60718"]}},"schema":2,"name":"prefs","kind":"set"}}},"ok":{"jcs":"eyJraW5kIjoic2V0IiwibmFtZSI6InByZWZzIiwic2NoZW1hIjoyLCJ2YWx1ZXMiOnsiYSI6eyJhdCI6WzEsMCwiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6eyJib29sIjp0cnVlfX0sInoiOnsiYXQiOlsyLDAsImExYjJjM2Q0ZTVmNjA3MTgiXSwidmFsdWUiOnsic3RyaW5nIjoiw6kifX19fQ","plaintext":"eyJraW5kIjoic2V0IiwibmFtZSI6InByZWZzIiwic2NoZW1hIjoyLCJ2YWx1ZXMiOnsiYSI6eyJhdCI6WzEsMCwiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6eyJib29sIjp0cnVlfX0sInoiOnsiYXQiOlsyLDAsImExYjJjM2Q0ZTVmNjA3MTgiXSwidmFsdWUiOnsic3RyaW5nIjoiw6kifX19fQ"}},
-    {"name":"a document projection returns JCS and seal-ready compressed plaintext","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"title:movie:550","row":{"format":4,"kind":"title","title":{"id":550,"type":"movie"},"watch":{"cleared":null,"plays":{"0":1000,"1":1001,"2":1002,"3":1003,"4":1004,"5":1005,"6":1006,"7":1007}}}}},"ok":{"jcs":"eyJmb3JtYXQiOjQsImtpbmQiOiJ0aXRsZSIsInRpdGxlIjp7ImlkIjo1NTAsInR5cGUiOiJtb3ZpZSJ9LCJ3YXRjaCI6eyJjbGVhcmVkIjpudWxsLCJwbGF5cyI6eyIwIjoxMDAwLCIxIjoxMDAxLCIyIjoxMDAyLCIzIjoxMDAzLCI0IjoxMDA0LCI1IjoxMDA1LCI2IjoxMDA2LCI3IjoxMDA3fX19","plaintext":"AC3NTQqEMAyG4bt86yxatQq9TXE6TJn4g1ZFpHc3Bld5eEnIhe-0DCHDN4R_Gj_wyClzBL3TX0hSnTNSzlkChmlPEYVwhNz_no2eY1iirI0bM2HmcK5PN_DWGLm0CkuoFBWhVtSERiHvncIRWkVL6BRdKeUG"}},
-    {"name":"a document that library-v4 would normalize cannot materialize","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"title:movie:550","row":{"format":4,"kind":"title","title":{"id":550,"type":"movie"},"watch":{"cleared":null,"plays":{"0":1000,"1":1001,"2":1002,"3":1003,"4":1004,"5":1005,"6":1006,"7":1007,"8":1008}}}}},"error":"invalid_materialize_input"},
-    {"name":"a materialized name must match the document identity","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"title:movie:551","row":{"format":4,"kind":"title","title":{"id":550,"type":"movie"}}}},"error":"materialize_name_mismatch"},
-    {"name":"a settings name must match its authenticated logical name","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"set:keys","row":{"kind":"set","name":"prefs","schema":2,"values":{}}}},"error":"materialize_name_mismatch"},
-    {"name":"an unknown kind cannot cross the materialize boundary","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"future:one","row":{"kind":"future","format":4}}},"error":"unsupported_materialize_kind"},
-    {"name":"a profile control document cannot cross the materialize boundary","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"profiles","row":{"kind":"profiles","format":4,"schema":1}}},"error":"unsupported_materialize_kind"},
-    {"name":"a newer document format cannot be written during migration","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"title:movie:550","row":{"format":5,"kind":"title","title":{"id":550,"type":"movie"}}}},"error":"invalid_materialize_input"},
-    {"name":"extra materialize input authority is rejected","request":{"op":"profiles_migration_materialize_plaintext","input":{"name":"set:prefs","row":{"kind":"set","name":"prefs","schema":2,"values":{}},"plaintext":"client-selected"}},"error":"invalid_materialize_input"},
-    {"name":"library-v2 token and member text reproduce deployed provider hashes","request":{"op":"profiles_migration_authorization_fingerprint","input":{"token":"6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d","member":"2d54fbcfefc5085203126c6e52894e102dd9a73d6fc778a53394988287fe1207"}},"ok":{"tokenHash":"04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3","memberHash":"ae99678a53affff9e4fc494ccd07bf85999d18fa6293d8537c28f67e780b9caf"}},
-    {"name":"an unregistered household fingerprints a null member","request":{"op":"profiles_migration_authorization_fingerprint","input":{"token":"6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d","member":null}},"ok":{"tokenHash":"04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3","memberHash":null}},
-    {"name":"credential text is canonical lowercase hex","request":{"op":"profiles_migration_authorization_fingerprint","input":{"token":"6B837F1C76BBF17BB1B225057063236F945592467BFCEED80734383E832D382D","member":null}},"error":"invalid_authorization_fingerprint"},
-    {"name":"fingerprint input accepts no client-selected output","request":{"op":"profiles_migration_authorization_fingerprint","input":{"token":"6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d","member":null,"tokenHash":"04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3"}},"error":"invalid_authorization_fingerprint"},
     {
-      "name": "initial Owner directory construction crosses native and web bindings",
+      "name": "a settings projection seals its exact RFC 8785 bytes",
       "request": {
-        "op": "profiles_migration_construct_directory",
+        "op": "profiles_migration_materialize_plaintext",
         "input": {
-          "attempt": "0123456789abcdef0123456789abcdef",
-          "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-          "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-          "owner": {
-            "id": "00112233445566778899aabbccddeeff",
-            "display": {"value": {"name": "Cindy", "futureDisplayFact": true}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-            "libraryKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-            "libraryAt": [1, 1, "a1b2c3d4e5f60718"],
-            "policy": {"value": {"maximumAge": 13, "unknownRatings": "allow", "futurePolicyFact": true}, "at": [1, 2, "a1b2c3d4e5f60718"]},
-            "deletedAt": [1, 3, "a1b2c3d4e5f60718"]
-          },
-          "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          "name": "set:prefs",
+          "row": {
+            "values": {
+              "z": {
+                "value": {
+                  "string": "é"
+                },
+                "at": [
+                  2,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "a": {
+                "value": {
+                  "bool": true
+                },
+                "at": [
+                  1,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
+              }
+            },
+            "schema": 2,
+            "name": "prefs",
+            "kind": "set"
+          }
         }
       },
       "ok": {
-        "format": 4, "kind": "profiles", "schema": 1,
-        "owner": "00112233445566778899aabbccddeeff",
-        "migration": {
-          "version": 1,
-          "attempt": "0123456789abcdef0123456789abcdef",
-          "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-          "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-          "ownerProfile": "00112233445566778899aabbccddeeff",
-          "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-        },
-        "profiles": {
-          "00112233445566778899aabbccddeeff": {
-            "id": "00112233445566778899aabbccddeeff", "role": "owner",
-            "display": {"value": {"name": "Cindy", "futureDisplayFact": true}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-            "library": {"value": {"keyVersion": 1, "key": "ERERERERERERERERERERERERERERERERERERERERERE="}, "at": [1, 1, "a1b2c3d4e5f60718"]},
-            "policy": {"value": {"maximumAge": 13, "unknownRatings": "allow", "futurePolicyFact": true}, "at": [1, 2, "a1b2c3d4e5f60718"]},
-            "deleted": {"value": false, "at": [1, 3, "a1b2c3d4e5f60718"]}
-          }
-        }
+        "jcs": "eyJraW5kIjoic2V0IiwibmFtZSI6InByZWZzIiwic2NoZW1hIjoyLCJ2YWx1ZXMiOnsiYSI6eyJhdCI6WzEsMCwiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6eyJib29sIjp0cnVlfX0sInoiOnsiYXQiOlsyLDAsImExYjJjM2Q0ZTVmNjA3MTgiXSwidmFsdWUiOnsic3RyaW5nIjoiw6kifX19fQ",
+        "plaintext": "eyJraW5kIjoic2V0IiwibmFtZSI6InByZWZzIiwic2NoZW1hIjoyLCJ2YWx1ZXMiOnsiYSI6eyJhdCI6WzEsMCwiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6eyJib29sIjp0cnVlfX0sInoiOnsiYXQiOlsyLDAsImExYjJjM2Q0ZTVmNjA3MTgiXSwidmFsdWUiOnsic3RyaW5nIjoiw6kifX19fQ"
       }
     },
     {
-      "name": "initial Owner directory construction rejects a noncanonical key through every binding",
+      "name": "a document projection returns JCS and seal-ready compressed plaintext",
       "request": {
-        "op": "profiles_migration_construct_directory",
+        "op": "profiles_migration_materialize_plaintext",
         "input": {
-          "attempt": "0123456789abcdef0123456789abcdef",
-          "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-          "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-          "owner": {
-            "id": "00112233445566778899aabbccddeeff",
-            "display": {"value": {"name": "Cindy"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-            "libraryKey": "c2hvcnQ=",
-            "libraryAt": [1, 1, "a1b2c3d4e5f60718"],
-            "policy": {"value": {"maximumAge": 13, "unknownRatings": "allow"}, "at": [1, 2, "a1b2c3d4e5f60718"]},
-            "deletedAt": [1, 3, "a1b2c3d4e5f60718"]
-          },
-          "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          "name": "title:movie:550",
+          "row": {
+            "format": 4,
+            "kind": "title",
+            "title": {
+              "id": 550,
+              "type": "movie"
+            },
+            "watch": {
+              "cleared": null,
+              "plays": {
+                "0": 1000,
+                "1": 1001,
+                "2": 1002,
+                "3": 1003,
+                "4": 1004,
+                "5": 1005,
+                "6": 1006,
+                "7": 1007
+              }
+            }
+          }
         }
       },
-      "error": "invalid_library_key"
+      "ok": {
+        "jcs": "eyJmb3JtYXQiOjQsImtpbmQiOiJ0aXRsZSIsInRpdGxlIjp7ImlkIjo1NTAsInR5cGUiOiJtb3ZpZSJ9LCJ3YXRjaCI6eyJjbGVhcmVkIjpudWxsLCJwbGF5cyI6eyIwIjoxMDAwLCIxIjoxMDAxLCIyIjoxMDAyLCIzIjoxMDAzLCI0IjoxMDA0LCI1IjoxMDA1LCI2IjoxMDA2LCI3IjoxMDA3fX19",
+        "plaintext": "AC3NTQqEMAyG4bt86yxatQq9TXE6TJn4g1ZFpHc3Bld5eEnIhe-0DCHDN4R_Gj_wyClzBL3TX0hSnTNSzlkChmlPEYVwhNz_no2eY1iirI0bM2HmcK5PN_DWGLm0CkuoFBWhVtSERiHvncIRWkVL6BRdKeUG"
+      }
+    },
+    {
+      "name": "a document that library-v4 would normalize cannot materialize",
+      "request": {
+        "op": "profiles_migration_materialize_plaintext",
+        "input": {
+          "name": "title:movie:550",
+          "row": {
+            "format": 4,
+            "kind": "title",
+            "title": {
+              "id": 550,
+              "type": "movie"
+            },
+            "watch": {
+              "cleared": null,
+              "plays": {
+                "0": 1000,
+                "1": 1001,
+                "2": 1002,
+                "3": 1003,
+                "4": 1004,
+                "5": 1005,
+                "6": 1006,
+                "7": 1007,
+                "8": 1008
+              }
+            }
+          }
+        }
+      },
+      "error": "invalid_materialize_input"
+    },
+    {
+      "name": "a materialized name must match the document identity",
+      "request": {
+        "op": "profiles_migration_materialize_plaintext",
+        "input": {
+          "name": "title:movie:551",
+          "row": {
+            "format": 4,
+            "kind": "title",
+            "title": {
+              "id": 550,
+              "type": "movie"
+            }
+          }
+        }
+      },
+      "error": "materialize_name_mismatch"
+    },
+    {
+      "name": "a settings name must match its authenticated logical name",
+      "request": {
+        "op": "profiles_migration_materialize_plaintext",
+        "input": {
+          "name": "set:keys",
+          "row": {
+            "kind": "set",
+            "name": "prefs",
+            "schema": 2,
+            "values": {}
+          }
+        }
+      },
+      "error": "materialize_name_mismatch"
+    },
+    {
+      "name": "an unknown kind cannot cross the materialize boundary",
+      "request": {
+        "op": "profiles_migration_materialize_plaintext",
+        "input": {
+          "name": "future:one",
+          "row": {
+            "kind": "future",
+            "format": 4
+          }
+        }
+      },
+      "error": "unsupported_materialize_kind"
+    },
+    {
+      "name": "a profile control document cannot cross the materialize boundary",
+      "request": {
+        "op": "profiles_migration_materialize_plaintext",
+        "input": {
+          "name": "profiles",
+          "row": {
+            "kind": "profiles",
+            "format": 4,
+            "schema": 1
+          }
+        }
+      },
+      "error": "unsupported_materialize_kind"
+    },
+    {
+      "name": "a newer document format cannot be written during migration",
+      "request": {
+        "op": "profiles_migration_materialize_plaintext",
+        "input": {
+          "name": "title:movie:550",
+          "row": {
+            "format": 5,
+            "kind": "title",
+            "title": {
+              "id": 550,
+              "type": "movie"
+            }
+          }
+        }
+      },
+      "error": "invalid_materialize_input"
+    },
+    {
+      "name": "extra materialize input authority is rejected",
+      "request": {
+        "op": "profiles_migration_materialize_plaintext",
+        "input": {
+          "name": "set:prefs",
+          "row": {
+            "kind": "set",
+            "name": "prefs",
+            "schema": 2,
+            "values": {}
+          },
+          "plaintext": "client-selected"
+        }
+      },
+      "error": "invalid_materialize_input"
+    },
+    {
+      "name": "library-v2 token and member text reproduce deployed provider hashes",
+      "request": {
+        "op": "profiles_migration_authorization_fingerprint",
+        "input": {
+          "token": "6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d",
+          "member": "2d54fbcfefc5085203126c6e52894e102dd9a73d6fc778a53394988287fe1207"
+        }
+      },
+      "ok": {
+        "tokenHash": "04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3",
+        "memberHash": "ae99678a53affff9e4fc494ccd07bf85999d18fa6293d8537c28f67e780b9caf"
+      }
+    },
+    {
+      "name": "an unregistered household fingerprints a null member",
+      "request": {
+        "op": "profiles_migration_authorization_fingerprint",
+        "input": {
+          "token": "6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d",
+          "member": null
+        }
+      },
+      "ok": {
+        "tokenHash": "04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3",
+        "memberHash": null
+      }
+    },
+    {
+      "name": "credential text is canonical lowercase hex",
+      "request": {
+        "op": "profiles_migration_authorization_fingerprint",
+        "input": {
+          "token": "6B837F1C76BBF17BB1B225057063236F945592467BFCEED80734383E832D382D",
+          "member": null
+        }
+      },
+      "error": "invalid_authorization_fingerprint"
+    },
+    {
+      "name": "fingerprint input accepts no client-selected output",
+      "request": {
+        "op": "profiles_migration_authorization_fingerprint",
+        "input": {
+          "token": "6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d",
+          "member": null,
+          "tokenHash": "04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3"
+        }
+      },
+      "error": "invalid_authorization_fingerprint"
     },
     {
       "name": "Owner assistant receipt partition crosses native and web bindings",
@@ -96,27 +304,69 @@
         "op": "profiles_migration_partition_rows",
         "input": {
           "base": 1,
-          "ownerPolicyAt": [1, 0, "a1b2c3d4e5f60718"],
-          "rows": [{
-            "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "seq": 1,
-            "v": "sealed-applied",
-            "opened": {
-              "status": "row", "name": "set:assistant-applied", "legacy": false,
-              "row": {"kind": "set", "schema": 2, "name": "assistant-applied", "values": {}}
+          "ownerPolicyAt": [
+            1,
+            0,
+            "a1b2c3d4e5f60718"
+          ],
+          "rows": [
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1,
+              "v": "sealed-applied",
+              "opened": {
+                "status": "row",
+                "name": "set:assistant-applied",
+                "legacy": false,
+                "row": {
+                  "kind": "set",
+                  "schema": 2,
+                  "name": "assistant-applied",
+                  "values": {}
+                }
+              }
             }
-          }]
+          ]
         }
       },
       "ok": {
         "household": [],
-        "owner": [{
-          "source": {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1},
-          "mode": "materialize", "name": "set:assistant-applied",
-          "row": {"kind": "set", "schema": 2, "name": "assistant-applied", "values": {}}
-        }],
-        "ownerPolicy": {"value": {"maximumAge": null, "unknownRatings": "allow"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-        "accounting": [{"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "destinations": ["owner"]}]
+        "owner": [
+          {
+            "source": {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1
+            },
+            "mode": "materialize",
+            "name": "set:assistant-applied",
+            "row": {
+              "kind": "set",
+              "schema": 2,
+              "name": "assistant-applied",
+              "values": {}
+            }
+          }
+        ],
+        "ownerPolicy": {
+          "value": {
+            "maximumAge": null,
+            "unknownRatings": "allow"
+          },
+          "at": [
+            1,
+            0,
+            "a1b2c3d4e5f60718"
+          ]
+        },
+        "accounting": [
+          {
+            "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "seq": 1,
+            "destinations": [
+              "owner"
+            ]
+          }
+        ]
       }
     },
     {
@@ -125,13 +375,27 @@
         "op": "profiles_migration_partition_rows",
         "input": {
           "base": 1,
-          "ownerPolicyAt": [1, 0, "a1b2c3d4e5f60718"],
-          "rows": [{
-            "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "seq": 1,
-            "v": "sealed",
-            "opened": {"status": "row", "name": "set:prefs", "legacy": false, "row": {"kind": "future", "schema": 1}}
-          }]
+          "ownerPolicyAt": [
+            1,
+            0,
+            "a1b2c3d4e5f60718"
+          ],
+          "rows": [
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1,
+              "v": "sealed",
+              "opened": {
+                "status": "row",
+                "name": "set:prefs",
+                "legacy": false,
+                "row": {
+                  "kind": "future",
+                  "schema": 1
+                }
+              }
+            }
+          ]
         }
       },
       "error": "newer_profile_row"
@@ -142,10 +406,21 @@
         "op": "profiles_migration_digest",
         "kind": "source",
         "input": {
-          "libraryId": "0123456789abcdef0123456789abcdef", "generation": 7, "base": 2, "wireMin": 4,
+          "libraryId": "0123456789abcdef0123456789abcdef",
+          "generation": 7,
+          "base": 2,
+          "wireMin": 4,
           "rows": [
-            {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "seq": 2, "v": "sealed-β"},
-            {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "v": "sealed-a"}
+            {
+              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "seq": 2,
+              "v": "sealed-β"
+            },
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1,
+              "v": "sealed-a"
+            }
           ]
         }
       },
@@ -157,14 +432,31 @@
         "op": "profiles_migration_digest",
         "kind": "backup",
         "input": {
-          "id": "backup-0123456789abcdef", "householdId": "0123456789abcdef0123456789abcdef",
+          "id": "backup-0123456789abcdef",
+          "householdId": "0123456789abcdef0123456789abcdef",
           "attempt": "11111111111111111111111111111111",
-          "source": {"generation": 7, "base": 2, "head": "1111111111111111111111111111111111111111111111111111111111111111", "rewrite": "rewrite-0123456789abcdef"},
+          "source": {
+            "generation": 7,
+            "base": 2,
+            "head": "1111111111111111111111111111111111111111111111111111111111111111",
+            "rewrite": "rewrite-0123456789abcdef"
+          },
           "wireMin": 4,
-          "authorization": {"tokenHash": "2222222222222222222222222222222222222222222222222222222222222222", "memberHash": "3333333333333333333333333333333333333333333333333333333333333333"},
+          "authorization": {
+            "tokenHash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "memberHash": "3333333333333333333333333333333333333333333333333333333333333333"
+          },
           "rows": [
-            {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "seq": 2, "v": "sealed-β"},
-            {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "v": "sealed-a"}
+            {
+              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "seq": 2,
+              "v": "sealed-β"
+            },
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1,
+              "v": "sealed-a"
+            }
           ]
         }
       },
@@ -175,10 +467,18 @@
       "request": {
         "op": "profiles_migration_digest",
         "kind": "staged",
-        "input": {"rows": [
-          {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "v": "sealed-β"},
-          {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "v": "sealed-a"}
-        ]}
+        "input": {
+          "rows": [
+            {
+              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "v": "sealed-β"
+            },
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "v": "sealed-a"
+            }
+          ]
+        }
       },
       "ok": "ce6925812e2cf7942d0121d34a73f4642d12b30b7bbd5b91c12e67266ced6fd3"
     },
@@ -192,8 +492,16 @@
           "base": 2,
           "wireMin": 4,
           "rows": [
-            {"k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "seq": 2, "v": "sealed-β"},
-            {"k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "seq": 1, "v": "sealed-a"}
+            {
+              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "seq": 2,
+              "v": "sealed-β"
+            },
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1,
+              "v": "sealed-a"
+            }
           ]
         }
       },
@@ -201,14 +509,24 @@
     },
     {
       "name": "legacy pg13 becomes numeric age 13",
-      "request": {"op": "profile_policy_normalize_legacy", "legacy": "pg13"},
-      "ok": {"maximumAge": 13, "unknownRatings": "allow"}
+      "request": {
+        "op": "profile_policy_normalize_legacy",
+        "legacy": "pg13"
+      },
+      "ok": {
+        "maximumAge": 13,
+        "unknownRatings": "allow"
+      }
     },
     {
       "name": "explicit approval wins before an unknown blocked rating",
       "request": {
         "op": "profile_policy_allows",
-        "policy": {"maximumAge": 10, "unknownRatings": "block", "futurePolicyFlag": true},
+        "policy": {
+          "maximumAge": 10,
+          "unknownRatings": "block",
+          "futurePolicyFlag": true
+        },
         "minimumAge": null,
         "explicitApproval": true
       },
@@ -218,8 +536,14 @@
       "name": "opposite policy movements are incomparable",
       "request": {
         "op": "profile_policy_relation",
-        "a": {"maximumAge": 10, "unknownRatings": "allow"},
-        "b": {"maximumAge": 13, "unknownRatings": "block"}
+        "a": {
+          "maximumAge": 10,
+          "unknownRatings": "allow"
+        },
+        "b": {
+          "maximumAge": 13,
+          "unknownRatings": "block"
+        }
       },
       "ok": "incomparable"
     },
@@ -237,18 +561,90 @@
             "00112233445566778899aabbccddeeff": {
               "id": "00112233445566778899aabbccddeeff",
               "role": "owner",
-              "display": {"value": {"name": "Owner"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-              "library": {"value": {"keyVersion": 1, "key": "ERERERERERERERERERERERERERERERERERERERERERE="}, "at": [1, 1, "a1b2c3d4e5f60718"]},
-              "policy": {"value": {"maximumAge": null, "unknownRatings": "allow"}, "at": [1, 2, "a1b2c3d4e5f60718"]},
-              "deleted": {"value": false, "at": [1, 3, "a1b2c3d4e5f60718"]}
+              "display": {
+                "value": {
+                  "name": "Owner"
+                },
+                "at": [
+                  1,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "library": {
+                "value": {
+                  "keyVersion": 1,
+                  "key": "ERERERERERERERERERERERERERERERERERERERERERE="
+                },
+                "at": [
+                  1,
+                  1,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "policy": {
+                "value": {
+                  "maximumAge": null,
+                  "unknownRatings": "allow"
+                },
+                "at": [
+                  1,
+                  2,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "deleted": {
+                "value": false,
+                "at": [
+                  1,
+                  3,
+                  "a1b2c3d4e5f60718"
+                ]
+              }
             },
             "11112222333344445555666677778888": {
               "id": "11112222333344445555666677778888",
               "role": "kid",
-              "display": {"value": {"name": "Kid"}, "at": [2, 0, "a1b2c3d4e5f60718"]},
-              "library": {"value": {"keyVersion": 1, "key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI="}, "at": [2, 1, "a1b2c3d4e5f60718"]},
-              "policy": {"value": {"maximumAge": 10, "unknownRatings": "block"}, "at": [2, 2, "a1b2c3d4e5f60718"]},
-              "deleted": {"value": false, "at": [2, 3, "a1b2c3d4e5f60718"]}
+              "display": {
+                "value": {
+                  "name": "Kid"
+                },
+                "at": [
+                  2,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "library": {
+                "value": {
+                  "keyVersion": 1,
+                  "key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI="
+                },
+                "at": [
+                  2,
+                  1,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "policy": {
+                "value": {
+                  "maximumAge": 10,
+                  "unknownRatings": "block"
+                },
+                "at": [
+                  2,
+                  2,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "deleted": {
+                "value": false,
+                "at": [
+                  2,
+                  3,
+                  "a1b2c3d4e5f60718"
+                ]
+              }
             }
           }
         },
@@ -257,7 +653,17 @@
           "kind": "kid-title-approvals",
           "schema": 1,
           "kid": "11112222333344445555666677778888",
-          "approvals": {"movie:550": {"value": "tombstone", "at": [20, 0, "a1b2c3d4e5f60718"], "futureEntryFact": "kept"}},
+          "approvals": {
+            "movie:550": {
+              "value": "tombstone",
+              "at": [
+                20,
+                0,
+                "a1b2c3d4e5f60718"
+              ],
+              "futureEntryFact": "kept"
+            }
+          },
           "futureDocumentFact": "new"
         },
         "b": {
@@ -265,7 +671,17 @@
           "kind": "kid-title-approvals",
           "schema": 1,
           "kid": "11112222333344445555666677778888",
-          "approvals": {"movie:550": {"value": "allow", "at": [10, 0, "0f1e2d3c4b5a6978"], "futureEntryFact": "stale"}},
+          "approvals": {
+            "movie:550": {
+              "value": "allow",
+              "at": [
+                10,
+                0,
+                "0f1e2d3c4b5a6978"
+              ],
+              "futureEntryFact": "stale"
+            }
+          },
           "futureDocumentFact": "old"
         }
       },
@@ -274,7 +690,17 @@
         "kind": "kid-title-approvals",
         "schema": 1,
         "kid": "11112222333344445555666677778888",
-        "approvals": {"movie:550": {"value": "tombstone", "at": [20, 0, "a1b2c3d4e5f60718"], "futureEntryFact": "kept"}},
+        "approvals": {
+          "movie:550": {
+            "value": "tombstone",
+            "at": [
+              20,
+              0,
+              "a1b2c3d4e5f60718"
+            ],
+            "futureEntryFact": "kept"
+          }
+        },
         "futureDocumentFact": "new"
       }
     },
@@ -283,21 +709,93 @@
       "request": {
         "op": "profiles_partition_preferences",
         "values": {
-          "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-          "den.hideWatched": {"value": {"bool": true}, "at": [2, 0, "a1b2c3d4e5f60718"]},
-          "den.maturityCeiling": {"value": {"string": "pg13"}, "at": [3, 0, "a1b2c3d4e5f60718"]},
-          "future.preference": {"value": {"future": true}, "at": [4, 0, "a1b2c3d4e5f60718"]}
+          "den.watchRegion": {
+            "value": {
+              "string": "FI"
+            },
+            "at": [
+              1,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          },
+          "den.hideWatched": {
+            "value": {
+              "bool": true
+            },
+            "at": [
+              2,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          },
+          "den.maturityCeiling": {
+            "value": {
+              "string": "pg13"
+            },
+            "at": [
+              3,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          },
+          "future.preference": {
+            "value": {
+              "future": true
+            },
+            "at": [
+              4,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          }
         }
       },
       "ok": {
         "household": {
-          "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-          "future.preference": {"value": {"future": true}, "at": [4, 0, "a1b2c3d4e5f60718"]}
+          "den.watchRegion": {
+            "value": {
+              "string": "FI"
+            },
+            "at": [
+              1,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          },
+          "future.preference": {
+            "value": {
+              "future": true
+            },
+            "at": [
+              4,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          }
         },
         "owner": {
-          "den.hideWatched": {"value": {"bool": true}, "at": [2, 0, "a1b2c3d4e5f60718"]}
+          "den.hideWatched": {
+            "value": {
+              "bool": true
+            },
+            "at": [
+              2,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          }
         },
-        "ownerMaturity": {"value": {"string": "pg13"}, "at": [3, 0, "a1b2c3d4e5f60718"]}
+        "ownerMaturity": {
+          "value": {
+            "string": "pg13"
+          },
+          "at": [
+            3,
+            0,
+            "a1b2c3d4e5f60718"
+          ]
+        }
       }
     },
     {
@@ -319,8 +817,14 @@
             "migration": {
               "version": 1,
               "attempt": "0123456789abcdef0123456789abcdef",
-              "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-              "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+              "source": {
+                "generation": 7,
+                "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "backup": {
+                "id": "backup-7",
+                "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              },
               "ownerProfile": "00112233445566778899aabbccddeeff",
               "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
             },
@@ -328,10 +832,46 @@
               "00112233445566778899aabbccddeeff": {
                 "id": "00112233445566778899aabbccddeeff",
                 "role": "owner",
-                "display": {"value": {"name": "Owner"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-                "library": {"value": {"keyVersion": 1, "key": "ERERERERERERERERERERERERERERERERERERERERERE="}, "at": [1, 1, "a1b2c3d4e5f60718"]},
-                "policy": {"value": {"maximumAge": null, "unknownRatings": "allow"}, "at": [1, 2, "a1b2c3d4e5f60718"]},
-                "deleted": {"value": false, "at": [1, 3, "a1b2c3d4e5f60718"]}
+                "display": {
+                  "value": {
+                    "name": "Owner"
+                  },
+                  "at": [
+                    1,
+                    0,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "library": {
+                  "value": {
+                    "keyVersion": 1,
+                    "key": "ERERERERERERERERERERERERERERERERERERERERERE="
+                  },
+                  "at": [
+                    1,
+                    1,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "policy": {
+                  "value": {
+                    "maximumAge": null,
+                    "unknownRatings": "allow"
+                  },
+                  "at": [
+                    1,
+                    2,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "deleted": {
+                  "value": false,
+                  "at": [
+                    1,
+                    3,
+                    "a1b2c3d4e5f60718"
+                  ]
+                }
               }
             }
           }
@@ -352,38 +892,1652 @@
             "migration": {
               "version": 1,
               "attempt": "0123456789abcdef0123456789abcdef",
-              "source": {"generation": 7, "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-              "backup": {"id": "backup-7", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+              "source": {
+                "generation": 7,
+                "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "backup": {
+                "id": "backup-7",
+                "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              },
               "ownerProfile": "00112233445566778899aabbccddeeff",
               "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
             },
             "profiles": {
               "00112233445566778899aabbccddeeff": {
-                "id": "00112233445566778899aabbccddeeff", "role": "owner",
-                "display": {"value": {"name": "Owner"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-                "library": {"value": {"keyVersion": 1, "key": "ERERERERERERERERERERERERERERERERERERERERERE="}, "at": [1, 1, "a1b2c3d4e5f60718"]},
-                "policy": {"value": {"maximumAge": null, "unknownRatings": "allow"}, "at": [1, 2, "a1b2c3d4e5f60718"]},
-                "deleted": {"value": false, "at": [1, 3, "a1b2c3d4e5f60718"]}
+                "id": "00112233445566778899aabbccddeeff",
+                "role": "owner",
+                "display": {
+                  "value": {
+                    "name": "Owner"
+                  },
+                  "at": [
+                    1,
+                    0,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "library": {
+                  "value": {
+                    "keyVersion": 1,
+                    "key": "ERERERERERERERERERERERERERERERERERERERERERE="
+                  },
+                  "at": [
+                    1,
+                    1,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "policy": {
+                  "value": {
+                    "maximumAge": null,
+                    "unknownRatings": "allow"
+                  },
+                  "at": [
+                    1,
+                    2,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "deleted": {
+                  "value": false,
+                  "at": [
+                    1,
+                    3,
+                    "a1b2c3d4e5f60718"
+                  ]
+                }
               },
               "11112222333344445555666677778888": {
-                "id": "11112222333344445555666677778888", "role": "kid",
-                "display": {"value": {"name": "Kid"}, "at": [2, 0, "a1b2c3d4e5f60718"]},
-                "library": {"value": {"keyVersion": 1, "key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI="}, "at": [2, 1, "a1b2c3d4e5f60718"]},
-                "policy": {"value": {"maximumAge": 10, "unknownRatings": "block"}, "at": [2, 2, "a1b2c3d4e5f60718"]},
-                "deleted": {"value": false, "at": [2, 3, "a1b2c3d4e5f60718"]}
+                "id": "11112222333344445555666677778888",
+                "role": "kid",
+                "display": {
+                  "value": {
+                    "name": "Kid"
+                  },
+                  "at": [
+                    2,
+                    0,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "library": {
+                  "value": {
+                    "keyVersion": 1,
+                    "key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI="
+                  },
+                  "at": [
+                    2,
+                    1,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "policy": {
+                  "value": {
+                    "maximumAge": 10,
+                    "unknownRatings": "block"
+                  },
+                  "at": [
+                    2,
+                    2,
+                    "a1b2c3d4e5f60718"
+                  ]
+                },
+                "deleted": {
+                  "value": false,
+                  "at": [
+                    2,
+                    3,
+                    "a1b2c3d4e5f60718"
+                  ]
+                }
               }
             }
           },
-          "fence": {"generation": 14, "head": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+          "fence": {
+            "generation": 14,
+            "head": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
           "householdCommitted": false,
           "oldHouseholdRetired": false,
           "profiles": [
-            {"profile": "00112233445566778899aabbccddeeff", "oldKey": "ERERERERERERERERERERERERERERERERERERERERERE=", "newKey": "REREREREREREREREREREREREREREREREREREREREREQ=", "oldVersion": 1, "newVersion": 2, "copiedHead": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "verified": true, "oldRetired": false},
-            {"profile": "11112222333344445555666677778888", "oldKey": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=", "newKey": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=", "oldVersion": 1, "newVersion": 2, "copiedHead": null, "verified": false, "oldRetired": false}
+            {
+              "profile": "00112233445566778899aabbccddeeff",
+              "oldKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+              "newKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+              "oldVersion": 1,
+              "newVersion": 2,
+              "copiedHead": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "verified": true,
+              "oldRetired": false
+            },
+            {
+              "profile": "11112222333344445555666677778888",
+              "oldKey": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+              "newKey": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=",
+              "oldVersion": 1,
+              "newVersion": 2,
+              "copiedHead": null,
+              "verified": false,
+              "oldRetired": false
+            }
           ]
         }
       },
-      "ok": {"effect": "move-live-profiles", "profiles": ["11112222333344445555666677778888"]}
+      "ok": {
+        "effect": "move-live-profiles",
+        "profiles": [
+          "11112222333344445555666677778888"
+        ]
+      }
+    }
+  ],
+  "denSpecActivationCapabilityHead": "de6a080c5fb0e7b17eb076af005ccf9f1caf1a84",
+  "migrationBase": {
+    "format": 4,
+    "kind": "profiles",
+    "schema": 1,
+    "owner": "00112233445566778899aabbccddeeff",
+    "migration": {
+      "version": 1,
+      "attempt": "0123456789abcdef0123456789abcdef",
+      "source": {
+        "generation": 7,
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "backup": {
+        "id": "backup-7",
+        "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "ownerProfile": "00112233445566778899aabbccddeeff",
+      "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "profiles": {
+      "00112233445566778899aabbccddeeff": {
+        "id": "00112233445566778899aabbccddeeff",
+        "role": "owner",
+        "display": {
+          "value": {
+            "name": "Cindy",
+            "avatar": "fox"
+          },
+          "at": [
+            1800000000000,
+            0,
+            "a1b2c3d4e5f60718"
+          ]
+        },
+        "library": {
+          "value": {
+            "keyVersion": 1,
+            "key": "ERERERERERERERERERERERERERERERERERERERERERE="
+          },
+          "at": [
+            1800000000000,
+            1,
+            "a1b2c3d4e5f60718"
+          ]
+        },
+        "policy": {
+          "value": {
+            "maximumAge": null,
+            "unknownRatings": "allow",
+            "futurePolicyFlag": true
+          },
+          "at": [
+            1800000000000,
+            2,
+            "a1b2c3d4e5f60718"
+          ]
+        },
+        "deleted": {
+          "value": false,
+          "at": [
+            1800000000000,
+            3,
+            "a1b2c3d4e5f60718"
+          ]
+        }
+      },
+      "11112222333344445555666677778888": {
+        "id": "11112222333344445555666677778888",
+        "role": "kid",
+        "display": {
+          "value": {
+            "name": "Mina",
+            "avatar": "owl"
+          },
+          "at": [
+            1800000001000,
+            0,
+            "a1b2c3d4e5f60718"
+          ]
+        },
+        "library": {
+          "value": {
+            "keyVersion": 1,
+            "key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI="
+          },
+          "at": [
+            1800000001000,
+            1,
+            "a1b2c3d4e5f60718"
+          ]
+        },
+        "policy": {
+          "value": {
+            "maximumAge": 10,
+            "unknownRatings": "block"
+          },
+          "at": [
+            1800000001000,
+            2,
+            "a1b2c3d4e5f60718"
+          ]
+        },
+        "deleted": {
+          "value": false,
+          "at": [
+            1800000001000,
+            3,
+            "a1b2c3d4e5f60718"
+          ]
+        }
+      },
+      "9999aaaabbbbccccddddeeeeffff0000": {
+        "id": "9999aaaabbbbccccddddeeeeffff0000",
+        "role": "kid",
+        "display": {
+          "value": {
+            "name": "Leo"
+          },
+          "at": [
+            1800000002000,
+            0,
+            "0f1e2d3c4b5a6978"
+          ]
+        },
+        "library": {
+          "value": {
+            "keyVersion": 1,
+            "key": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM="
+          },
+          "at": [
+            1800000002000,
+            1,
+            "0f1e2d3c4b5a6978"
+          ]
+        },
+        "policy": {
+          "value": {
+            "maximumAge": 16,
+            "unknownRatings": "block"
+          },
+          "at": [
+            1800000002000,
+            2,
+            "0f1e2d3c4b5a6978"
+          ]
+        },
+        "deleted": {
+          "value": false,
+          "at": [
+            1800000002000,
+            3,
+            "0f1e2d3c4b5a6978"
+          ]
+        }
+      }
+    }
+  },
+  "migrationFence": {
+    "generation": 7,
+    "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "migrationCases": [
+    {
+      "name": "explicit intent first acquires a fence",
+      "state": "idle",
+      "observed": "legacy",
+      "explicitIntent": true,
+      "expect": "acquire-fence"
+    },
+    {
+      "name": "no journal and no explicit intent performs no work",
+      "state": "idle",
+      "observed": "legacy",
+      "explicitIntent": false,
+      "expect": "no-op"
+    },
+    {
+      "name": "backup precedes any Owner destination write",
+      "state": "fenced",
+      "observed": "legacy",
+      "expect": "create-backup"
+    },
+    {
+      "name": "verified backup permits Owner creation",
+      "state": "backed-up",
+      "observed": "legacy",
+      "backupVerified": true,
+      "expect": "create-owner-library"
+    },
+    {
+      "name": "copied Owner must be verified",
+      "state": "owner-copied",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "expect": "verify-owner-library"
+    },
+    {
+      "name": "prepared journal stops for final confirmation",
+      "state": "awaiting-confirmation",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": false,
+      "expect": "await-final-confirmation"
+    },
+    {
+      "name": "unconfirmed prepared journal still stops after restart",
+      "state": "awaiting-confirmation",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "expect": "await-final-confirmation"
+    },
+    {
+      "name": "authorization cannot be recorded before preparation finishes",
+      "state": "owner-copied",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "error": "premature_commit_authorization"
+    },
+    {
+      "name": "ready state without durable final authorization cannot commit",
+      "state": "ready-to-commit",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": false,
+      "error": "commit_authorization_required"
+    },
+    {
+      "name": "only a confirmed head-bound verified Owner permits commit",
+      "state": "ready-to-commit",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "expect": "commit-fenced-household"
+    },
+    {
+      "name": "verified Owner without a copied head is rejected",
+      "state": "ready-to-commit",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "commitAuthorized": true,
+      "error": "invalid_copy_head"
+    },
+    {
+      "name": "ready journal without backup evidence is rejected",
+      "state": "ready-to-commit",
+      "observed": "legacy",
+      "backupVerified": false,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "error": "invalid_evidence"
+    },
+    {
+      "name": "unknown commit without durable final authorization is contradictory",
+      "state": "commit-unknown",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": false,
+      "error": "commit_authorization_required"
+    },
+    {
+      "name": "unknown confirmed commit first looks up its attempt",
+      "state": "commit-unknown",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "expect": "lookup-attempt"
+    },
+    {
+      "name": "unknown commit lookup precedes a missing household observation",
+      "state": "commit-unknown",
+      "observed": "legacy",
+      "omitObserved": true,
+      "commitAuthorized": true,
+      "expect": "lookup-attempt"
+    },
+    {
+      "name": "unknown commit lookup precedes a corrupt household observation",
+      "state": "commit-unknown",
+      "observed": "corrupt",
+      "commitAuthorized": true,
+      "expect": "lookup-attempt"
+    },
+    {
+      "name": "attempt lookup is followed by a fresh authenticated read",
+      "state": "commit-unknown",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "attemptLookup": "open",
+      "expect": "read-household"
+    },
+    {
+      "name": "fresh read is requested before interpreting corrupt household state",
+      "state": "commit-unknown",
+      "observed": "corrupt",
+      "commitAuthorized": true,
+      "attemptLookup": "committed",
+      "expect": "read-household"
+    },
+    {
+      "name": "terminal committed lookup cannot agree with fresh corrupt household",
+      "state": "commit-unknown",
+      "observed": "corrupt",
+      "commitAuthorized": true,
+      "attemptLookup": "committed",
+      "householdFresh": true,
+      "error": "terminal_household_mismatch"
+    },
+    {
+      "name": "fresh unchanged open attempt retries only its bound commit",
+      "state": "commit-unknown",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "attemptLookup": "open",
+      "householdFresh": true,
+      "expect": "retry-bound-commit"
+    },
+    {
+      "name": "unknown commit reads before interpreting a changed fence",
+      "state": "commit-unknown",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commitAuthorized": true,
+      "attemptLookup": "open",
+      "householdFresh": false,
+      "observedFenceMutation": {
+        "path": "/generation",
+        "value": 8
+      },
+      "expect": "read-household"
+    },
+    {
+      "name": "cancel first durably aborts its open attempt",
+      "state": "awaiting-confirmation",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "cancelRequested": true,
+      "attemptAborted": false,
+      "expect": "abort-attempt"
+    },
+    {
+      "name": "cancel performs a fresh authenticated household read after abort",
+      "state": "awaiting-confirmation",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "cancelRequested": true,
+      "attemptAborted": true,
+      "attemptLookup": "aborted",
+      "expect": "read-household"
+    },
+    {
+      "name": "cancel conditionally retires only its unreferenced candidate after fresh read",
+      "state": "awaiting-confirmation",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "cancelRequested": true,
+      "attemptAborted": true,
+      "attemptLookup": "aborted",
+      "householdFresh": true,
+      "expect": "retire-losing-candidate"
+    },
+    {
+      "name": "cancel discards its journal only after fresh read and candidate absence",
+      "state": "awaiting-confirmation",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "candidateRetired": true,
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "cancelRequested": true,
+      "attemptAborted": true,
+      "attemptLookup": "aborted",
+      "householdFresh": true,
+      "expect": "discard-journal"
+    },
+    {
+      "name": "a committed winner is verified before an unreferenced loser is retired",
+      "state": "ready-to-commit",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "winnerVerified": false,
+      "candidateRetired": false,
+      "expect": "verify-winner"
+    },
+    {
+      "name": "fence loser retires its unreferenced candidate",
+      "state": "ready-to-commit",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "winnerVerified": true,
+      "candidateRetired": false,
+      "expect": "retire-losing-candidate"
+    },
+    {
+      "name": "loser cleanup is idempotent then adopts winner",
+      "state": "cleaning-loser",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "winnerVerified": true,
+      "candidateRetired": true,
+      "expect": "activate"
+    },
+    {
+      "name": "superseded unknown commit still requires a fresh household read",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "winnerVerified": true,
+      "commitAuthorized": true,
+      "attemptLookup": "superseded",
+      "householdFresh": false,
+      "expect": "read-household"
+    },
+    {
+      "name": "superseded unknown commit cleans its loser after the fresh read",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "winnerVerified": true,
+      "commitAuthorized": true,
+      "attemptLookup": "superseded",
+      "householdFresh": true,
+      "expect": "retire-losing-candidate"
+    },
+    {
+      "name": "superseded lookup cannot name the same attempt as the fresh directory",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "0123456789abcdef0123456789abcdef",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "winnerVerified": true,
+      "commitAuthorized": true,
+      "attemptLookup": "superseded",
+      "householdFresh": true,
+      "error": "terminal_directory_mismatch"
+    },
+    {
+      "name": "committed lookup cannot name a different fresh directory winner",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "winnerVerified": true,
+      "commitAuthorized": true,
+      "attemptLookup": "committed",
+      "householdFresh": true,
+      "error": "terminal_directory_mismatch"
+    },
+    {
+      "name": "own committed candidate is verified after lookup and fresh read",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "0123456789abcdef0123456789abcdef",
+      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "winnerVerified": false,
+      "commitAuthorized": true,
+      "attemptLookup": "committed",
+      "householdFresh": true,
+      "expect": "verify-winner"
+    },
+    {
+      "name": "own verified committed candidate activates",
+      "state": "adopting",
+      "observed": "committed",
+      "candidateAttempt": "0123456789abcdef0123456789abcdef",
+      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "winnerVerified": true,
+      "expect": "activate"
+    },
+    {
+      "name": "matching Owner key without matching immutable evidence is rejected",
+      "state": "ready-to-commit",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "winnerVerified": true,
+      "error": "winner_evidence_mismatch"
+    },
+    {
+      "name": "cleanup can never target committed Owner",
+      "state": "cleaning-loser",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "winnerVerified": true,
+      "expect": "cleanup_targets_winner"
+    },
+    {
+      "name": "cleanup can never target any other live profile",
+      "state": "cleaning-loser",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+      "winnerVerified": true,
+      "expect": "cleanup_targets_winner"
+    },
+    {
+      "name": "cleanup can never target a live adult profile",
+      "state": "cleaning-loser",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+      "directoryMutation": {
+        "path": "/profiles/9999aaaabbbbccccddddeeeeffff0000/role",
+        "value": "adult"
+      },
+      "winnerVerified": true,
+      "expect": "cleanup_targets_winner"
+    },
+    {
+      "name": "retired evidence cannot claim a committed key was deleted",
+      "state": "cleaning-loser",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "candidateRetired": true,
+      "winnerVerified": true,
+      "error": "committed_key_retired"
+    },
+    {
+      "name": "winner is verified before activation",
+      "state": "adopting",
+      "observed": "committed",
+      "winnerVerified": false,
+      "expect": "verify-winner"
+    },
+    {
+      "name": "committed observation requires a valid stored directory",
+      "state": "adopting",
+      "observed": "committed",
+      "omitDirectory": true,
+      "winnerVerified": true,
+      "error": "committed_directory_missing"
+    },
+    {
+      "name": "changed legacy fence restarts after candidate cleanup",
+      "state": "owner-copied",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "observedFenceMutation": {
+        "path": "/generation",
+        "value": 8
+      },
+      "expect": "retire-losing-candidate"
+    },
+    {
+      "name": "malformed source fence is rejected",
+      "state": "fenced",
+      "observed": "legacy",
+      "fenceMutation": {
+        "path": "/head",
+        "value": "bad"
+      },
+      "error": "invalid_migration_fence"
+    },
+    {
+      "name": "missing observed fence is rejected",
+      "state": "fenced",
+      "observed": "legacy",
+      "omitObservedFence": true,
+      "error": "invalid_migration_fence"
+    },
+    {
+      "name": "malformed observed fence is rejected",
+      "state": "fenced",
+      "observed": "legacy",
+      "observedFenceMutation": {
+        "path": "/head",
+        "value": "bad"
+      },
+      "error": "invalid_migration_fence"
+    },
+    {
+      "name": "malformed candidate key is rejected",
+      "state": "owner-copied",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "bad",
+      "error": "invalid_library_key"
+    },
+    {
+      "name": "noncanonical candidate key is rejected",
+      "state": "owner-copied",
+      "observed": "legacy",
+      "backupVerified": true,
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ",
+      "error": "invalid_library_key"
+    },
+    {
+      "name": "null candidate key is rejected rather than treated as absent",
+      "state": "fenced",
+      "observed": "legacy",
+      "candidateKey": null,
+      "error": "invalid_library_key"
+    },
+    {
+      "name": "null candidate attempt is rejected rather than treated as absent",
+      "state": "fenced",
+      "observed": "legacy",
+      "candidateAttempt": null,
+      "error": "invalid_candidate_attempt"
+    },
+    {
+      "name": "null candidate head is rejected rather than treated as absent",
+      "state": "fenced",
+      "observed": "legacy",
+      "candidateHead": null,
+      "error": "invalid_copy_head"
+    },
+    {
+      "name": "null directory is forbidden for a legacy observation",
+      "state": "fenced",
+      "observed": "legacy",
+      "directory": null,
+      "error": "invalid_evidence"
+    },
+    {
+      "name": "null committed directory is malformed rather than missing",
+      "state": "adopting",
+      "observed": "committed",
+      "directory": null,
+      "omitDirectory": true,
+      "winnerVerified": true,
+      "error": "invalid_profiles"
+    },
+    {
+      "name": "non-boolean evidence is rejected",
+      "state": "backed-up",
+      "observed": "legacy",
+      "backupVerified": "yes",
+      "error": "invalid_evidence"
+    },
+    {
+      "name": "retired evidence requires a candidate",
+      "state": "fenced",
+      "observed": "legacy",
+      "candidateRetired": true,
+      "error": "invalid_evidence"
+    },
+    {
+      "name": "legacy adopting phase is rejected as a contradiction",
+      "state": "adopting",
+      "observed": "legacy",
+      "error": "invalid_state"
+    },
+    {
+      "name": "missing state is rejected",
+      "state": "fenced",
+      "omitState": true,
+      "observed": "legacy",
+      "error": "invalid_state"
+    },
+    {
+      "name": "non-string state is rejected",
+      "state": 7,
+      "observed": "legacy",
+      "error": "invalid_state"
+    },
+    {
+      "name": "missing observation is rejected",
+      "state": "fenced",
+      "observed": "legacy",
+      "omitObserved": true,
+      "error": "invalid_observation"
+    },
+    {
+      "name": "non-string observation is rejected",
+      "state": "fenced",
+      "observed": 7,
+      "error": "invalid_observation"
+    },
+    {
+      "name": "verified backup alone cannot start recovery",
+      "state": "restore-required",
+      "observed": "corrupt",
+      "backupVerified": true,
+      "expect": "recovery-blocked"
+    },
+    {
+      "name": "separate owner authorized recovery opens a fresh restore attempt",
+      "state": "restore-required",
+      "observed": "corrupt",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "expect": "open-recovery-attempt"
+    },
+    {
+      "name": "split commit authorization cannot substitute for recovery intent",
+      "state": "restore-required",
+      "observed": "corrupt",
+      "backupVerified": true,
+      "commitAuthorized": true,
+      "error": "premature_commit_authorization"
+    },
+    {
+      "name": "backup never restores over committed winner",
+      "state": "restore-required",
+      "observed": "committed",
+      "backupVerified": true,
+      "winnerVerified": true,
+      "expect": "activate"
+    }
+  ],
+  "profileCapabilityContract": {
+    "states": [
+      "off",
+      "prepare",
+      "runtime"
+    ],
+    "scope": "per-household",
+    "migrationRequestWire": 5,
+    "runtimeHouseholdWire": 5,
+    "runtimeProfileWire": 4,
+    "offMigrationStatus": 404,
+    "oldRuntimeStatus": 426,
+    "runtimeDerivedFromStoredDirectory": true,
+    "migrationTransportDirectoryIndependent": true,
+    "newerMinimumPrecedesMigration": true,
+    "operatorFlipAfterCommit": false,
+    "cases": [
+      {
+        "name": "off keeps an authenticated wire-4 Owner household usable",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "ordinary",
+          "wire": 4,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "off",
+          "effect": "serve-legacy"
+        }
+      },
+      {
+        "name": "prepare keeps an authenticated wire-4 Owner household usable",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "ordinary",
+          "wire": 4,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "prepare",
+          "effect": "serve-legacy"
+        }
+      },
+      {
+        "name": "a wire-5 preparation client still reads legacy until commit",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "prepare",
+          "effect": "serve-legacy"
+        }
+      },
+      {
+        "name": "off hides every migration route before wire and authentication distinctions",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "migration",
+          "wire": 1,
+          "authenticated": false
+        },
+        "expect": {
+          "state": "off",
+          "effect": "not-found"
+        }
+      },
+      {
+        "name": "prepare exposes only exact wire-5 migration storage",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "migration",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "prepare",
+          "effect": "migration-storage"
+        }
+      },
+      {
+        "name": "prepare rejects a lower migration wire without storage effects",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "migration",
+          "wire": 4,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "prepare",
+          "effect": "migration-wire-required",
+          "requiredWire": 5
+        }
+      },
+      {
+        "name": "prepare rejects a higher migration wire without storage effects",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "migration",
+          "wire": 6,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "prepare",
+          "effect": "migration-wire-required",
+          "requiredWire": 5
+        }
+      },
+      {
+        "name": "prepare migration storage requires household authentication",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "migration",
+          "wire": 5,
+          "authenticated": false
+        },
+        "expect": {
+          "state": "prepare",
+          "effect": "authentication-required"
+        }
+      },
+      {
+        "name": "a committed directory enters runtime without another operator flip",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 5,
+          "directory": "valid",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "runtime",
+          "effect": "serve-runtime"
+        }
+      },
+      {
+        "name": "disabling preparation cannot demote a committed household",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "valid",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "runtime",
+          "effect": "serve-runtime"
+        }
+      },
+      {
+        "name": "a committed household retains exact wire-5 migration recovery storage",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "valid",
+          "request": "migration",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "effect": "migration-storage"
+        }
+      },
+      {
+        "name": "committed migration recovery remains available when the directory is missing",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "absent",
+          "request": "migration",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "effect": "migration-storage"
+        }
+      },
+      {
+        "name": "committed migration recovery remains available when the directory is invalid",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "invalid",
+          "request": "migration",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "effect": "migration-storage"
+        }
+      },
+      {
+        "name": "committed migration recovery still requires household authentication",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "invalid",
+          "request": "migration",
+          "wire": 5,
+          "authenticated": false
+        },
+        "expect": {
+          "effect": "authentication-required"
+        }
+      },
+      {
+        "name": "committed migration also rejects a non-exact migration wire",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "valid",
+          "request": "migration",
+          "wire": 6,
+          "authenticated": true
+        },
+        "expect": {
+          "effect": "migration-wire-required",
+          "requiredWire": 5
+        }
+      },
+      {
+        "name": "an old client is gated before it can decode runtime state",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "invalid",
+          "request": "ordinary",
+          "wire": 4,
+          "authenticated": true
+        },
+        "expect": {
+          "effect": "update-required",
+          "requiredWire": 5
+        }
+      },
+      {
+        "name": "a wire-5 client fails closed when the committed directory is missing",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 5,
+          "directory": "absent",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "error": "runtime_directory_required"
+      },
+      {
+        "name": "a wire-5 client fails closed when the committed directory is invalid",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 5,
+          "directory": "invalid",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "error": "runtime_directory_required"
+      },
+      {
+        "name": "a profiles row below wire 5 is an inconsistent partial state",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "valid",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "error": "inconsistent_profiles_state"
+      },
+      {
+        "name": "a newer household minimum remains update-required",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 6,
+          "directory": "valid",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "effect": "update-required",
+          "requiredWire": 6
+        }
+      },
+      {
+        "name": "a newer household minimum gates migration recovery before v1 decoding",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 6,
+          "directory": "invalid",
+          "request": "migration",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "effect": "update-required",
+          "requiredWire": 6
+        }
+      },
+      {
+        "name": "unknown capability enrollment fails closed",
+        "input": {
+          "enrollment": "enabled",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "ordinary",
+          "wire": 4,
+          "authenticated": true
+        },
+        "error": "invalid_profile_capability"
+      }
+    ],
+    "mixedHost": [
+      {
+        "household": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "ordinary",
+          "wire": 4,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "off",
+          "effect": "serve-legacy"
+        }
+      },
+      {
+        "household": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "input": {
+          "enrollment": "prepare",
+          "wireMin": 4,
+          "directory": "absent",
+          "request": "ordinary",
+          "wire": 4,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "prepare",
+          "effect": "serve-legacy"
+        }
+      },
+      {
+        "household": "cccccccccccccccccccccccccccccccc",
+        "input": {
+          "enrollment": "off",
+          "wireMin": 5,
+          "directory": "valid",
+          "request": "ordinary",
+          "wire": 5,
+          "authenticated": true
+        },
+        "expect": {
+          "state": "runtime",
+          "effect": "serve-runtime"
+        }
+      }
+    ]
+  },
+  "migrationDirectoryConstructorInput": {
+    "attempt": "0123456789abcdef0123456789abcdef",
+    "source": {
+      "generation": 7,
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "backup": {
+      "id": "backup-7",
+      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "owner": {
+      "id": "00112233445566778899aabbccddeeff",
+      "display": {
+        "value": {
+          "name": "Cindy",
+          "avatar": "fox",
+          "futureDisplayFact": {
+            "kept": true
+          },
+          "futureNumbers": [
+            1.0,
+            -0.0,
+            1E-7,
+            0.000001,
+            1E+20,
+            1E+21,
+            333333333.33333329,
+            1E+30,
+            4.5,
+            0.002,
+            1E-27
+          ]
+        },
+        "at": [
+          1800000000000,
+          0,
+          "a1b2c3d4e5f60718"
+        ]
+      },
+      "libraryKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "libraryAt": [
+        1800000000000,
+        1,
+        "a1b2c3d4e5f60718"
+      ],
+      "policy": {
+        "value": {
+          "maximumAge": 13,
+          "unknownRatings": "allow",
+          "futurePolicyFact": [
+            "kept"
+          ]
+        },
+        "at": [
+          1800000000000,
+          2,
+          "a1b2c3d4e5f60718"
+        ]
+      },
+      "deletedAt": [
+        1800000000000,
+        3,
+        "a1b2c3d4e5f60718"
+      ]
+    },
+    "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "migrationDirectoryConstructorCases": [
+    {
+      "name": "the first stored directory derives every Owner identity binding and preserves extensions",
+      "expect": {
+        "directory": {
+          "format": 4,
+          "kind": "profiles",
+          "schema": 1,
+          "owner": "00112233445566778899aabbccddeeff",
+          "migration": {
+            "version": 1,
+            "attempt": "0123456789abcdef0123456789abcdef",
+            "source": {
+              "generation": 7,
+              "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "backup": {
+              "id": "backup-7",
+              "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "ownerProfile": "00112233445566778899aabbccddeeff",
+            "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          "profiles": {
+            "00112233445566778899aabbccddeeff": {
+              "id": "00112233445566778899aabbccddeeff",
+              "role": "owner",
+              "display": {
+                "value": {
+                  "name": "Cindy",
+                  "avatar": "fox",
+                  "futureDisplayFact": {
+                    "kept": true
+                  },
+                  "futureNumbers": [
+                    1.0,
+                    -0.0,
+                    1E-7,
+                    0.000001,
+                    1E+20,
+                    1E+21,
+                    333333333.33333329,
+                    1E+30,
+                    4.5,
+                    0.002,
+                    1E-27
+                  ]
+                },
+                "at": [
+                  1800000000000,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "library": {
+                "value": {
+                  "keyVersion": 1,
+                  "key": "ERERERERERERERERERERERERERERERERERERERERERE="
+                },
+                "at": [
+                  1800000000000,
+                  1,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "policy": {
+                "value": {
+                  "maximumAge": 13,
+                  "unknownRatings": "allow",
+                  "futurePolicyFact": [
+                    "kept"
+                  ]
+                },
+                "at": [
+                  1800000000000,
+                  2,
+                  "a1b2c3d4e5f60718"
+                ]
+              },
+              "deleted": {
+                "value": false,
+                "at": [
+                  1800000000000,
+                  3,
+                  "a1b2c3d4e5f60718"
+                ]
+              }
+            }
+          }
+        },
+        "jcs": "eyJmb3JtYXQiOjQsImtpbmQiOiJwcm9maWxlcyIsIm1pZ3JhdGlvbiI6eyJhdHRlbXB0IjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYiLCJiYWNrdXAiOnsiZGlnZXN0IjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImlkIjoiYmFja3VwLTcifSwib3duZXJIZWFkIjoiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsIm93bmVyUHJvZmlsZSI6IjAwMTEyMjMzNDQ1NTY2Nzc4ODk5YWFiYmNjZGRlZWZmIiwic291cmNlIjp7ImdlbmVyYXRpb24iOjcsImhlYWQiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIn0sInZlcnNpb24iOjF9LCJvd25lciI6IjAwMTEyMjMzNDQ1NTY2Nzc4ODk5YWFiYmNjZGRlZWZmIiwicHJvZmlsZXMiOnsiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiOnsiZGVsZXRlZCI6eyJhdCI6WzE4MDAwMDAwMDAwMDAsMywiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6ZmFsc2V9LCJkaXNwbGF5Ijp7ImF0IjpbMTgwMDAwMDAwMDAwMCwwLCJhMWIyYzNkNGU1ZjYwNzE4Il0sInZhbHVlIjp7ImF2YXRhciI6ImZveCIsImZ1dHVyZURpc3BsYXlGYWN0Ijp7ImtlcHQiOnRydWV9LCJmdXR1cmVOdW1iZXJzIjpbMSwwLDFlLTcsMC4wMDAwMDEsMTAwMDAwMDAwMDAwMDAwMDAwMDAwLDFlKzIxLDMzMzMzMzMzMy4zMzMzMzMzLDFlKzMwLDQuNSwwLjAwMiwxZS0yN10sIm5hbWUiOiJDaW5keSJ9fSwiaWQiOiIwMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZiIsImxpYnJhcnkiOnsiYXQiOlsxODAwMDAwMDAwMDAwLDEsImExYjJjM2Q0ZTVmNjA3MTgiXSwidmFsdWUiOnsia2V5IjoiRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRT0iLCJrZXlWZXJzaW9uIjoxfX0sInBvbGljeSI6eyJhdCI6WzE4MDAwMDAwMDAwMDAsMiwiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6eyJmdXR1cmVQb2xpY3lGYWN0IjpbImtlcHQiXSwibWF4aW11bUFnZSI6MTMsInVua25vd25SYXRpbmdzIjoiYWxsb3cifX0sInJvbGUiOiJvd25lciJ9fSwic2NoZW1hIjoxfQ",
+        "plaintext": "AKVTyY7bMAz9F16rCSwvsROgh6ILeioGc-hl0AMt0x7BK2RrFgzy7yWtTAcomiZA6IMhgXx8j3x6hXp0PS6wTxW0dqhgD5Mba9vRDAp62zhc7DjA_hVwWaifOBUiHSdpts2LHZamovrvM1eWaFo_SVllG5qlqrwyGNUKvwB9k8NBwfg0kPtOKPfmyoAj3G3QLzojreM4SdI0y7bbPC-K3Q6xLI2pKqJadM6jd4ZEZ0NcexxWruAhkMIrQ0Q-kptXWP2m-DJufxbJ7M6my6aoo4WqsGvY3-sieg-VKEBdxiapUsrqbZTrAn4xOew866-xm4npVXaeOnw5gRH9F4NLHnFBUVePzyyg9ot39CVAfkOzSE5L4sHFeWkXMn74vuQZSTtuoekmV9Fm7aiVjv4RnPMh1ip5i83xL_dJpNJNtgLEghXnzHDAXgzxmV_ICxwORydesIPOlg7dqXnoM_NoiSvh693F30duyUU_3x3DXKexs-YUhfgMhTDh2xUirOA-rICTeny2ve8_NZyp2R9-aAf25x2_gqGZxf1dNz6t83Lj-qKCe-ViNg_UozD8DQ"
+      }
+    },
+    {
+      "name": "constructor input has no ambient extension surface",
+      "mutations": [
+        {
+          "path": "/future",
+          "value": true
+        }
+      ],
+      "error": "invalid_directory_constructor"
+    },
+    {
+      "name": "caller cannot supply directory JCS",
+      "mutations": [
+        {
+          "path": "/jcs",
+          "value": "caller-selected"
+        }
+      ],
+      "error": "invalid_directory_constructor"
+    },
+    {
+      "name": "caller cannot supply directory plaintext",
+      "mutations": [
+        {
+          "path": "/plaintext",
+          "value": "caller-selected"
+        }
+      ],
+      "error": "invalid_directory_constructor"
+    },
+    {
+      "name": "Owner constructor input has exact members",
+      "mutations": [
+        {
+          "path": "/owner/future",
+          "value": true
+        }
+      ],
+      "error": "invalid_directory_constructor"
+    },
+    {
+      "name": "Owner id is canonical",
+      "mutations": [
+        {
+          "path": "/owner/id",
+          "value": "not-an-id"
+        }
+      ],
+      "error": "invalid_profile"
+    },
+    {
+      "name": "Owner key is canonical padded base64 of 32 bytes",
+      "mutations": [
+        {
+          "path": "/owner/libraryKey",
+          "value": "c2hvcnQ="
+        }
+      ],
+      "error": "invalid_library_key"
+    },
+    {
+      "name": "display stamp is valid",
+      "mutations": [
+        {
+          "path": "/owner/display/at",
+          "value": [
+            true,
+            0,
+            "a1b2c3d4e5f60718"
+          ]
+        }
+      ],
+      "error": "invalid_stamp"
+    },
+    {
+      "name": "library stamp is valid",
+      "mutations": [
+        {
+          "path": "/owner/libraryAt",
+          "value": [
+            1,
+            -1,
+            "a1b2c3d4e5f60718"
+          ]
+        }
+      ],
+      "error": "invalid_stamp"
+    },
+    {
+      "name": "policy stamp is valid",
+      "mutations": [
+        {
+          "path": "/owner/policy/at",
+          "value": [
+            1,
+            0,
+            "not-a-device"
+          ]
+        }
+      ],
+      "error": "invalid_stamp"
+    },
+    {
+      "name": "deletion stamp is valid",
+      "mutations": [
+        {
+          "path": "/owner/deletedAt",
+          "value": [
+            9007199254740992,
+            0,
+            "a1b2c3d4e5f60718"
+          ]
+        }
+      ],
+      "error": "invalid_stamp"
+    },
+    {
+      "name": "Owner display is validated before storage",
+      "mutations": [
+        {
+          "path": "/owner/display/value/name",
+          "value": ""
+        }
+      ],
+      "error": "invalid_display"
+    },
+    {
+      "name": "Owner policy is validated before storage",
+      "mutations": [
+        {
+          "path": "/owner/policy/value/maximumAge",
+          "value": 19
+        }
+      ],
+      "error": "invalid_policy"
+    },
+    {
+      "name": "migration attempt is canonical",
+      "mutations": [
+        {
+          "path": "/attempt",
+          "value": "not-an-attempt"
+        }
+      ],
+      "error": "invalid_migration"
+    },
+    {
+      "name": "source generation is an exact safe integer",
+      "mutations": [
+        {
+          "path": "/source/generation",
+          "value": true
+        }
+      ],
+      "error": "invalid_migration"
+    },
+    {
+      "name": "source head is canonical",
+      "mutations": [
+        {
+          "path": "/source/head",
+          "value": "bad"
+        }
+      ],
+      "error": "invalid_migration"
+    },
+    {
+      "name": "backup provider evidence is complete",
+      "mutations": [
+        {
+          "path": "/backup/id",
+          "value": ""
+        }
+      ],
+      "error": "invalid_migration"
+    },
+    {
+      "name": "backup digest is canonical",
+      "mutations": [
+        {
+          "path": "/backup/digest",
+          "value": "bad"
+        }
+      ],
+      "error": "invalid_migration"
+    },
+    {
+      "name": "Owner destination head is canonical",
+      "mutations": [
+        {
+          "path": "/ownerHead",
+          "value": "bad"
+        }
+      ],
+      "error": "invalid_migration"
+    },
+    {
+      "name": "missing Owner constructor material is rejected",
+      "remove": "/owner/policy",
+      "error": "invalid_directory_constructor"
     }
   ]
 }
