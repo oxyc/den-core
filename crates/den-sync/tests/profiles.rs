@@ -290,13 +290,33 @@ fn den_spec_whole_directory_merges_converge_or_reject_identity_conflicts() {
 #[test]
 fn den_spec_profile_lifecycle_decisions() {
     let Some(vectors) = vectors() else { return };
+    let base = &vectors["validDirectories"][0]["document"];
     for case in vectors["migrationCases"].as_array().unwrap() {
-        assert_eq!(
-            request(json!({"op":"profiles_migration_next", "input":case}))["ok"],
-            case["expect"],
-            "{}",
-            case["name"]
-        );
+        let mut input = case.clone();
+        if case["observed"] == "committed"
+            && !case
+                .get("omitDirectory")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        {
+            input["directory"] = base.clone();
+        }
+        if case["observed"] == "legacy" && case["state"] != "idle" {
+            input["fence"] = vectors["migrationFence"].clone();
+            input["observedFence"] = vectors["migrationFence"].clone();
+            if let Some(mutation) = case.get("fenceMutation") {
+                input["fence"] = mutate(&input["fence"], mutation);
+            }
+            if let Some(mutation) = case.get("observedFenceMutation") {
+                input["observedFence"] = mutate(&input["observedFence"], mutation);
+            }
+        }
+        let response = request(json!({"op":"profiles_migration_next", "input":input}));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+        } else {
+            assert_eq!(&response["ok"], &case["expect"], "{}", case["name"]);
+        }
     }
     for case in vectors["resetCases"].as_array().unwrap() {
         let mut directory = vectors["validDirectories"][0]["document"].clone();
