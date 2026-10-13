@@ -109,14 +109,16 @@ fn den_spec_migration_digests_match_canonical_bytes_and_sha256() {
 
 #[test]
 fn migration_digest_rejects_duplicate_rows_and_unknown_kinds() {
-    let Some(vectors) = vectors() else { return };
     let fixture: Value = serde_json::from_str(include_str!("fixtures/profiles-v1.json")).unwrap();
-    let case = vectors
-        .get("migrationDigestCases")
-        .and_then(Value::as_array)
-        .and_then(|cases| cases.first())
-        .unwrap_or(&fixture["cases"][0]);
-    let mut input = case["input"].clone();
+    let case = fixture["cases"]
+        .as_array()
+        .and_then(|cases| {
+            cases
+                .iter()
+                .find(|case| case["request"]["kind"] == "source")
+        })
+        .expect("pinned source migration digest case");
+    let mut input = case["request"]["input"].clone();
     input["rows"][1]["k"] = input["rows"][0]["k"].clone();
     assert_eq!(
         request(json!({"op":"profiles_migration_digest", "kind":"source", "input":input}))["error"],
