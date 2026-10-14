@@ -799,6 +799,62 @@
       }
     },
     {
+      "name": "household write refuses a title document",
+      "request": {"op": "profile_household_write", "row": {"name": "title:movie:550"}},
+      "ok": {"effect": "refuse"}
+    },
+    {
+      "name": "household write allows a household row",
+      "request": {"op": "profile_household_write", "row": {"name": "set:download-lease"}},
+      "ok": {"effect": "allow"}
+    },
+    {
+      "name": "household write keeps only the household half of prefs",
+      "request": {"op": "profile_household_write", "row": {"name": "set:prefs", "values": {
+        "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+        "den.hideWatched": {"value": {"bool": true}, "at": [2, 0, "a1b2c3d4e5f60718"]},
+        "den.maturityCeiling": {"value": {"string": "pg13"}, "at": [3, 0, "a1b2c3d4e5f60718"]}
+      }}},
+      "ok": {"effect": "restrict", "values": {
+        "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]}
+      }}
+    },
+    {
+      "name": "household write drops simkl from keys",
+      "request": {"op": "profile_household_write", "row": {"name": "set:keys", "values": {
+        "simkl": {"value": {"string": "token"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+        "tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}
+      }}},
+      "ok": {"effect": "restrict", "values": {
+        "tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}
+      }}
+    },
+    {
+      "name": "household write needs values for prefs",
+      "request": {"op": "profile_household_write", "row": {"name": "set:prefs"}},
+      "error": "invalid_household_write"
+    },
+    {
+      "name": "household audit removes and rewrites in input order",
+      "request": {"op": "profile_household_audit", "rows": [
+        {"name": "title:movie:550"},
+        {"name": "profiles"},
+        {"name": "set:keys", "values": {
+          "simkl": {"value": {"string": "token"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
+          "tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}
+        }},
+        {"name": "set:trackers"}
+      ]},
+      "ok": {"remove": ["title:movie:550", "set:trackers"], "rewrite": [
+        {"name": "set:keys", "values": {"tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}}}
+      ]}
+    },
+    {
+      "name": "household audit refuses a repeated row name",
+      "request": {"op": "profile_household_audit", "rows": [{"name": "profiles"}, {"name": "profiles"}]},
+      "error": "invalid_household_write"
+    },
+    {
       "name": "migration planner never cleans a committed profile key",
       "request": {
         "op": "profiles_migration_next",
