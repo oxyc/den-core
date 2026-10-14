@@ -514,11 +514,14 @@ pub fn v4_form(
     let input = read(rows)?;
     let mut counts = BTreeMap::new();
     let has_deliver = !deliver_rows(&input.settings).is_empty();
+    // A log that already holds v4 documents is a v4 library a stray `ep` or v1 event was written into, not a
+    // pre-v3 backup: it switches again (§10), folding those rows into its documents.
     if has(&input, |r| r["kind"] == "ep" || is_event(r))
         && !has(&input, |r| {
             matches!(r["kind"].as_str(), Some("wat" | "snt"))
         })
         && !has_deliver
+        && input.documents.is_empty()
     {
         return Err("pre_v3".into());
     }
