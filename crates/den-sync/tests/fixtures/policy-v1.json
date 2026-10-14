@@ -37,6 +37,21 @@
    "ok": false
   },
   {
+   "name": "profile_policy_allows: an unrated title made for the Kid's audience is admitted",
+   "request": {"op":"profile_policy_allows","policy":{"maximumAge":10,"unknownRatings":"block"},"minimumAge":null,"madeForAudience":true},
+   "ok": true
+  },
+  {
+   "name": "profile_policy_allows: an unrated title not made for the Kid's audience stays blocked",
+   "request": {"op":"profile_policy_allows","policy":{"maximumAge":10,"unknownRatings":"block"},"minimumAge":null},
+   "ok": false
+  },
+  {
+   "name": "profile_policy_allows: made for the audience never overrides a known age",
+   "request": {"op":"profile_policy_allows","policy":{"maximumAge":10,"unknownRatings":"block"},"minimumAge":13,"madeForAudience":true},
+   "ok": false
+  },
+  {
    "name": "capture seen",
    "request": {
     "op": "capture",

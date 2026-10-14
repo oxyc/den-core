@@ -2398,10 +2398,14 @@ fn maximum_age(policy: &Value) -> Option<u64> {
     policy["maximumAge"].as_u64()
 }
 
+/// A known age is held to the ceiling. An unknown one is admitted by `unknownRatings: allow`, or for a Kid by
+/// affirmative evidence that the title is made for its audience (`made_for_audience`): that evidence is a Kid
+/// admission rule, not a maturity age, so it never overrides a known one.
 pub fn policy_allows(
     policy: &Value,
     minimum_age: Option<&Value>,
     explicit_approval: bool,
+    made_for_audience: bool,
 ) -> Result<Value, String> {
     policy_value(policy)?;
     if explicit_approval {
@@ -2418,7 +2422,7 @@ pub fn policy_allows(
     };
     let allowed = match minimum_age {
         Some(minimum) => maximum_age(policy).is_none_or(|maximum| minimum <= maximum),
-        None => policy["unknownRatings"] == "allow",
+        None => policy["unknownRatings"] == "allow" || made_for_audience,
     };
     Ok(Value::Bool(allowed))
 }

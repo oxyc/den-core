@@ -334,6 +334,10 @@ enum Request {
         minimum_age: Option<Value>,
         #[serde(default, rename = "explicitApproval")]
         explicit_approval: bool,
+        /// The title is affirmatively made for the asking Kid's audience band (atlas' audience evidence). It
+        /// admits an unrated title only; a known age still decides.
+        #[serde(default, rename = "madeForAudience")]
+        made_for_audience: bool,
     },
     /// Profiles v1: compare policies in their product partial order.
     ProfilePolicyRelation {
@@ -977,7 +981,13 @@ fn run(request: Request) -> Result<Value, String> {
             policy,
             minimum_age,
             explicit_approval,
-        } => profiles::policy_allows(&policy, minimum_age.as_ref(), explicit_approval),
+            made_for_audience,
+        } => profiles::policy_allows(
+            &policy,
+            minimum_age.as_ref(),
+            explicit_approval,
+            made_for_audience,
+        ),
         Request::ProfilePolicyRelation { a, b } => profiles::policy_relation(&a, &b),
         Request::KidTitleApprovalsValidate {
             logical_name,
