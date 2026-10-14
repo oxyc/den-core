@@ -998,6 +998,7 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         "attemptAborted",
         "householdFresh",
         "recoveryIntent",
+        "legacyStaleCandidate",
     ] {
         optional_bool(input, name)?;
     }
@@ -1149,6 +1150,10 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
             && candidate_attempt == directory["migration"]["attempt"].as_str()
             && owner_verified
             && candidate_head == Some(&directory["migration"]["ownerHead"]);
+        let stale_candidate = candidate.is_some() && !owns_winner;
+        if stale_candidate && !optional_bool(input, "legacyStaleCandidate")? {
+            return Err("legacy_cleanup_evidence_required".into());
+        }
         if candidate.is_some_and(|key| live_keys.contains(key)) && candidate_retired {
             return Err("committed_key_retired".into());
         }
@@ -1287,7 +1292,7 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         "record-commit-binding"
     } else {
         match state {
-            "fenced" => "create-backup",
+            "fenced" => "verify-backup",
             "backed-up" => "create-owner-library",
             "owner-copied" => "verify-owner-library",
             "ready-to-commit" => "commit-fenced-household",
