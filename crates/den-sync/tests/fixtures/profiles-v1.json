@@ -874,7 +874,8 @@
                 }
               }
             }
-          }
+          },
+          "legacyStaleCandidate": true
         }
       },
       "ok": "cleanup_targets_winner"
@@ -1226,10 +1227,10 @@
       "error": "migration_authorization_mismatch"
     },
     {
-      "name": "backup precedes any Owner destination write",
+      "name": "the atomically bound backup is verified before any Owner destination write",
       "state": "fenced",
       "observed": "legacy",
-      "expect": "create-backup"
+      "expect": "verify-backup"
     },
     {
       "name": "verified backup permits Owner creation",
@@ -1487,41 +1488,45 @@
       "expect": "discard-journal"
     },
     {
-      "name": "a committed winner is verified before an unreferenced loser is retired",
+      "name": "legacy stale candidate waits for committed library verification",
       "state": "ready-to-commit",
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "legacyStaleCandidate": true,
       "winnerVerified": false,
       "candidateRetired": false,
       "expect": "verify-winner"
     },
     {
-      "name": "fence loser retires its unreferenced candidate",
+      "name": "legacy stale candidate is retired only when unreferenced",
       "state": "ready-to-commit",
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "legacyStaleCandidate": true,
       "winnerVerified": true,
       "candidateRetired": false,
       "expect": "retire-losing-candidate"
     },
     {
-      "name": "loser cleanup is idempotent then adopts winner",
+      "name": "legacy stale-candidate cleanup is idempotent before activation",
       "state": "cleaning-loser",
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "legacyStaleCandidate": true,
       "winnerVerified": true,
       "candidateRetired": true,
       "expect": "activate"
     },
     {
-      "name": "superseded unknown commit still requires a fresh household read",
+      "name": "legacy superseded evidence still requires a fresh household read",
       "state": "commit-unknown",
       "observed": "committed",
       "candidateAttempt": "0123456789abcdef0123456789abcdef",
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "legacyStaleCandidate": true,
       "directoryMutation": {
         "path": "/migration/attempt",
         "value": "fedcba9876543210fedcba9876543210"
@@ -1533,11 +1538,12 @@
       "expect": "read-household"
     },
     {
-      "name": "superseded unknown commit cleans its exact authorized loser after the fresh read",
+      "name": "legacy superseded evidence may clean its exact stale candidate after the fresh read",
       "state": "commit-unknown",
       "observed": "committed",
       "candidateAttempt": "0123456789abcdef0123456789abcdef",
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "legacyStaleCandidate": true,
       "directoryMutation": {
         "path": "/migration/attempt",
         "value": "fedcba9876543210fedcba9876543210"
@@ -1566,9 +1572,24 @@
       "observed": "committed",
       "candidateAttempt": "0123456789abcdef0123456789abcdef",
       "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "legacyStaleCandidate": true,
       "winnerVerified": true,
       "commitAuthorized": true,
       "attemptLookup": "superseded",
+      "householdFresh": true,
+      "error": "terminal_directory_mismatch"
+    },
+    {
+      "name": "committed lookup cannot name a different fresh directory winner",
+      "state": "commit-unknown",
+      "observed": "committed",
+      "candidateAttempt": "fedcba9876543210fedcba9876543210",
+      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
+      "ownerVerified": true,
+      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "winnerVerified": true,
+      "commitAuthorized": true,
+      "attemptLookup": "committed",
       "householdFresh": true,
       "error": "terminal_directory_mismatch"
     },
@@ -1585,20 +1606,6 @@
       "ownerVerified": true,
       "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "winnerVerified": false,
-      "commitAuthorized": true,
-      "attemptLookup": "committed",
-      "householdFresh": true,
-      "error": "terminal_directory_mismatch"
-    },
-    {
-      "name": "committed lookup cannot name a different fresh directory winner",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "winnerVerified": true,
       "commitAuthorized": true,
       "attemptLookup": "committed",
       "householdFresh": true,
@@ -1635,6 +1642,7 @@
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "legacyStaleCandidate": true,
       "winnerVerified": true,
       "error": "winner_evidence_mismatch"
     },
@@ -1644,6 +1652,7 @@
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "legacyStaleCandidate": true,
       "winnerVerified": true,
       "expect": "cleanup_targets_winner"
     },
@@ -1653,6 +1662,7 @@
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+      "legacyStaleCandidate": true,
       "winnerVerified": true,
       "expect": "cleanup_targets_winner"
     },
@@ -1662,6 +1672,7 @@
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+      "legacyStaleCandidate": true,
       "directoryMutation": {
         "path": "/profiles/9999aaaabbbbccccddddeeeeffff0000/role",
         "value": "adult"
@@ -1675,6 +1686,7 @@
       "observed": "committed",
       "candidateAttempt": "fedcba9876543210fedcba9876543210",
       "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "legacyStaleCandidate": true,
       "candidateRetired": true,
       "winnerVerified": true,
       "error": "committed_key_retired"
@@ -2662,5 +2674,6 @@
       "intentDigest": "8dc337fda7f596b065a0b94f119ac361316a748d02a001871299ca0949e96c3a",
       "commitBinding": "e7de29e9391ed9e7ea519ee437a1afe72ec4956bd852f474c78d743312ef867b"
     }
-  }
+  },
+  "denSpecExclusiveMigrationLockHead": "1bae5f0aa1baf37adae468568385c0f365b50eb4"
 }
