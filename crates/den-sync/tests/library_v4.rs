@@ -2173,6 +2173,24 @@ fn v3_log() -> Vec<Value> {
     .collect()
 }
 
+/// A library already at v4 (its title and season documents, a settings row) into which a v1 event
+/// `set:tracker-event:e4` was written afterwards: episode 4 of season 1 marked watched. It holds no `wat`, `snt` or
+/// `set:deliver:*` row, so only its documents say it is not a pre-v3 backup.
+fn v4_log_with_stray_event() -> Vec<Value> {
+    let log = v3_log();
+    let watched = json!({"progress": {"value": 1, "at": st(3000), "viewing": 0}, "imported": false, "plays": {"0": 3000}, "cleared": null});
+    vec![
+        title(
+            "tv",
+            1399,
+            json!({"status": {"value": "watchlist", "at": st(2000)}, "addedAt": 2000}),
+        ),
+        season(1399, 1, json!({"episodes": {"1": watched}})),
+        log[8].clone(),
+        log[10].clone(),
+    ]
+}
+
 fn rec_row(media: &str, id: u64, status: &str, reaction: Value, t: i64, viewing: u64) -> Value {
     json!({"kind": "rec", "schema": 2, "title": {"type": media, "id": id},
         "status": {"value": status, "at": st(t)}, "resume": {"value": 0, "viewing": viewing, "at": st(t)},
@@ -2269,6 +2287,7 @@ fn switches() -> Vec<Switch> {
     ));
     let pre_v3 = vec![log[9].clone(), log[10].clone(), log[0].clone()];
     let snt_only = vec![log[0].clone(), log[7].clone()];
+    let stray_event = v4_log_with_stray_event();
     let mut newer = log.clone();
     newer[3]["schema"] = json!(4);
     // Three registers of block 1 carrying ~100 KB of register-level unknowns each: one season document over 224 KiB.
@@ -2303,6 +2322,7 @@ fn switches() -> Vec<Switch> {
         Switch { name: "a log holding documents and v3 rows is merged", rows: rows(&with_doc), tamper: None, form: Expect::Subset(json!({"rows": 10})), dry_run: Some(json!({"pass": true})) },
         Switch { name: "a pre-v3 log is refused", rows: rows(&pre_v3), tamper: None, form: Expect::Error("pre_v3"), dry_run: None },
         Switch { name: "a v3 log with no wat row but a set:deliver row converts", rows: rows(&snt_only), tamper: None, form: Expect::Subset(json!({"keep": ["k01"]})), dry_run: Some(json!({"pass": true})) },
+        Switch { name: "a v4 log holding a stray v1 event switches again and folds it", rows: rows(&stray_event), tamper: None, form: Expect::Subset(json!({"keep": ["k02"], "counts": {"events_folded": 1}})), dry_run: Some(json!({"pass": true})) },
         Switch { name: "a v3 row above its schema fails", rows: rows(&newer), tamper: None, form: Expect::Error("newer_v3_row"), dry_run: None },
         Switch { name: "a season over 224 KiB fails", rows: rows(&too_large), tamper: None, form: Expect::Error("too_large:season:tv:1399:1"), dry_run: None },
     ]
@@ -2667,6 +2687,26 @@ fn library_v4_switches() {
     for switch in switches() {
         run_switch(&switch);
     }
+}
+
+/// The event folded into a v4 log's own season document: episode 1 as it was, episode 4 watched as the event says,
+/// and no row kept for the event.
+#[test]
+fn a_stray_event_folds_into_the_v4_documents() {
+    let form = ok(
+        &json!({"op": "v4_form", "rows": rows(&v4_log_with_stray_event()), "base": 20, "performer": D, "now": 10_000}),
+    );
+    let season = form["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|doc| doc["name"] == "season:tv:1399:1")
+        .expect("season document")["document"]
+        .clone();
+    assert_eq!(season["episodes"]["1"]["plays"], json!({"0": 3000}));
+    assert_eq!(season["episodes"]["4"]["progress"]["value"], json!(1.0));
+    assert_eq!(season["episodes"]["4"]["progress"]["at"], st(7100));
+    assert_eq!(form["keep"], json!(["k02"]));
 }
 
 #[test]
