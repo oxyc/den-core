@@ -1874,6 +1874,112 @@
       "backupVerified": true,
       "winnerVerified": true,
       "expect": "activate"
+    },
+    {
+      "name": "intact legacy household without recovery intent stays recovery-blocked",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "expect": "recovery-blocked"
+    },
+    {
+      "name": "intact legacy household without a verified backup stays recovery-blocked",
+      "state": "restore-required",
+      "observed": "legacy",
+      "recoveryIntent": true,
+      "expect": "recovery-blocked"
+    },
+    {
+      "name": "intact legacy household at the frozen source aborts the recovery attempt instead of restoring",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "expect": "abort-attempt"
+    },
+    {
+      "name": "an open recovery lookup still aborts before any fresh read",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "attemptLookup": "open",
+      "expect": "abort-attempt"
+    },
+    {
+      "name": "a legacy fence that differs from the frozen source is never restored over",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "observedFenceMutation": {
+        "path": "/generation",
+        "value": 8
+      },
+      "error": "recovery_source_mismatch"
+    },
+    {
+      "name": "a legacy fence mismatch without recovery intent is still recovery-blocked",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "observedFenceMutation": {
+        "path": "/generation",
+        "value": 8
+      },
+      "expect": "recovery-blocked"
+    },
+    {
+      "name": "aborted recovery attempt requires a fresh household read",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "attemptLookup": "aborted",
+      "expect": "read-household"
+    },
+    {
+      "name": "aborted recovery attempt discards its journal after the fresh read",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "attemptLookup": "aborted",
+      "householdFresh": true,
+      "expect": "discard-journal"
+    },
+    {
+      "name": "a household changed after the lock was released does not block discarding the aborted journal",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "attemptLookup": "aborted",
+      "householdFresh": true,
+      "observedFenceMutation": {
+        "path": "/generation",
+        "value": 8
+      },
+      "expect": "discard-journal"
+    },
+    {
+      "name": "a committed lookup cannot agree with an intact legacy household",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "attemptLookup": "committed",
+      "householdFresh": true,
+      "error": "terminal_household_mismatch"
+    },
+    {
+      "name": "intact legacy recovery still requires the observed fence",
+      "state": "restore-required",
+      "observed": "legacy",
+      "backupVerified": true,
+      "recoveryIntent": true,
+      "omitObservedFence": true,
+      "error": "invalid_migration_fence"
     }
   ],
   "profileCapabilityContract": {
