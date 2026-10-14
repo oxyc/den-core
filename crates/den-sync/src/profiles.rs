@@ -12,22 +12,8 @@ use unicode_normalization::UnicodeNormalization;
 const ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "owner", "migration", "profiles"];
 const ENTRY_MEMBERS: &[&str] = &["id", "role", "display", "library", "policy", "deleted"];
 const APPROVAL_ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "kid", "approvals"];
-const PROFILE_PREFERENCE_KEYS: &[&str] = &[
-    "den.excludedGenreIDs",
-    "den.excludedLanguages",
-    "den.preferredSubtitleLanguage",
-    "den.hasExplicitSubtitlePreference",
-    "den.shownSubtitleLanguages",
-    "den.maxSubtitlesPerLanguage",
-    "den.preferredAudioLanguage",
-    "den.autoSkipSegments",
-    "den.autoplayTrailers",
-    "den.hideAnime",
-    "den.hideWatched",
-    "den.minReleaseYear",
-    "den.enabledRatingSources",
-    "den.shownWarningCategories",
-];
+/// The one legacy preference that is not a preference of a profile: decoded into Owner policy, then dropped.
+const LEGACY_MATURITY_KEY: &str = "den.maturityCeiling";
 
 fn object<'a>(value: &'a Value, error: &str) -> Result<&'a Map<String, Value>, String> {
     value.as_object().ok_or_else(|| error.into())
@@ -1562,28 +1548,41 @@ pub fn reset_next(input: &Value) -> Result<Value, String> {
 
 /// Split one legacy `set:prefs.values` object without interpreting its stamped values.
 ///
-/// Exact assigned personal keys move to Owner. The legacy maturity input is returned separately for policy
-/// normalization. Every other key, including future keys, stays in the household so an older client cannot leak
-/// an unassigned setting into one profile.
+/// Every preference is profile-scoped (profiles-v1 §6), so everything moves to Owner and the household keeps
+/// none. The legacy maturity input is returned separately for policy normalization.
 pub fn partition_preferences(values: &Value) -> Result<Value, String> {
     let values = values.as_object().ok_or("invalid_preferences")?;
-    let mut household = Map::new();
-    let mut owner = Map::new();
-    let mut owner_maturity = Value::Null;
-    for (key, value) in values {
-        if PROFILE_PREFERENCE_KEYS.contains(&key.as_str()) {
-            owner.insert(key.clone(), value.clone());
-        } else if key == "den.maturityCeiling" {
-            owner_maturity = value.clone();
-        } else {
-            household.insert(key.clone(), value.clone());
-        }
-    }
+    let mut owner = values.clone();
+    let owner_maturity = owner.remove(LEGACY_MATURITY_KEY).unwrap_or(Value::Null);
     Ok(json!({
-        "household": household,
+        "household": {},
         "owner": owner,
         "ownerMaturity": owner_maturity,
     }))
+}
+
+/// The `set:prefs` values a profile library is given from an older household's (profiles-v1 §6.3): every
+/// household key the profile's own `values` lacks, stamped values untouched. A member the profile already holds,
+/// even a cleared one, is a decision and is never overwritten.
+pub fn seed_preferences(input: &Value) -> Result<Value, String> {
+    const INVALID: &str = "invalid_preferences";
+    let input = object(input, INVALID)?;
+    if !exact_members(input, &["household", "profile"]) {
+        return Err(INVALID.into());
+    }
+    let household = object(&input["household"], INVALID)?;
+    let held = match &input["profile"] {
+        Value::Null => None,
+        profile => Some(object(profile, INVALID)?),
+    };
+    let values: Map<String, Value> = household
+        .iter()
+        .filter(|(key, _)| {
+            key.as_str() != LEGACY_MATURITY_KEY && !held.is_some_and(|held| held.contains_key(*key))
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    Ok(json!({"values": values}))
 }
 
 /// Canonically account every authenticated row in a fenced legacy household into the initial household/Owner
@@ -2146,17 +2145,12 @@ fn household_values(row: &Value) -> Result<(String, Option<Map<String, Value>>),
         .get("values")
         .and_then(Value::as_object)
         .ok_or(INVALID)?;
-    let kept = if name == "set:prefs" {
-        let partition = partition_preferences(&Value::Object(values.clone()))?;
-        partition["household"]
-            .as_object()
-            .expect("partition output")
-            .clone()
-    } else {
-        let mut kept = values.clone();
-        kept.remove("simkl");
-        kept
-    };
+    if name == "set:prefs" {
+        // Every preference is profile-scoped (profiles-v1 §6): the household holds no `set:prefs` at all.
+        return Ok((name.into(), Some(Map::new())));
+    }
+    let mut kept = values.clone();
+    kept.remove("simkl");
     Ok((name.into(), (kept.len() != values.len()).then_some(kept)))
 }
 

@@ -705,7 +705,7 @@
       }
     },
     {
-      "name": "preference partition moves only assigned personal keys to Owner",
+      "name": "preference partition moves every preference to Owner and the household keeps none",
       "request": {
         "op": "profiles_partition_preferences",
         "values": {
@@ -752,7 +752,8 @@
         }
       },
       "ok": {
-        "household": {
+        "household": {},
+        "owner": {
           "den.watchRegion": {
             "value": {
               "string": "FI"
@@ -772,9 +773,7 @@
               0,
               "a1b2c3d4e5f60718"
             ]
-          }
-        },
-        "owner": {
+          },
           "den.hideWatched": {
             "value": {
               "bool": true
@@ -809,15 +808,32 @@
       "ok": {"effect": "allow"}
     },
     {
-      "name": "household write keeps only the household half of prefs",
+      "name": "household write refuses prefs whole, services and region included",
       "request": {"op": "profile_household_write", "row": {"name": "set:prefs", "values": {
         "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-        "den.hideWatched": {"value": {"bool": true}, "at": [2, 0, "a1b2c3d4e5f60718"]},
-        "den.maturityCeiling": {"value": {"string": "pg13"}, "at": [3, 0, "a1b2c3d4e5f60718"]}
+        "den.myServicePicks": {"value": {"strings": ["8@FI"]}, "at": [2, 0, "a1b2c3d4e5f60718"]},
+        "den.hideWatched": {"value": {"bool": true}, "at": [3, 0, "a1b2c3d4e5f60718"]}
       }}},
-      "ok": {"effect": "restrict", "values": {
-        "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]}
+      "ok": {"effect": "refuse"}
+    },
+    {
+      "name": "seed gives a profile the household preferences it lacks, stamps untouched",
+      "request": {"op": "profiles_seed_preferences", "input": {
+        "household": {
+          "den.watchRegion": {"value": {"string": "FI"}, "at": [10, 0, "a1b2c3d4e5f60718"]},
+          "den.myServicePicks": {"value": {"strings": ["8@FI"]}, "at": [11, 0, "a1b2c3d4e5f60718"]},
+          "den.maturityCeiling": {"value": {"string": "pg13"}, "at": [12, 0, "a1b2c3d4e5f60718"]}
+        },
+        "profile": {"den.watchRegion": {"value": null, "at": [20, 0, "a1b2c3d4e5f60718"]}}
+      }},
+      "ok": {"values": {
+        "den.myServicePicks": {"value": {"strings": ["8@FI"]}, "at": [11, 0, "a1b2c3d4e5f60718"]}
       }}
+    },
+    {
+      "name": "seed refuses non-object preferences",
+      "request": {"op": "profiles_seed_preferences", "input": {"household": [], "profile": null}},
+      "error": "invalid_preferences"
     },
     {
       "name": "household write drops simkl from keys",
@@ -843,9 +859,10 @@
           "simkl": {"value": {"string": "token"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
           "tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}
         }},
-        {"name": "set:trackers"}
+        {"name": "set:trackers"},
+        {"name": "set:prefs", "values": {"den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]}}}
       ]},
-      "ok": {"remove": ["title:movie:550", "set:trackers"], "rewrite": [
+      "ok": {"remove": ["title:movie:550", "set:trackers", "set:prefs"], "rewrite": [
         {"name": "set:keys", "values": {"tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}}}
       ]}
     },

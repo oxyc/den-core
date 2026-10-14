@@ -46,7 +46,8 @@ pub use profiles::{
     migration_partition_rows as profiles_migration_partition_rows,
     partition_preferences as profiles_partition_preferences, policy_relation,
     profile_capability as profiles_capability, profiles_merge, profiles_validate,
-    reset_next as profiles_reset_next, validate_input as profiles_validate_input,
+    reset_next as profiles_reset_next, seed_preferences as profiles_seed_preferences,
+    validate_input as profiles_validate_input,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -314,6 +315,10 @@ enum Request {
     /// Profiles v1: partition the legacy `set:prefs.values` object for household and Owner destinations.
     ProfilesPartitionPreferences {
         values: Value,
+    },
+    /// Profiles v1 §6.3: the `set:prefs` values a profile library is given from an older household's.
+    ProfilesSeedPreferences {
+        input: Value,
     },
     /// Profiles v1 §8.2: whether one row (`{name[, values]}`) may be written to a profile-aware household.
     ProfileHouseholdWrite {
@@ -968,6 +973,7 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesPartitionPreferences { values } => {
             profiles::partition_preferences(&values)
         }
+        Request::ProfilesSeedPreferences { input } => profiles::seed_preferences(&input),
         Request::ProfileHouseholdWrite { row } => profiles::household_write(&row),
         Request::ProfileHouseholdAudit { rows } => profiles::household_audit(&rows),
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
