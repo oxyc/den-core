@@ -1230,6 +1230,23 @@ pub fn migration_next(input: &Value) -> Result<Value, String> {
         } else {
             "no-op"
         }
+    } else if state == "restore-required" {
+        // The lock froze the household at the bound source, so an intact legacy household needs no rewrite.
+        if !optional_bool(input, "backupVerified")? || !optional_bool(input, "recoveryIntent")? {
+            "recovery-blocked"
+        } else if lookup == Some("aborted") {
+            if household_fresh {
+                "discard-journal"
+            } else {
+                "read-household"
+            }
+        } else if matches!(lookup, Some("committed" | "superseded")) {
+            return Err("terminal_household_mismatch".into());
+        } else if fence_changed {
+            return Err("recovery_source_mismatch".into());
+        } else {
+            "abort-attempt"
+        }
     } else if cancel_requested {
         if candidate.is_some() && !candidate_retired {
             "retire-losing-candidate"
