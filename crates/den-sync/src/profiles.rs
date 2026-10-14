@@ -2129,6 +2129,67 @@ fn profile_scoped_name(name: &str) -> bool {
         )
 }
 
+/// What a profile-aware household may hold of one row (profiles-v1 §2, §8.2): `Ok(None)` writes it as it is,
+/// `Ok(Some(values))` writes it with only those values (empty: not at all).
+fn household_values(row: &Value) -> Result<(String, Option<Map<String, Value>>), String> {
+    const INVALID: &str = "invalid_household_write";
+    let name = row
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .ok_or(INVALID)?;
+    if !matches!(name, "set:prefs" | "set:keys") {
+        let withheld = profile_scoped_name(name) || legacy_profile_name(name);
+        return Ok((name.into(), withheld.then(Map::new)));
+    }
+    let values = row
+        .get("values")
+        .and_then(Value::as_object)
+        .ok_or(INVALID)?;
+    let kept = if name == "set:prefs" {
+        let partition = partition_preferences(&Value::Object(values.clone()))?;
+        partition["household"]
+            .as_object()
+            .expect("partition output")
+            .clone()
+    } else {
+        let mut kept = values.clone();
+        kept.remove("simkl");
+        kept
+    };
+    Ok((name.into(), (kept.len() != values.len()).then_some(kept)))
+}
+
+/// Whether one row may be written to a profile-aware household: `{effect: allow}`, `{effect: refuse}`, or
+/// `{effect: restrict, values}` carrying the household-only values to write instead.
+pub fn household_write(row: &Value) -> Result<Value, String> {
+    Ok(match household_values(row)?.1 {
+        None => json!({"effect":"allow"}),
+        Some(values) if values.is_empty() => json!({"effect":"refuse"}),
+        Some(values) => json!({"effect":"restrict", "values":values}),
+    })
+}
+
+/// The same rule over rows already stored in a household: which to remove and which to rewrite, in input order.
+pub fn household_audit(rows: &Value) -> Result<Value, String> {
+    let rows = rows.as_array().ok_or("invalid_household_write")?;
+    let mut seen = std::collections::HashSet::new();
+    let mut remove = Vec::new();
+    let mut rewrite = Vec::new();
+    for row in rows {
+        let (name, kept) = household_values(row)?;
+        if !seen.insert(name.clone()) {
+            return Err("invalid_household_write".into());
+        }
+        match kept {
+            None => {}
+            Some(values) if values.is_empty() => remove.push(json!(name)),
+            Some(values) => rewrite.push(json!({"name":name, "values":values})),
+        }
+    }
+    Ok(json!({"remove":remove, "rewrite":rewrite}))
+}
+
 fn profile_control_name(name: &str) -> bool {
     name == "profiles" || name.starts_with("kid-title-approvals:")
 }

@@ -1009,6 +1009,75 @@ fn den_spec_profile_preferences_partition_without_interpreting_values() {
 }
 
 #[test]
+fn den_spec_household_write_rule_is_answered_for_every_row() {
+    let Some(vectors) = vectors() else { return };
+    let writes = vectors["householdWriteCases"].as_array().unwrap();
+    let audits = vectors["householdAuditCases"].as_array().unwrap();
+    assert!(!writes.is_empty() && !audits.is_empty());
+    for (op, field, cases) in [
+        ("profile_household_write", "row", writes),
+        ("profile_household_audit", "rows", audits),
+    ] {
+        for case in cases {
+            let response = request(json!({"op":op, field:case[field]}));
+            if let Some(error) = case.get("error") {
+                assert_eq!(&response["error"], error, "{}", case["name"]);
+            } else {
+                assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+            }
+        }
+    }
+}
+
+#[test]
+fn household_write_never_lets_a_scoped_row_through_by_prefix_or_alias() {
+    let stamp = json!([1, 0, "a1b2c3d4e5f60718"]);
+    for name in [
+        "title:a",
+        "season:a",
+        "dlv:a",
+        "set:deliver:a",
+        "set:handoff:a",
+        "set:trackers",
+        "set:assistant-applied",
+        "rec:a",
+        "wat:a",
+        "snt:a",
+        "ep:a",
+        "set:tracker-event:a",
+    ] {
+        assert_eq!(
+            request(json!({"op":"profile_household_write", "row":{"name":name}}))["ok"]["effect"],
+            "refuse",
+            "{name}"
+        );
+    }
+    // Exact-name and prefix boundaries: configuration rows that only look similar stay household.
+    for name in [
+        "set:assistant",
+        "set:assistant-read",
+        "set:deliverx",
+        "title",
+        "profiles",
+        "kid-title-approvals:a",
+    ] {
+        assert_eq!(
+            request(json!({"op":"profile_household_write", "row":{"name":name}}))["ok"]["effect"],
+            "allow",
+            "{name}"
+        );
+    }
+    // A prefs row's unknown stamped members survive restriction untouched.
+    let kept = json!({"value":{"future":1}, "at":stamp, "futureMember":"kept"});
+    let response = request(json!({
+        "op":"profile_household_write",
+        "row":{"name":"set:prefs", "values":{"future.preference":kept, "den.hideAnime":{"value":{"bool":true}, "at":stamp}}}
+    }));
+    assert_eq!(response["ok"]["values"]["future.preference"], kept);
+    assert!(response["ok"]["values"].get("den.hideAnime").is_none());
+}
+
+#[test]
 fn profile_preference_partition_is_exact_and_preserves_stamped_extensions() {
     let stamped = json!({
         "value":{"futureTypedValue":{"nested":true}},

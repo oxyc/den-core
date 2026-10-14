@@ -35,7 +35,8 @@ pub use library_v3::{
 };
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
-    create_next as profiles_create_next, materialize as profiles_materialize,
+    create_next as profiles_create_next, household_audit as profile_household_audit,
+    household_write as profile_household_write, materialize as profiles_materialize,
     migration_authorization as profiles_migration_authorization,
     migration_authorization_fingerprint as profiles_migration_authorization_fingerprint,
     migration_construct_directory as profiles_migration_construct_directory,
@@ -313,6 +314,14 @@ enum Request {
     /// Profiles v1: partition the legacy `set:prefs.values` object for household and Owner destinations.
     ProfilesPartitionPreferences {
         values: Value,
+    },
+    /// Profiles v1 §8.2: whether one row (`{name[, values]}`) may be written to a profile-aware household.
+    ProfileHouseholdWrite {
+        row: Value,
+    },
+    /// Profiles v1 §8.2: the same rule over stored household rows, answering which to remove and rewrite.
+    ProfileHouseholdAudit {
+        rows: Value,
     },
     /// Profiles v1: translate the legacy Owner maturity ceiling into the normalized policy.
     ProfilePolicyNormalizeLegacy {
@@ -959,6 +968,8 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesPartitionPreferences { values } => {
             profiles::partition_preferences(&values)
         }
+        Request::ProfileHouseholdWrite { row } => profiles::household_write(&row),
+        Request::ProfileHouseholdAudit { rows } => profiles::household_audit(&rows),
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
             profiles::normalize_legacy(legacy.as_deref())
         }
