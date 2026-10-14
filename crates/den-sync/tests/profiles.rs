@@ -1067,18 +1067,24 @@ fn household_write_never_lets_a_scoped_row_through_by_prefix_or_alias() {
             "{name}"
         );
     }
-    // A prefs row's unknown stamped members survive restriction untouched.
+    // A prefs row is profile-scoped whole, whatever it holds, services and region included.
     let kept = json!({"value":{"future":1}, "at":stamp, "futureMember":"kept"});
-    let response = request(json!({
-        "op":"profile_household_write",
-        "row":{"name":"set:prefs", "values":{"future.preference":kept, "den.hideAnime":{"value":{"bool":true}, "at":stamp}}}
-    }));
-    assert_eq!(response["ok"]["values"]["future.preference"], kept);
-    assert!(response["ok"]["values"].get("den.hideAnime").is_none());
+    for values in [
+        json!({"future.preference":kept, "den.hideAnime":{"value":{"bool":true}, "at":stamp}}),
+        json!({"den.myServicePicks":{"value":{"strings":["8@FI"]}, "at":stamp}}),
+        json!({"den.watchRegion":{"value":{"string":"FI"}, "at":stamp}}),
+        json!({}),
+    ] {
+        let response = request(json!({
+            "op":"profile_household_write",
+            "row":{"name":"set:prefs", "values":values}
+        }));
+        assert_eq!(response["ok"]["effect"], "refuse", "{values}");
+    }
 }
 
 #[test]
-fn profile_preference_partition_is_exact_and_preserves_stamped_extensions() {
+fn profile_preference_partition_moves_every_key_and_preserves_stamped_extensions() {
     let stamped = json!({
         "value":{"futureTypedValue":{"nested":true}},
         "at":[1800000000000_i64,0,"a1b2c3d4e5f60718"],
@@ -1088,17 +1094,50 @@ fn profile_preference_partition_is_exact_and_preserves_stamped_extensions() {
         "op":"profiles_partition_preferences",
         "values":{
             "den.hideWatched":stamped,
-            "den.hideWatched.future":stamped,
+            "den.myServicePicks":stamped,
+            "den.watchRegion":stamped,
             "future.preference":stamped
         }
     }));
-    assert_eq!(response["ok"]["owner"]["den.hideWatched"], stamped);
-    assert_eq!(
-        response["ok"]["household"]["den.hideWatched.future"], stamped,
-        "prefixes never assign future keys to a profile"
-    );
-    assert_eq!(response["ok"]["household"]["future.preference"], stamped);
+    for key in [
+        "den.hideWatched",
+        "den.myServicePicks",
+        "den.watchRegion",
+        "future.preference",
+    ] {
+        assert_eq!(response["ok"]["owner"][key], stamped, "{key}");
+    }
+    assert_eq!(response["ok"]["household"], json!({}));
     assert_eq!(response["ok"]["ownerMaturity"], Value::Null);
+}
+
+#[test]
+fn den_spec_preference_seed_gives_only_the_keys_a_profile_lacks() {
+    let Some(vectors) = vectors() else { return };
+    let cases = vectors["settingsSeedCases"].as_array().unwrap();
+    assert!(!cases.is_empty());
+    for case in cases {
+        let response = request(json!({"op":"profiles_seed_preferences", "input":case["input"]}));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+        } else {
+            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+        }
+    }
+}
+
+#[test]
+fn preference_seed_is_idempotent_and_keeps_stamped_extensions() {
+    let stamped = json!({"value":{"strings":["8@FI"]}, "at":[1,0,"a1b2c3d4e5f60718"], "futureStampedMember":"kept"});
+    let household = json!({"den.myServicePicks":stamped, "den.maturityCeiling":stamped});
+    let first = request(json!({
+        "op":"profiles_seed_preferences", "input":{"household":household, "profile":null}
+    }));
+    assert_eq!(first["ok"]["values"], json!({"den.myServicePicks":stamped}));
+    let again = request(json!({
+        "op":"profiles_seed_preferences", "input":{"household":household, "profile":first["ok"]["values"]}
+    }));
+    assert_eq!(again["ok"]["values"], json!({}));
 }
 
 #[test]
