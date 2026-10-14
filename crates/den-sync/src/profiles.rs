@@ -2398,18 +2398,38 @@ fn maximum_age(policy: &Value) -> Option<u64> {
     policy["maximumAge"].as_u64()
 }
 
+/// What a Kid's title may not depict unless it is made for the Kid's audience: a single lenient public rating
+/// (an adult film one authority rated for all ages) must not open it. `animal_harm` is left out on purpose, as
+/// it marks a great many children's films.
+const KID_VETO_WARNINGS: &[&str] = &[
+    "sexual_content",
+    "graphic_violence",
+    "drug_use",
+    "self_harm",
+];
+
 /// A known age is held to the ceiling. An unknown one is admitted by `unknownRatings: allow`, or for a Kid by
 /// affirmative evidence that the title is made for its audience (`made_for_audience`): that evidence is a Kid
-/// admission rule, not a maturity age, so it never overrides a known one.
+/// admission rule, not a maturity age, so it never overrides a known one. A Kid caller also passes the title's
+/// `warnings`; a serious one vetoes a title not made for its audience, whatever its age. Only an explicit approval
+/// overrides that veto.
 pub fn policy_allows(
     policy: &Value,
     minimum_age: Option<&Value>,
     explicit_approval: bool,
     made_for_audience: bool,
+    warnings: &[String],
 ) -> Result<Value, String> {
     policy_value(policy)?;
     if explicit_approval {
         return Ok(Value::Bool(true));
+    }
+    if !made_for_audience
+        && warnings
+            .iter()
+            .any(|w| KID_VETO_WARNINGS.contains(&w.as_str()))
+    {
+        return Ok(Value::Bool(false));
     }
     let minimum_age = match minimum_age {
         None | Some(Value::Null) => None,

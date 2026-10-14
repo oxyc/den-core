@@ -52,6 +52,26 @@
    "ok": false
   },
   {
+   "name": "profile_policy_allows: a serious warning vetoes a low-rated title not made for the Kid",
+   "request": {"op":"profile_policy_allows","policy":{"maximumAge":12,"unknownRatings":"block"},"minimumAge":8,"warnings":["sexual_content"]},
+   "ok": false
+  },
+  {
+   "name": "profile_policy_allows: a warning does not veto a title made for the Kid",
+   "request": {"op":"profile_policy_allows","policy":{"maximumAge":12,"unknownRatings":"block"},"minimumAge":0,"madeForAudience":true,"warnings":["drug_use"]},
+   "ok": true
+  },
+  {
+   "name": "profile_policy_allows: animal_harm is no veto",
+   "request": {"op":"profile_policy_allows","policy":{"maximumAge":12,"unknownRatings":"block"},"minimumAge":0,"warnings":["animal_harm"]},
+   "ok": true
+  },
+  {
+   "name": "profile_policy_allows: an explicit approval overrides the veto",
+   "request": {"op":"profile_policy_allows","policy":{"maximumAge":12,"unknownRatings":"block"},"minimumAge":8,"explicitApproval":true,"warnings":["sexual_content"]},
+   "ok": true
+  },
+  {
    "name": "capture seen",
    "request": {
     "op": "capture",

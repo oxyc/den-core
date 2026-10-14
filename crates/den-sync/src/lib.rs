@@ -338,6 +338,10 @@ enum Request {
         /// admits an unrated title only; a known age still decides.
         #[serde(default, rename = "madeForAudience")]
         made_for_audience: bool,
+        /// What atlas says the title depicts (its `warnings`). A Kid caller passes them: a serious one vetoes a
+        /// title not made for the Kid's audience whatever its age. Other callers leave it empty.
+        #[serde(default)]
+        warnings: Vec<String>,
     },
     /// Profiles v1: compare policies in their product partial order.
     ProfilePolicyRelation {
@@ -982,11 +986,13 @@ fn run(request: Request) -> Result<Value, String> {
             minimum_age,
             explicit_approval,
             made_for_audience,
+            warnings,
         } => profiles::policy_allows(
             &policy,
             minimum_age.as_ref(),
             explicit_approval,
             made_for_audience,
+            &warnings,
         ),
         Request::ProfilePolicyRelation { a, b } => profiles::policy_relation(&a, &b),
         Request::KidTitleApprovalsValidate {
