@@ -293,6 +293,21 @@ fn den_spec_migration_digests_match_canonical_bytes_and_sha256() {
             "input": case["input"],
         }));
         assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+        // §1.2's neutral name answers the two shared kinds identically and refuses the split-only ones.
+        let neutral = request(json!({
+            "op": "profiles_snapshot_digest",
+            "kind": case["kind"],
+            "input": case["input"],
+        }));
+        if matches!(case["kind"].as_str(), Some("source" | "owner")) {
+            assert_eq!(neutral, response, "{}", case["name"]);
+        } else {
+            assert_eq!(
+                neutral["error"], "invalid_migration_digest_kind",
+                "{}",
+                case["name"]
+            );
+        }
     }
 }
 
@@ -387,6 +402,12 @@ fn den_spec_migration_directory_construction_matches() {
             "op":"profiles_migration_construct_directory",
             "input":input
         }));
+        assert_eq!(
+            request(json!({"op":"profiles_construct_directory", "input":input})),
+            response,
+            "the neutral name answers {} identically",
+            case["name"]
+        );
         if let Some(error) = case.get("error") {
             assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
         } else {

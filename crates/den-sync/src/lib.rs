@@ -39,6 +39,7 @@ pub use profiles::{
     household_write as profile_household_write, materialize as profiles_materialize,
     migration_authorization as profiles_migration_authorization,
     migration_authorization_fingerprint as profiles_migration_authorization_fingerprint,
+    migration_construct_directory as profiles_construct_directory,
     migration_construct_directory as profiles_migration_construct_directory,
     migration_digest as profiles_migration_digest,
     migration_materialize_plaintext as profiles_migration_materialize_plaintext,
@@ -47,7 +48,7 @@ pub use profiles::{
     partition_preferences as profiles_partition_preferences, policy_relation,
     profile_capability as profiles_capability, profiles_merge, profiles_validate,
     reset_next as profiles_reset_next, seed_preferences as profiles_seed_preferences,
-    validate_input as profiles_validate_input,
+    snapshot_digest as profiles_snapshot_digest, validate_input as profiles_validate_input,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -294,6 +295,16 @@ enum Request {
     },
     /// Profiles v1: construct and stored-validate the first Owner-only directory.
     ProfilesMigrationConstructDirectory {
+        input: Value,
+    },
+    /// Profiles v1 §6.2: `profiles_migration_construct_directory` under the name that outlives the split.
+    ProfilesConstructDirectory {
+        input: Value,
+    },
+    /// Profiles v1 §1.2: the `source` and `owner` digests of `profiles_migration_digest`, under the name that
+    /// outlives the split.
+    ProfilesSnapshotDigest {
+        kind: String,
         input: Value,
     },
     /// Profiles v1: validate a materialized projection and return its canonical seal-ready bytes.
@@ -959,9 +970,11 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesMigrationPartitionRows { input } => {
             profiles::migration_partition_rows(&input)
         }
-        Request::ProfilesMigrationConstructDirectory { input } => {
+        Request::ProfilesMigrationConstructDirectory { input }
+        | Request::ProfilesConstructDirectory { input } => {
             profiles::migration_construct_directory(&input)
         }
+        Request::ProfilesSnapshotDigest { kind, input } => profiles::snapshot_digest(&kind, &input),
         Request::ProfilesMigrationMaterializePlaintext { input } => {
             profiles::migration_materialize_plaintext(&input)
         }
