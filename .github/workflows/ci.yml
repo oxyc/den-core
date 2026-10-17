@@ -1,5 +1,15 @@
 name: Shared sync policy
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 # The three build jobs run side by side. A fourth clean-room job combines the native and WASM outputs and
