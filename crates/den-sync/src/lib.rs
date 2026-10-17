@@ -514,6 +514,8 @@ enum Request {
 /// The assistant ops (den-spec `wire/assistant-v1.md`), apart from the rest so the web can load them as a module of
 /// their own (`evaluate_assistant`): they carry the assistant crypto, which every other op leaves out. `merge` of the
 /// assistant rows stays with the other ops, since every row merges there.
+// The variant names are the wire op names (`assistant_keygen_dropbox`, ...), so the shared prefix stays.
+#[allow(clippy::enum_variant_names)]
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum AssistantRequest {

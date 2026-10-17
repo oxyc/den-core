@@ -21,7 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.95.0
-          components: rustfmt
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: checks
@@ -29,6 +29,7 @@ jobs:
       - run: bash scripts/build-bindings.sh --only checks
         env:
           DEN_SPEC_DIR: ${{ github.workspace }}/den-spec-checkout
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   wasm:
     runs-on: ubuntu-latest

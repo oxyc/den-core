@@ -1828,7 +1828,7 @@ pub fn migration_construct_directory(input: &Value) -> Result<Value, String> {
         .strip_prefix(&[codec::COMPRESSED])
         .ok_or("invalid_directory_constructor")
         .and_then(|compressed| {
-            codec::inflate(compressed).map_err(|_| "invalid_directory_constructor".into())
+            codec::inflate(compressed).map_err(|_| "invalid_directory_constructor")
         })?;
     if inflated != canonical {
         return Err("invalid_directory_constructor".into());
@@ -2288,9 +2288,9 @@ fn backup_digest_input(input: &Map<String, Value>) -> Result<Value, String> {
     let authorization = object(&input["authorization"], "invalid_migration_digest")?;
     if !exact_members(source, &["generation", "base", "head", "rewrite"])
         || !source["head"].as_str().is_some_and(valid_digest_text)
-        || !source["rewrite"]
+        || source["rewrite"]
             .as_str()
-            .is_some_and(|value| !value.is_empty())
+            .is_none_or(|value| value.is_empty())
         || !exact_members(authorization, &["tokenHash", "memberHash"])
         || !authorization["tokenHash"]
             .as_str()
