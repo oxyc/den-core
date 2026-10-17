@@ -59,9 +59,10 @@ if want native; then
     cp Swift/Headers/DenCoreFFI.h Swift/Headers/module.modulemap "$scratch/headers/DenCoreFFI/"
     targets=(aarch64-apple-darwin aarch64-apple-tvos aarch64-apple-tvos-sim aarch64-apple-ios aarch64-apple-ios-sim)
     # Cargo 1.95 accepts only one --target per build. Build sequentially so each archive is produced reliably;
-    # isolate cross-build host-side proc macros from the preceding host/bindgen build while reusing them across
-    # Apple targets. Target-specific output directories still preserve every library for assembly below.
-    cargo_target="$scratch/cargo"
+    # Isolate cross-build host-side proc macros from the preceding host/bindgen build while reusing them across
+    # Apple targets and CI runs. Keeping this under target/ lets rust-cache preserve the five expensive build-std
+    # trees; the old random scratch path forced every run to rebuild them from nothing.
+    cargo_target="$root/target/native-cross"
     for target in "${targets[@]}"; do
         # The wrapper sets the deployment environment only for rustc invocations carrying this target. Host-side
         # proc macros therefore remain loadable on the packaging Mac. Rebuild the pinned standard library too:

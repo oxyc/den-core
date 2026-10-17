@@ -67,7 +67,9 @@ jobs:
       # Every Apple target's release build, across runs. Keyed on the toolchain and Cargo.lock by default.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: native
+          # build-bindings keeps the cross-target build-std trees under target/native-cross so this cache can
+          # restore them. Include the two scripts that define their deployment metadata in the cache identity.
+          shared-key: native-${{ hashFiles('scripts/build-bindings.sh', 'scripts/rustc-apple-deployment.sh') }}
       - run: bash scripts/build-bindings.sh --only native
       - run: swift build --package-path Swift
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
