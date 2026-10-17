@@ -102,7 +102,9 @@ fn every_refusal_holds_for_both_opens() {
     swapped.swap(0, 1);
     let mut extra = s.parts.clone();
     extra.push(s.parts[n - 1].clone());
-    let cases: Vec<(&str, [u8; 32], &str, &str, &str, Vec<String>)> = vec![
+    // (case, key, library, grant, set id, parts)
+    type Case<'a> = (&'a str, [u8; 32], &'a str, &'a str, &'a str, Vec<String>);
+    let cases: Vec<Case> = vec![
         (
             "a part of another publish",
             KEY,

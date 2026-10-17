@@ -764,7 +764,7 @@ pub fn check_queue(
         return Err(Reject::Replay);
     }
     let allowed = match own {
-        Queue::Library => grant.ops.iter().any(|op| *op == message.op),
+        Queue::Library => grant.ops.contains(&message.op),
         Queue::Tv => grant.play,
     };
     if !allowed {
@@ -1139,8 +1139,7 @@ impl Output {
         if need > self.0.capacity() {
             let capacity = need
                 .max(self.0.capacity() + self.0.capacity() / 2)
-                .max(1 << 16)
-                .min(MAX_PROJECTION_PLAINTEXT);
+                .clamp(1 << 16, MAX_PROJECTION_PLAINTEXT);
             let mut grown = Zeroizing::new(Vec::with_capacity(capacity));
             grown.extend_from_slice(&self.0);
             self.0 = grown;
