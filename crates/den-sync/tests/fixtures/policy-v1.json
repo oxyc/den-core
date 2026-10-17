@@ -4371,6 +4371,7 @@
    },
    "ok": {
     "state": "no_working_release",
+    "until": 3754000,
     "clock": {
      "lastProgress": 0.0,
      "progressAt": 1000000
@@ -6447,6 +6448,430 @@
     "order": [],
     "best": null,
     "pick": null
+   }
+  },
+  {
+   "name": "download_retry: an episode a season pass found nothing for searches again after about 15 minutes",
+   "request": {
+    "op": "download_retry",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "title": {
+       "value": {
+        "string": "{\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5600000
+   },
+   "ok": {
+    "due": false,
+    "at": 5819000,
+    "attempt": 0
+   }
+  },
+  {
+   "name": "download_retry: at its time the search is due",
+   "request": {
+    "op": "download_retry",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "title": {
+       "value": {
+        "string": "{\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5819000
+   },
+   "ok": {
+    "due": true,
+    "at": 5819000,
+    "attempt": 0
+   }
+  },
+  {
+   "name": "download_retry: each search that finds nothing waits twice as long",
+   "request": {
+    "op": "download_retry",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "title": {
+       "value": {
+        "string": "{\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "retries": {
+       "value": {
+        "int": 1
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5819000
+   },
+   "ok": {
+    "due": false,
+    "at": 7106000,
+    "attempt": 1
+   }
+  },
+  {
+   "name": "download_retry: the wait settles at about 6 hours and never gives up",
+   "request": {
+    "op": "download_retry",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "title": {
+       "value": {
+        "string": "{\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "retries": {
+       "value": {
+        "int": 7
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5819000
+   },
+   "ok": {
+    "due": false,
+    "at": 27896000,
+    "attempt": 7
+   }
+  },
+  {
+   "name": "download_retry: an episode that hasn't aired waits for its air date",
+   "request": {
+    "op": "download_retry",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "title": {
+       "value": {
+        "string": "{\"airDate\":900000000,\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5819000
+   },
+   "ok": {
+    "due": false,
+    "at": 900000000,
+    "attempt": 0
+   }
+  },
+  {
+   "name": "download_retry: a download with a release left is not searched again",
+   "request": {
+    "op": "download_retry",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.martinsson.s02e05.1080p.web-dlrip.viruseproject.mkv\",\"label\":\"Rebecka.Martinsson.S02E05.1080p.WEB-DLRip.ViruseProject.mkv\",\"sizeBytes\":8400000000,\"url\":\"/scout/p/t5\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5819000
+   },
+   "error": "not_exhausted"
+  },
+  {
+   "name": "download_status: a wanted episode with no release says when it searches next",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "title": {
+       "value": {
+        "string": "{\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5600000
+   },
+   "ok": {
+    "state": "no_working_release",
+    "until": 5819000,
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 5000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
+   }
+  },
+  {
+   "name": "download_status: a wanted episode that hasn't aired is awaiting its air date",
+   "request": {
+    "op": "download_status",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:5",
+     "values": {
+      "title": {
+       "value": {
+        "string": "{\"airDate\":900000000,\"episode\":5,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 5000000
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "exhausted": {
+       "value": {
+        "bool": true
+       },
+       "at": [
+        5000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "now": 5600000
+   },
+   "ok": {
+    "state": "awaiting_air",
+    "until": 900000000,
+    "clock": {
+     "lastProgress": 0.0,
+     "progressAt": 5000000
+    },
+    "stalled": false,
+    "reannounce": false,
+    "write_progress": false,
+    "report": false,
+    "announce": false
    }
   },
   {
