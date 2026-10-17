@@ -508,6 +508,73 @@
       "ok": "8d91158e1f4928a0df53257d027014537dd3f3c058c7dcb65b70483214fbe8e5"
     },
     {
+      "name": "the source digest answers under its neutral name across native and web bindings",
+      "request": {
+        "op": "profiles_snapshot_digest",
+        "kind": "source",
+        "input": {
+          "libraryId": "0123456789abcdef0123456789abcdef",
+          "generation": 7,
+          "base": 2,
+          "wireMin": 4,
+          "rows": [
+            {
+              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "seq": 2,
+              "v": "sealed-β"
+            },
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1,
+              "v": "sealed-a"
+            }
+          ]
+        }
+      },
+      "ok": "768265809617d97f163f9bfe9bc4be81855bfa4d24888f29877aa91e54c28ee8"
+    },
+    {
+      "name": "the profile-library head answers under its neutral name across native and web bindings",
+      "request": {
+        "op": "profiles_snapshot_digest",
+        "kind": "owner",
+        "input": {
+          "libraryId": "fedcba9876543210fedcba9876543210",
+          "base": 2,
+          "wireMin": 4,
+          "rows": [
+            {
+              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "seq": 2,
+              "v": "sealed-β"
+            },
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "seq": 1,
+              "v": "sealed-a"
+            }
+          ]
+        }
+      },
+      "ok": "8d91158e1f4928a0df53257d027014537dd3f3c058c7dcb65b70483214fbe8e5"
+    },
+    {
+      "name": "the neutral snapshot digest refuses the split-only staged kind",
+      "request": {
+        "op": "profiles_snapshot_digest",
+        "kind": "staged",
+        "input": {
+          "rows": [
+            {
+              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "v": "sealed-a"
+            }
+          ]
+        }
+      },
+      "error": "invalid_migration_digest_kind"
+    },
+    {
       "name": "legacy pg13 becomes numeric age 13",
       "request": {
         "op": "profile_policy_normalize_legacy",

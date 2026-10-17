@@ -2223,6 +2223,15 @@ pub fn migration_digest(kind: &str, input: &Value) -> Result<Value, String> {
         .collect::<String>()))
 }
 
+/// The two profiles-v1 §1.2 snapshot digests, `source` and `owner` (the profile-library head), which outlive the
+/// split; `migration_digest` answers them identically and alone keeps the split-only `backup` and `staged` kinds.
+pub fn snapshot_digest(kind: &str, input: &Value) -> Result<Value, String> {
+    match kind {
+        "source" | "owner" => migration_digest(kind, input),
+        _ => Err("invalid_migration_digest_kind".into()),
+    }
+}
+
 fn snapshot_digest_input(input: &Map<String, Value>, source: bool) -> Result<Value, String> {
     let members = if source {
         &["libraryId", "generation", "base", "wireMin", "rows"][..]

@@ -68,13 +68,15 @@ for (const case_ of profileFixture.migrationDirectoryConstructorCases) {
     for (const part of parts) parent = parent[part];
     delete parent[key];
   }
-  const request = {op: 'profiles_migration_construct_directory', input};
   // The JSON boundary uses JCS, where ECMAScript serializes negative zero as `0`; normalize the fixture through
   // the same JSON representation before comparing rather than relying on JavaScript's observable `-0` value.
   const expected = 'error' in case_ ? {version: 1, error: case_.error} :
     {version: 1, ok: JSON.parse(JSON.stringify(case_.expect))};
-  assert.deepEqual(JSON.parse(evaluate(JSON.stringify(request))), expected, case_.name);
-  count++;
+  // The neutral name answers exactly as the migration-named one.
+  for (const op of ['profiles_migration_construct_directory', 'profiles_construct_directory']) {
+    assert.deepEqual(JSON.parse(evaluate(JSON.stringify({op, input}))), expected, `${op}: ${case_.name}`);
+    count++;
+  }
 }
 for (const [evidence, expected] of [
   [null, profileFixture.migrationAuthorization.prepared],
