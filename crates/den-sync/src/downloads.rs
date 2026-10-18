@@ -466,6 +466,8 @@ struct Release {
     dolby_vision: bool,
     hdr: bool,
     software: bool,
+    /// The release file is an AVI, or names XviD or DivX: MPEG-4 Part 2 in practice, whatever `codec` says.
+    legacy_file: bool,
     three_d: bool,
     probed: bool,
     languages: Vec<String>,
@@ -493,6 +495,10 @@ impl Release {
             dolby_vision,
             hdr: value["hdr"].as_bool().unwrap_or(false) || dolby_vision,
             software: value["codec"].as_str().is_some_and(software_decode),
+            legacy_file: [&value["filename"], &value["identity"]]
+                .into_iter()
+                .filter_map(Value::as_str)
+                .any(legacy_file),
             three_d: value["threeD"].as_bool().unwrap_or(false),
             probed: value["probed"].as_bool().unwrap_or(false),
             languages: value["audioLanguages"]
@@ -526,15 +532,46 @@ impl Release {
         !wanted.is_empty() && !self.languages.iter().any(|l| wanted.contains(l))
     }
 
+    /// Smaller than `threshold`, a quarter of its siblings' median size.
+    fn runt(&self, threshold: Option<i64>) -> bool {
+        matches!((threshold, self.size), (Some(t), Some(s)) if s > 0 && s < t)
+    }
+
     /// The auto-pick tier, lowest first: a bitfield of demotions, each outweighing everything beneath it.
     fn tier(&self, runt: Option<i64>, original: Option<&str>, preferred: Option<&str>) -> i64 {
-        let is_runt = matches!((runt, self.size), (Some(t), Some(s)) if s > 0 && s < t);
         (if self.dead_swarm() { 32 } else { 0 })
             + (if self.cached == Some(false) { 16 } else { 0 })
             + (if self.dub(original, preferred) { 8 } else { 0 })
-            + (if is_runt { 4 } else { 0 })
+            + (if self.runt(runt) { 4 } else { 0 })
             + (if self.software { 2 } else { 0 })
             + (if self.three_d { 1 } else { 0 })
+    }
+
+    /// The download tier, lowest first, compared member by member. A download is kept, so picture quality comes
+    /// before readiness: a dead swarm, a dub, a runt, a release the TV decodes in software (or an AVI/XviD file) and
+    /// 3D sink first, then the resolution band (1080p, 720p, 2160p, then SD or none named), and only within a band
+    /// does a cached release come before one the debrid still has to fetch.
+    fn download_tier(
+        &self,
+        runt: Option<i64>,
+        original: Option<&str>,
+        preferred: Option<&str>,
+    ) -> (bool, bool, bool, bool, bool, i64, bool) {
+        let band = match self.resolution {
+            3 => 0,
+            2 => 1,
+            4 => 2,
+            _ => 3,
+        };
+        (
+            self.dead_swarm(),
+            self.dub(original, preferred),
+            self.runt(runt),
+            self.software || self.legacy_file,
+            self.three_d,
+            band,
+            self.cached != Some(true),
+        )
     }
 
     /// Picture quality alone, for choosing within one tier.
@@ -564,6 +601,16 @@ fn software_decode(tag: &str) -> bool {
             | "vc-1"
             | "wvc1"
     )
+}
+
+/// A release file name that is an AVI, or names XviD or DivX as a word. den-scout reads no codec from such a name,
+/// and an AVI is MPEG-4 Part 2 in practice, so the name is the only evidence a download pick has.
+fn legacy_file(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.ends_with(".avi")
+        || name
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|word| word == "xvid" || word == "divx")
 }
 
 const COMMON: [(&str, &str); 24] = [
@@ -652,13 +699,7 @@ fn best(
     original: Option<&str>,
     preferred: Option<&str>,
 ) -> Option<usize> {
-    let mut sizes: Vec<i64> = indices
-        .iter()
-        .filter_map(|&i| facts[i].size)
-        .filter(|&s| s > 0)
-        .collect();
-    sizes.sort_unstable();
-    let runt = (sizes.len() >= 3).then(|| sizes[sizes.len() / 2] / 4);
+    let runt = runt_threshold(facts, indices);
     let tier = |i: usize| facts[i].tier(runt, original, preferred);
     let lowest = indices.iter().map(|&i| tier(i)).min()?;
     let mut chosen: Option<usize> = None;
@@ -670,8 +711,19 @@ fn best(
     chosen
 }
 
-/// The release a download starts with (the TV's `DownloadQueue.pick`): `tried` left out, a cached release over any
-/// other, then `best` within whichever group is used.
+/// A quarter of the median size among `indices`, when at least three report one.
+fn runt_threshold(facts: &[Release], indices: &[usize]) -> Option<i64> {
+    let mut sizes: Vec<i64> = indices
+        .iter()
+        .filter_map(|&i| facts[i].size)
+        .filter(|&s| s > 0)
+        .collect();
+    sizes.sort_unstable();
+    (sizes.len() >= 3).then(|| sizes[sizes.len() / 2] / 4)
+}
+
+/// The release a download starts with: `tried` left out, then the lowest download tier, then the best picture, the
+/// first of equals. Play's `order` and `best` never read this.
 fn pick(
     facts: &[Release],
     indices: &[usize],
@@ -684,17 +736,13 @@ fn pick(
         .copied()
         .filter(|&i| !tried.contains(&facts[i].identity))
         .collect();
-    let cached: Vec<usize> = open
-        .iter()
-        .copied()
-        .filter(|&i| facts[i].cached == Some(true))
-        .collect();
-    best(
-        facts,
-        if cached.is_empty() { &open } else { &cached },
-        original,
-        preferred,
-    )
+    let runt = runt_threshold(facts, &open);
+    open.into_iter().min_by_key(|&i| {
+        (
+            facts[i].download_tier(runt, original, preferred),
+            -facts[i].picture(),
+        )
+    })
 }
 
 /// `rank_releases`: the play order (the tiers, the addon's order within a tier), the release the quality badge
@@ -707,13 +755,7 @@ pub fn rank_releases(
 ) -> Value {
     let facts: Vec<Release> = releases.iter().map(Release::from).collect();
     let all: Vec<usize> = (0..facts.len()).collect();
-    let mut sizes: Vec<i64> = facts
-        .iter()
-        .filter_map(|r| r.size)
-        .filter(|&s| s > 0)
-        .collect();
-    sizes.sort_unstable();
-    let runt = (sizes.len() >= 3).then(|| sizes[sizes.len() / 2] / 4);
+    let runt = runt_threshold(&facts, &all);
     let mut order = all.clone();
     order.sort_by_key(|&i| facts[i].tier(runt, original, preferred));
     json!({

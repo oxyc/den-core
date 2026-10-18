@@ -4793,7 +4793,7 @@
    }
   },
   {
-   "name": "download_next: a cached release comes before a better uncached one",
+   "name": "download_next: an uncached 1080p comes before a cached 720p",
    "request": {
     "op": "download_next",
     "row": {
@@ -4858,7 +4858,7 @@
    },
    "ok": {
     "decision": "next",
-    "index": 2,
+    "index": 1,
     "candidates": 3,
     "tried": [
      "rebecka.s02e03.2160p.amzn.web-dl.mkv"
@@ -5277,6 +5277,81 @@
     "candidates": 2,
     "tried": [
      "old.release"
+    ]
+   }
+  },
+  {
+   "name": "download_next: a stalled 1080p moves to the next 1080p, not to a cached SD AVI",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:1",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv\",\"label\":\"rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv\",\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":1,\"mediaId\":70742,\"mediaType\":\"tv\",\"originalLanguage\":\"sv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.swedish.pdtv.xvid-grp.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h265-grp.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 9
+     }
+    ],
+    "resolution": "streams",
+    "complete": true
+   },
+   "ok": {
+    "decision": "next",
+    "index": 2,
+    "candidates": 3,
+    "tried": [
+     "rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv"
     ]
    }
   },
@@ -6003,7 +6078,7 @@
      1
     ],
     "best": 1,
-    "pick": 1
+    "pick": 0
    }
   },
   {
@@ -6027,7 +6102,7 @@
      1
     ],
     "best": 1,
-    "pick": 1
+    "pick": 0
    }
   },
   {
@@ -6166,7 +6241,7 @@
      1
     ],
     "best": 0,
-    "pick": 0
+    "pick": 1
    }
   },
   {
@@ -6238,7 +6313,7 @@
      1
     ],
     "best": 1,
-    "pick": 1
+    "pick": 0
    }
   },
   {
@@ -6318,7 +6393,7 @@
    }
   },
   {
-   "name": "rank_releases: a download's first pick takes a cached release over a higher-ranked uncached one",
+   "name": "rank_releases: a download takes a cached 720p over an uncached 2160p",
    "request": {
     "op": "rank_releases",
     "releases": [
@@ -6373,7 +6448,7 @@
    }
   },
   {
-   "name": "rank_releases: with nothing cached a download's pick is the badge's release",
+   "name": "rank_releases: with nothing cached a download takes the 1080p, not the badge's 2160p",
    "request": {
     "op": "rank_releases",
     "releases": [
@@ -6404,7 +6479,7 @@
      2
     ],
     "best": 1,
-    "pick": 1
+    "pick": 0
    }
   },
   {
@@ -6427,6 +6502,192 @@
     ],
     "tried": [
      "rebecka.s02e03.2160p.amzn.web-dl.mkv"
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: Rebecka Martinsson S02E01 — a download takes an uncached 1080p over a cached SD AVI, which Play still takes",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.martinsson.s02e01.swedish.pdtv.xvid-grp.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h265-grp.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 9
+     }
+    ],
+    "original": "sv"
+   },
+   "ok": {
+    "order": [
+     0,
+     1,
+     2
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: a download never takes a 2160p while a 1080p is listed, even a cached 2160p",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": true,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: within the 1080p band a download takes the cached release over a better picture",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.1080p.web-dl.dv.h265-grp.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "dolbyVision": true,
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": true,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     1,
+     0
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: with nothing at 1080p or 720p a download takes the 2160p over a cached SD",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.480p.web.h264-grp.mkv",
+      "resolution": "480p",
+      "codec": "h264",
+      "cached": true,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: with only SD listed a download takes the SD the TV decodes over a cached XviD",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.dvdrip.xvid-grp.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 4
+     },
+     {
+      "identity": "rebecka.s02e03.480p.web.h264-grp.mkv",
+      "resolution": "480p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 4
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: an AVI file sinks for a download by its filename alone, at any resolution",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "5d41402abc4b2a76b9719d911017c592aa000001",
+      "filename": "Rebecka.Martinsson.S02E03.1080p.HDTV.avi",
+      "resolution": "1080p",
+      "cached": true,
+      "seeders": 20
+     },
+     {
+      "identity": "5d41402abc4b2a76b9719d911017c592aa000002",
+      "filename": "Rebecka.Martinsson.S02E03.720p.HDTV.x264.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 20
+     }
     ]
    },
    "ok": {
