@@ -6172,6 +6172,54 @@
    }
   },
   {
+   "name": "download_escalate: the caller's stall verdict is the stall rule for its release",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 98500000,
+      "stalled": false,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.0,
+       "bytesPerSecond": 0
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 98500000,
+    "started_at": 98500000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [],
+    "capped": false,
+    "decision": "wait",
+    "stage": 0,
+    "stage_at": 98500000
+   }
+  },
+  {
    "name": "download_cancel_safe: a release no other download names may be cancelled",
    "request": {
     "op": "download_cancel_safe",

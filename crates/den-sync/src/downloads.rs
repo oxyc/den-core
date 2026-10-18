@@ -933,12 +933,15 @@ impl Flight {
         let preparing = kind == "preparing";
         let slow =
             preparing && age >= JUDGE_AFTER && projected.is_some_and(|p| p > SLOW_ETA as f64);
-        let still = preparing && age >= STALL_LIMIT && progress == 0.0 && rate <= 0.0;
+        // The caller's `download_status` verdict, where it gave one, is the stall rule; a release it has no stall
+        // clock for (a race entry) is stalled after the stall time with no progress and no rate.
+        let unclocked = preparing && age >= STALL_LIMIT && progress == 0.0 && rate <= 0.0;
+        let stalled = value["stalled"].as_bool().unwrap_or(unclocked);
         Ok(Self {
             identity,
             finished: kind == "ready",
             failed: kind == "dead" || fetch == Some("failed"),
-            behind: value["stalled"].as_bool().unwrap_or(false) || slow || still,
+            behind: stalled || slow,
         })
     }
 }
