@@ -18,6 +18,10 @@ const PROGRESS_WRITE_EVERY: i64 = 5 * 60_000;
 const WATCHED_READY_TTL: i64 = 2 * 86_400_000;
 /// Live rows kept at most; the oldest past it are pruned.
 const LIVE_CAP: usize = 100;
+/// The first fresh search after a download runs out of releases; each further one waits twice as long.
+const RETRY_FIRST: i64 = 15 * 60_000;
+/// The longest wait between searches. A download is never given up on, so it settles at four searches a day.
+const RETRY_CEILING: i64 = 6 * 3_600_000;
 
 pub(crate) fn is_download(name: &str) -> bool {
     name.starts_with("download:")
@@ -109,9 +113,15 @@ impl<'a> Row<'a> {
         self.int("queuedAt")
     }
 
-    /// Live: queued and naming a release. A row that is only a tombstone is not.
+    /// Live: queued, and naming a release or still wanted without one (`exhausted`: a search found nothing to fetch
+    /// yet). A row that is only a tombstone is not.
     fn live(&self) -> bool {
-        self.queued_at().is_some() && self.object("release").is_some()
+        self.queued_at().is_some() && (self.object("release").is_some() || self.flag("exhausted"))
+    }
+
+    /// When the content airs, in ms, when the starter knew it: an episode announced but not yet out.
+    fn air_date(&self) -> Option<i64> {
+        self.object("title")?["airDate"].as_i64()
     }
 
     fn identity(&self) -> Option<String> {
@@ -169,6 +179,7 @@ pub fn download_status(
     clock: Option<&Value>,
     now: i64,
 ) -> Result<Value, String> {
+    let row_value = row;
     let row = Row::new(row)?;
     let queued = row.queued_at().ok_or("not_queued_row")?;
     let stored = row.clock();
@@ -183,7 +194,13 @@ pub fn download_status(
     let mut reannounce = false;
     let mut reported = false;
     let state = if row.flag("exhausted") {
-        json!("no_working_release")
+        let (at, _) = retry_at(&row, name_of(row_value));
+        out.insert("until".into(), json!(at));
+        if row.air_date().is_some_and(|air| air > now) {
+            json!("awaiting_air")
+        } else {
+            json!("no_working_release")
+        }
     } else {
         match answer {
             None => match row.int("resumeAt") {
@@ -317,6 +334,52 @@ pub fn download_next(
     let mut out = decision;
     out["tried"] = json!(tried);
     Ok(out)
+}
+
+// ---- download_retry ---------------------------------------------------------------------------------------------
+
+fn name_of(row: &Value) -> &str {
+    row["name"].as_str().unwrap_or_default()
+}
+
+/// FNV-1a, 64-bit: a stable spread for the jitter, the same on every client.
+fn fnv1a(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// When an exhausted row searches again, and which search that is (`retries`, 0 for the first). The wait is 15
+/// minutes doubled per search, capped at 6 hours, then spread to 80–120% by the row's name and the search number
+/// so a season that ran out together doesn't search together. It counts from the stamp `exhausted` was last
+/// written with (the row's `queuedAt` without one), and never falls before the content's `airDate`.
+fn retry_at(row: &Row, name: &str) -> (i64, i64) {
+    let attempt = row.int("retries").unwrap_or(0).max(0);
+    let base = row
+        .at("exhausted")
+        .map(|at| at.0)
+        .or(row.queued_at())
+        .unwrap_or(0);
+    let wait = RETRY_FIRST
+        .saturating_mul(1i64 << attempt.min(20))
+        .min(RETRY_CEILING);
+    let spread = 80 + (fnv1a(&format!("{name}:{attempt}")) % 41) as i64;
+    let at = base.saturating_add(wait / 100 * spread);
+    (row.air_date().map_or(at, |air| at.max(air)), attempt)
+}
+
+/// `download_retry`: whether an exhausted download (no release left, or wanted with none found yet) is due to search
+/// again, when, and which search it is. A download is never given up on: the holder resolves the content again
+/// when `due`, and writes `retries` as `attempt + 1` with whatever that search decides, so a search that finds
+/// nothing waits longer next time. A start (a fresh `removed` and every value after it) begins again at 0.
+pub fn download_retry(row: &Value, now: i64) -> Result<Value, String> {
+    let name = name_of(row);
+    let row = Row::new(row)?;
+    if !row.flag("exhausted") {
+        return Err("not_exhausted".into());
+    }
+    let (at, attempt) = retry_at(&row, name);
+    Ok(json!({"due": now >= at, "at": at, "attempt": attempt}))
 }
 
 // ---- download_cancel_safe ---------------------------------------------------------------------------------------
