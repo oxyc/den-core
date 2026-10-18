@@ -217,18 +217,16 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
         if answer["action"] == "none" || answer["episode"].is_null() {
             continue;
         }
-        series.push((
-            latest.map_or(i64::MIN, |l| l.0),
-            *id,
+        series.push(
             json!({"title": title_ref("tv", *id), "action": answer["action"],
                 "season": answer["episode"]["season"], "episode": answer["episode"]["episode"],
                 "fraction": answer["fraction"], "at": latest.map(|l| l.0)}),
-        ));
+        );
     }
-    // Series by their latest mark, a series known only by a flag last; then films in progress, latest first.
-    series.sort_by_key(|(at, id, _)| (std::cmp::Reverse(*at), *id));
-    newest_first(&mut films, "at");
-    let continuing: Vec<Value> = series.into_iter().map(|(_, _, e)| e).chain(films).collect();
+    // Series and films in one order, latest first: a series by its latest mark, a film by its resume. A series known
+    // only by a flag has no time and comes last.
+    let mut continuing: Vec<Value> = series.into_iter().chain(films).collect();
+    newest_first(&mut continuing, "at");
     newest_first(&mut watchlist, "addedAt");
     newest_first(&mut seen, "at");
     newest_first(&mut rated, "at");
