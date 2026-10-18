@@ -18,6 +18,25 @@ const PROGRESS_WRITE_EVERY: i64 = 5 * 60_000;
 const WATCHED_READY_TTL: i64 = 2 * 86_400_000;
 /// Live rows kept at most; the oldest past it are pruned.
 const LIVE_CAP: usize = 100;
+
+// Choosing and racing a download's releases (§17 *Choosing a download*, *Racing*).
+/// What one seeder is assumed to deliver before a fetch starts, bytes/s, and the most any swarm is assumed to.
+const PER_SEEDER_RATE: i64 = 100_000;
+const MAX_FETCH_RATE: i64 = 5_000_000;
+/// An uncached release expected within this is "soon", and among those the best picture wins.
+const FINISH_SOON: i64 = 3 * 3600;
+/// A fetch the debrid projects to need longer than this is slow, and the download races alternates.
+const SLOW_ETA: i64 = 12 * 3600;
+/// A fetch's projection is not judged before it has run this long: the first minutes' rate says little.
+const JUDGE_AFTER: i64 = 10 * 60_000;
+/// How many alternates the first escalation adds beside what is in flight.
+const RACE_WIDEN: usize = 2;
+/// With nothing finished this long after the first escalation, every remaining live release is added.
+const RACE_ALL_AFTER: i64 = 4 * 3_600_000;
+/// With nothing watchable this long after the download was asked for, a cached low-quality release is taken.
+const FALLBACK_AFTER: i64 = 24 * 3_600_000;
+/// After the debrid refused an add (its active-download limit), nothing more is added for this long.
+const CAP_RETRY: i64 = 15 * 60_000;
 /// The first fresh search after a download runs out of releases; each further one waits twice as long.
 const RETRY_FIRST: i64 = 15 * 60_000;
 /// The longest wait between searches. A download is never given up on, so it settles at four searches a day.
@@ -128,6 +147,16 @@ impl<'a> Row<'a> {
         self.object("release")?["identity"]
             .as_str()
             .map(str::to_owned)
+    }
+
+    /// The identities the row races beside its `release` (§17 `race`).
+    fn racing(&self) -> Vec<String> {
+        self.object("race")
+            .and_then(|race| race["entries"].as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|entry| entry["identity"].as_str().map(str::to_owned))
+            .collect()
     }
 
     /// The stall clock as the row holds it: `{lastProgress, progressAt}`, else nothing moved since `queuedAt`. A
@@ -388,9 +417,17 @@ pub fn download_retry(row: &Value, now: i64) -> Result<Value, String> {
 /// non-exhausted row names the same `release.identity`: one season pack is one torrent across every episode, and a
 /// sibling that reads "not started", "unreachable" or "ready" may still be fetching or playing it. Only a client sees
 /// the whole queue, so this is the one check a client makes before den-scout's own (§17 *Cancelling*).
-pub fn download_cancel_safe(row: &Value, rows: &[Value]) -> Result<Value, String> {
+///
+/// `identity` names one of the row's race releases instead of its `release`; a sibling's race releases protect an
+/// identity as its `release` does.
+pub fn download_cancel_safe(
+    row: &Value,
+    rows: &[Value],
+    identity: Option<&str>,
+) -> Result<Value, String> {
     let name = row["name"].as_str().unwrap_or_default();
-    let Some(identity) = Row::new(row)?.identity() else {
+    let own = Row::new(row)?;
+    let Some(identity) = identity.map(str::to_owned).or_else(|| own.identity()) else {
         return Ok(json!(true));
     };
     for other in rows {
@@ -400,7 +437,8 @@ pub fn download_cancel_safe(row: &Value, rows: &[Value]) -> Result<Value, String
         let sibling = Row::new(other)?;
         if sibling.live()
             && !sibling.flag("exhausted")
-            && sibling.identity().as_ref() == Some(&identity)
+            && (sibling.identity().as_ref() == Some(&identity)
+                || sibling.racing().contains(&identity))
         {
             return Ok(json!(false));
         }
@@ -547,31 +585,48 @@ impl Release {
             + (if self.three_d { 1 } else { 0 })
     }
 
-    /// The download tier, lowest first, compared member by member. A download is kept, so picture quality comes
-    /// before readiness: a dead swarm, a dub, a runt, a release the TV decodes in software (or an AVI/XviD file) and
-    /// 3D sink first, then the resolution band (1080p, 720p, 2160p, then SD or none named), and only within a band
-    /// does a cached release come before one the debrid still has to fetch.
-    fn download_tier(
-        &self,
-        runt: Option<i64>,
-        original: Option<&str>,
-        preferred: Option<&str>,
-    ) -> (bool, bool, bool, bool, bool, i64, bool) {
-        let band = match self.resolution {
-            3 => 0,
-            2 => 1,
-            4 => 2,
-            _ => 3,
-        };
-        (
-            self.dead_swarm(),
-            self.dub(original, preferred),
-            self.runt(runt),
-            self.software || self.legacy_file,
-            self.three_d,
-            band,
-            self.cached != Some(true),
-        )
+    /// Decoded in software on the Apple TV, or an AVI/XviD/DivX file: watchable only as a last resort.
+    fn legacy(&self) -> bool {
+        self.software || self.legacy_file
+    }
+
+    /// Worth keeping (§17 *Choosing a download*): 720p or better, decoded in hardware, not 3D, not a proven dub, not a
+    /// runt.
+    fn good(&self, runt: Option<i64>, original: Option<&str>, preferred: Option<&str>) -> bool {
+        self.resolution >= 2
+            && !self.legacy()
+            && !self.three_d
+            && !self.dub(original, preferred)
+            && !self.runt(runt)
+    }
+
+    /// The debrid holds it: it plays the moment it is added.
+    fn ready(&self) -> bool {
+        self.cached == Some(true)
+    }
+
+    /// How long an uncached release should take to arrive before it starts, in seconds: its size (or a typical size
+    /// for its resolution) at `PER_SEEDER_RATE` per seeder, up to `MAX_FETCH_RATE`. An unreported count reads as one
+    /// seeder; a count of 0 never arrives.
+    fn eta(&self) -> i64 {
+        if self.ready() {
+            return 0;
+        }
+        let size = self
+            .size
+            .filter(|&s| s > 0)
+            .unwrap_or(match self.resolution {
+                4 => 16_000_000_000,
+                3 => 4_000_000_000,
+                2 => 1_500_000_000,
+                _ => 700_000_000,
+            });
+        let rate = (self.seeders.unwrap_or(1) * PER_SEEDER_RATE).min(MAX_FETCH_RATE);
+        if rate <= 0 {
+            i64::MAX
+        } else {
+            size / rate
+        }
     }
 
     /// Picture quality alone, for choosing within one tier.
@@ -722,8 +777,110 @@ fn runt_threshold(facts: &[Release], indices: &[usize]) -> Option<i64> {
     (sizes.len() >= 3).then(|| sizes[sizes.len() / 2] / 4)
 }
 
-/// The release a download starts with: `tried` left out, then the lowest download tier, then the best picture, the
-/// first of equals. Play's `order` and `best` never read this.
+/// The releases a download chooses among, judged together: `indices` less `tried`, with the runt threshold over them.
+struct Choice<'a> {
+    facts: &'a [Release],
+    open: Vec<usize>,
+    runt: Option<i64>,
+    original: Option<&'a str>,
+    preferred: Option<&'a str>,
+}
+
+impl<'a> Choice<'a> {
+    fn new(
+        facts: &'a [Release],
+        indices: &[usize],
+        original: Option<&'a str>,
+        preferred: Option<&'a str>,
+        tried: &[String],
+    ) -> Self {
+        let open: Vec<usize> = indices
+            .iter()
+            .copied()
+            .filter(|&i| !tried.contains(&facts[i].identity))
+            .collect();
+        let runt = runt_threshold(facts, &open);
+        Self {
+            facts,
+            open,
+            runt,
+            original,
+            preferred,
+        }
+    }
+
+    fn good(&self, i: usize) -> bool {
+        self.facts[i].good(self.runt, self.original, self.preferred)
+    }
+
+    /// The best picture of `among`, the first of equals.
+    fn sharpest(&self, among: impl Iterator<Item = usize>) -> Option<usize> {
+        let mut chosen: Option<usize> = None;
+        for i in among {
+            if chosen.is_none_or(|c| self.facts[i].picture() > self.facts[c].picture()) {
+                chosen = Some(i);
+            }
+        }
+        chosen
+    }
+
+    /// A good release the debrid already holds: the best of them.
+    fn cached_good(&self) -> Option<usize> {
+        self.sharpest(
+            self.open
+                .iter()
+                .copied()
+                .filter(|&i| self.facts[i].ready() && self.good(i)),
+        )
+    }
+
+    /// The releases a download races, best first: live and uncached, only the good ones while any is good. Those
+    /// expected within `FINISH_SOON` come first, the best picture among them; the rest by how soon they should arrive.
+    fn race(&self, except: &[String]) -> Vec<usize> {
+        let pool: Vec<usize> = self
+            .open
+            .iter()
+            .copied()
+            .filter(|&i| {
+                let r = &self.facts[i];
+                !r.ready() && !r.dead_swarm() && !except.contains(&r.identity)
+            })
+            .collect();
+        let any_good = pool.iter().any(|&i| self.good(i));
+        let mut pool: Vec<usize> = pool
+            .into_iter()
+            .filter(|&i| !any_good || self.good(i))
+            .collect();
+        pool.sort_by_key(|&i| {
+            let r = &self.facts[i];
+            let eta = r.eta();
+            let soon = eta <= FINISH_SOON;
+            (!soon, if soon { -r.picture() } else { 0 }, eta)
+        });
+        pool
+    }
+
+    /// A release the debrid already holds that isn't good: hardware-decoded before software or AVI, then the best
+    /// picture. Taken only when nothing else can be waited for.
+    fn cached_fallback(&self) -> Option<usize> {
+        let cached: Vec<usize> = self
+            .open
+            .iter()
+            .copied()
+            .filter(|&i| self.facts[i].ready())
+            .collect();
+        let modern: Vec<usize> = cached
+            .iter()
+            .copied()
+            .filter(|&i| !self.facts[i].legacy())
+            .collect();
+        self.sharpest(if modern.is_empty() { cached } else { modern }.into_iter())
+    }
+}
+
+/// The release a download starts with (§17 *Choosing a download*): `tried` left out, a good cached release (the best
+/// of them), else the first of the race, else a cached release that isn't good, else the best picture left. Play's
+/// `order` and `best` never read this.
 fn pick(
     facts: &[Release],
     indices: &[usize],
@@ -731,18 +888,179 @@ fn pick(
     preferred: Option<&str>,
     tried: &[String],
 ) -> Option<usize> {
-    let open: Vec<usize> = indices
+    let choice = Choice::new(facts, indices, original, preferred, tried);
+    choice
+        .cached_good()
+        .or_else(|| choice.race(&[]).first().copied())
+        .or_else(|| choice.cached_fallback())
+        .or_else(|| choice.sharpest(choice.open.iter().copied()))
+}
+
+// ---- download_escalate ------------------------------------------------------------------------------------------
+
+/// One release being fetched for a download, with the debrid's latest word on it.
+struct Flight {
+    identity: String,
+    finished: bool,
+    failed: bool,
+    behind: bool,
+}
+
+impl Flight {
+    fn from(value: &Value, facts: &[Release], now: i64) -> Result<Self, String> {
+        let identity = value["identity"]
+            .as_str()
+            .ok_or("invalid_in_flight")?
+            .to_owned();
+        let since = value["since"].as_i64().ok_or("invalid_in_flight")?;
+        let answer = &value["answer"];
+        let kind = answer["kind"].as_str().unwrap_or("unknown");
+        let fetch = answer["fetch"]["state"].as_str();
+        let progress = answer["progress"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0);
+        let rate = answer["bytesPerSecond"].as_f64().unwrap_or(0.0);
+        let size = facts
+            .iter()
+            .find(|r| r.identity == identity)
+            .and_then(|r| r.size)
+            .filter(|&s| s > 0);
+        let projected = answer["etaSeconds"].as_f64().or_else(|| {
+            (rate > 0.0)
+                .then_some(size)
+                .flatten()
+                .map(|s| (1.0 - progress) * s as f64 / rate)
+        });
+        let age = now - since;
+        let preparing = kind == "preparing";
+        let slow =
+            preparing && age >= JUDGE_AFTER && projected.is_some_and(|p| p > SLOW_ETA as f64);
+        let still = preparing && age >= STALL_LIMIT && progress == 0.0 && rate <= 0.0;
+        Ok(Self {
+            identity,
+            finished: kind == "ready",
+            failed: kind == "dead" || fetch == Some("failed"),
+            behind: value["stalled"].as_bool().unwrap_or(false) || slow || still,
+        })
+    }
+}
+
+/// The race's state, as the row's `race` value (or a caller without rows) holds it.
+pub struct RaceState {
+    pub stage: i64,
+    pub stage_at: i64,
+    pub started_at: i64,
+    pub capped_at: Option<i64>,
+}
+
+/// `download_escalate`: one pass of a download's race (§17 *Racing*), from the releases listed now, the ones in flight
+/// with the debrid's latest answer for each, and the race's state. Pure and row-free, so den-hearth calls it too.
+///
+/// In order: a finished release wins (the best picture of those finished at once), and the rest are cancelled. A good
+/// release the debrid now holds wins the same way. With nothing watchable `FALLBACK_AFTER` after the download was asked
+/// for, or nothing left to race at all, a cached release that isn't good is taken. Otherwise failed releases are
+/// dropped (and count as tried), the race escalates — from one release to `1 + RACE_WIDEN` once everything in flight is
+/// behind (stalled, or projected past `SLOW_ETA`), to every live release `RACE_ALL_AFTER` later or once nothing is
+/// alive — and the best releases not yet in flight are added up to the stage's width, unless the debrid refused an add
+/// in the last `CAP_RETRY`.
+#[allow(clippy::too_many_arguments)]
+pub fn download_escalate(
+    releases: &[Value],
+    original: Option<&str>,
+    preferred: Option<&str>,
+    tried: &[String],
+    in_flight: &[Value],
+    state: &RaceState,
+    now: i64,
+) -> Result<Value, String> {
+    let facts: Vec<Release> = releases.iter().map(Release::from).collect();
+    let all: Vec<usize> = (0..facts.len()).collect();
+    let choice = Choice::new(&facts, &all, original, preferred, tried);
+    let flights = in_flight
         .iter()
-        .copied()
-        .filter(|&i| !tried.contains(&facts[i].identity))
+        .map(|v| Flight::from(v, &facts, now))
+        .collect::<Result<Vec<_>, _>>()?;
+    let flying: Vec<String> = flights.iter().map(|f| f.identity.clone()).collect();
+    let index_of = |identity: &str| facts.iter().position(|r| r.identity == identity);
+    let mut out = json!({
+        "stage": state.stage,
+        "stage_at": state.stage_at,
+        "add": [],
+        "cancel": [],
+        "capped": false,
+    });
+    let take = |out: &mut Value, identity: &str, reason: &str| {
+        out["decision"] = json!("take");
+        out["take"] = json!(identity);
+        out["reason"] = json!(reason);
+        out["cancel"] = json!(flying
+            .iter()
+            .filter(|f| f.as_str() != identity)
+            .collect::<Vec<_>>());
+    };
+
+    let finished: Vec<&Flight> = flights.iter().filter(|f| f.finished).collect();
+    if let Some(winner) = finished.iter().min_by_key(|f| match index_of(&f.identity) {
+        Some(i) => (!choice.good(i), -facts[i].picture()),
+        None => (true, 0),
+    }) {
+        take(&mut out, &winner.identity, "finished");
+        return Ok(out);
+    }
+    if let Some(i) = choice.cached_good() {
+        take(&mut out, &facts[i].identity, "cached");
+        return Ok(out);
+    }
+
+    let live: Vec<&Flight> = flights.iter().filter(|f| !f.failed).collect();
+    let failed: Vec<String> = flights
+        .iter()
+        .filter(|f| f.failed)
+        .map(|f| f.identity.clone())
         .collect();
-    let runt = runt_threshold(facts, &open);
-    open.into_iter().min_by_key(|&i| {
-        (
-            facts[i].download_tier(runt, original, preferred),
-            -facts[i].picture(),
-        )
-    })
+    let pool = choice.race(&flying);
+    let nothing_left = live.is_empty() && pool.is_empty();
+    if now - state.started_at >= FALLBACK_AFTER || nothing_left {
+        if let Some(i) = choice.cached_fallback() {
+            take(&mut out, &facts[i].identity, "fallback");
+            return Ok(out);
+        }
+    }
+
+    let mut stage = state.stage;
+    let mut stage_at = state.stage_at;
+    if stage == 0 && !live.is_empty() && live.iter().all(|f| f.behind) {
+        stage = 1;
+        stage_at = now;
+    } else if stage == 1 && (live.is_empty() || now - stage_at >= RACE_ALL_AFTER) {
+        stage = 2;
+        stage_at = now;
+    }
+    let width = match stage {
+        0 => 1,
+        1 => 1 + RACE_WIDEN,
+        _ => usize::MAX,
+    };
+    let capped = state.capped_at.is_some_and(|at| now - at < CAP_RETRY);
+    let add: Vec<&str> = if capped {
+        Vec::new()
+    } else {
+        pool.iter()
+            .take(width.saturating_sub(live.len()))
+            .map(|&i| facts[i].identity.as_str())
+            .collect()
+    };
+    out["decision"] = json!(if !add.is_empty() {
+        "add"
+    } else if live.is_empty() && !capped {
+        "exhausted"
+    } else {
+        "wait"
+    });
+    out["stage"] = json!(stage);
+    out["stage_at"] = json!(stage_at);
+    out["add"] = json!(add);
+    out["cancel"] = json!(failed);
+    out["capped"] = json!(capped);
+    Ok(out)
 }
 
 /// `rank_releases`: the play order (the tiers, the addon's order within a tier), the release the quality badge
