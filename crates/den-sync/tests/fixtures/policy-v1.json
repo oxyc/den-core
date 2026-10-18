@@ -5281,6 +5281,945 @@
    }
   },
   {
+   "name": "download_next: a stalled 1080p moves to the next 1080p, not to a cached SD AVI",
+   "request": {
+    "op": "download_next",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:1",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"cached\":false,\"identity\":\"rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv\",\"label\":\"rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv\",\"url\":\"/scout/p/t1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":1,\"mediaId\":70742,\"mediaType\":\"tv\",\"originalLanguage\":\"sv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "releases": [
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.swedish.pdtv.xvid-grp.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h265-grp.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 9
+     }
+    ],
+    "resolution": "streams",
+    "complete": true
+   },
+   "ok": {
+    "decision": "next",
+    "index": 2,
+    "candidates": 3,
+    "tried": [
+     "rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv"
+    ]
+   }
+  },
+  {
+   "name": "download_escalate: a good release the debrid now holds is taken, and what is in flight cancelled",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": true,
+      "seeders": 4,
+      "sizeBytes": 1200000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 98200000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.1,
+       "bytesPerSecond": 300000
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 98200000,
+    "started_at": 98200000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [
+     "rebecka.s02e01.1080p.a.mkv"
+    ],
+    "capped": false,
+    "decision": "take",
+    "reason": "cached",
+    "stage": 0,
+    "stage_at": 98200000,
+    "take": "rebecka.s02e01.720p.c.mkv"
+   }
+  },
+  {
+   "name": "download_escalate: the first release to finish is kept and the rest cancelled",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 4,
+      "sizeBytes": 1200000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 80000000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.3,
+       "etaSeconds": 50000
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "since": 90000000,
+      "answer": {
+       "kind": "ready"
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "since": 90000000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.6,
+       "etaSeconds": 2000
+      }
+     }
+    ],
+    "stage": 1,
+    "stage_at": 90000000,
+    "started_at": 80000000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [
+     "rebecka.s02e01.1080p.a.mkv",
+     "rebecka.s02e01.720p.c.mkv"
+    ],
+    "capped": false,
+    "decision": "take",
+    "reason": "finished",
+    "stage": 1,
+    "stage_at": 90000000,
+    "take": "rebecka.s02e01.1080p.b.mkv"
+   }
+  },
+  {
+   "name": "download_escalate: Rebecka S02E01 — a 1080p the debrid projects past 12 hours races the next two, and the cached AVI waits",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 4,
+      "sizeBytes": 1200000000
+     },
+     {
+      "identity": "rebecka.s02e01.2160p.d.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 2,
+      "sizeBytes": 14000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.e.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 1,
+      "sizeBytes": 5000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 98200000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.01,
+       "bytesPerSecond": 60000,
+       "etaSeconds": 50000
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 98200000,
+    "started_at": 98200000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [
+     "rebecka.s02e01.1080p.b.mkv",
+     "rebecka.s02e01.720p.c.mkv"
+    ],
+    "cancel": [],
+    "capped": false,
+    "decision": "add",
+    "stage": 1,
+    "stage_at": 100000000
+   }
+  },
+  {
+   "name": "download_escalate: a projection is not judged in a fetch's first ten minutes",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 99700000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.0,
+       "etaSeconds": 50000
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 99700000,
+    "started_at": 99700000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [],
+    "capped": false,
+    "decision": "wait",
+    "stage": 0,
+    "stage_at": 99700000
+   }
+  },
+  {
+   "name": "download_escalate: a stalled release escalates the same way",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 4,
+      "sizeBytes": 1200000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 97000000,
+      "stalled": true,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.4,
+       "bytesPerSecond": 0
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 97000000,
+    "started_at": 97000000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [
+     "rebecka.s02e01.1080p.b.mkv",
+     "rebecka.s02e01.720p.c.mkv"
+    ],
+    "cancel": [],
+    "capped": false,
+    "decision": "add",
+    "stage": 1,
+    "stage_at": 100000000
+   }
+  },
+  {
+   "name": "download_escalate: with nothing finished four hours on, every remaining release is added",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 4,
+      "sizeBytes": 1200000000
+     },
+     {
+      "identity": "rebecka.s02e01.2160p.d.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 2,
+      "sizeBytes": 14000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.e.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 1,
+      "sizeBytes": 5000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 84000000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.2,
+       "etaSeconds": 30000
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "since": 85600000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.1,
+       "etaSeconds": 30000
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "since": 85600000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.1,
+       "etaSeconds": 30000
+      }
+     }
+    ],
+    "stage": 1,
+    "stage_at": 85600000,
+    "started_at": 84000000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [
+     "rebecka.s02e01.1080p.e.mkv",
+     "rebecka.s02e01.2160p.d.mkv"
+    ],
+    "cancel": [],
+    "capped": false,
+    "decision": "add",
+    "stage": 2,
+    "stage_at": 100000000
+   }
+  },
+  {
+   "name": "download_escalate: after the debrid refused an add, nothing more is added for fifteen minutes",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 4,
+      "sizeBytes": 1200000000
+     },
+     {
+      "identity": "rebecka.s02e01.2160p.d.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 2,
+      "sizeBytes": 14000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.e.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 1,
+      "sizeBytes": 5000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 84000000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.2,
+       "etaSeconds": 30000
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "since": 85600000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.1,
+       "etaSeconds": 30000
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.720p.c.mkv",
+      "since": 85600000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.1,
+       "etaSeconds": 30000
+      }
+     }
+    ],
+    "stage": 2,
+    "stage_at": 99000000,
+    "started_at": 84000000,
+    "capped_at": 99700000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [],
+    "capped": true,
+    "decision": "wait",
+    "stage": 2,
+    "stage_at": 99000000
+   }
+  },
+  {
+   "name": "download_escalate: a day with nothing watchable takes the cached AVI",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 13600000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.02,
+       "etaSeconds": 400000
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "since": 20000000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.01,
+       "etaSeconds": 400000
+      }
+     }
+    ],
+    "stage": 2,
+    "stage_at": 40000000,
+    "started_at": 13600000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [
+     "rebecka.s02e01.1080p.a.mkv",
+     "rebecka.s02e01.1080p.b.mkv"
+    ],
+    "capped": false,
+    "decision": "take",
+    "reason": "fallback",
+    "stage": 2,
+    "stage_at": 40000000,
+    "take": "rebecka.s02e01.400p.avi"
+   }
+  },
+  {
+   "name": "download_escalate: an hour short of a day the cached AVI still waits",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 17200000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.02,
+       "etaSeconds": 400000
+      }
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "since": 20000000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.01,
+       "etaSeconds": 400000
+      }
+     }
+    ],
+    "stage": 2,
+    "stage_at": 40000000,
+    "started_at": 17200000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [],
+    "capped": false,
+    "decision": "wait",
+    "stage": 2,
+    "stage_at": 40000000
+   }
+  },
+  {
+   "name": "download_escalate: a failed release is dropped and the next one added",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 99000000,
+      "answer": {
+       "kind": "preparing",
+       "fetch": {
+        "state": "failed"
+       }
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 99000000,
+    "started_at": 99000000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [
+     "rebecka.s02e01.1080p.b.mkv"
+    ],
+    "cancel": [
+     "rebecka.s02e01.1080p.a.mkv"
+    ],
+    "capped": false,
+    "decision": "add",
+    "stage": 0,
+    "stage_at": 99000000
+   }
+  },
+  {
+   "name": "download_escalate: with nothing left to race, the cached AVI is taken at once",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.400p.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 0
+     }
+    ],
+    "in_flight": [],
+    "stage": 0,
+    "stage_at": 99000000,
+    "started_at": 99000000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [],
+    "capped": false,
+    "decision": "take",
+    "reason": "fallback",
+    "stage": 0,
+    "stage_at": 99000000,
+    "take": "rebecka.s02e01.400p.avi"
+   }
+  },
+  {
+   "name": "download_escalate: with nothing in flight, nothing to race and nothing cached, the download is exhausted",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 99000000,
+      "answer": {
+       "kind": "dead"
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 99000000,
+    "started_at": 99000000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [
+     "rebecka.s02e01.1080p.a.mkv"
+    ],
+    "capped": false,
+    "decision": "exhausted",
+    "stage": 0,
+    "stage_at": 99000000
+   }
+  },
+  {
+   "name": "download_escalate: in flight and well, it waits",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 97000000,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.5,
+       "etaSeconds": 3000
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 97000000,
+    "started_at": 97000000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [],
+    "capped": false,
+    "decision": "wait",
+    "stage": 0,
+    "stage_at": 97000000
+   }
+  },
+  {
+   "name": "download_escalate: the caller's stall verdict is the stall rule for its release",
+   "request": {
+    "op": "download_escalate",
+    "releases": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12,
+      "sizeBytes": 3000000000
+     },
+     {
+      "identity": "rebecka.s02e01.1080p.b.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 6,
+      "sizeBytes": 2000000000
+     }
+    ],
+    "in_flight": [
+     {
+      "identity": "rebecka.s02e01.1080p.a.mkv",
+      "since": 98500000,
+      "stalled": false,
+      "answer": {
+       "kind": "preparing",
+       "progress": 0.0,
+       "bytesPerSecond": 0
+      }
+     }
+    ],
+    "stage": 0,
+    "stage_at": 98500000,
+    "started_at": 98500000,
+    "now": 100000000
+   },
+   "ok": {
+    "add": [],
+    "cancel": [],
+    "capped": false,
+    "decision": "wait",
+    "stage": 0,
+    "stage_at": 98500000
+   }
+  },
+  {
    "name": "download_cancel_safe: a release no other download names may be cancelled",
    "request": {
     "op": "download_cancel_safe",
@@ -5637,6 +6576,204 @@
       }
      }
     ]
+   },
+   "ok": true
+  },
+  {
+   "name": "download_cancel_safe: a race release another episode races too is not cancelled",
+   "request": {
+    "op": "download_cancel_safe",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:1",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"identity\":\"rebecka.s02e01.1080p.b.mkv\",\"label\":\"rebecka.s02e01.1080p.b.mkv\",\"url\":\"/scout/p/b1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "race": {
+       "value": {
+        "string": "{\"entries\":[{\"identity\":\"rebecka.s02.1080p.pack.mkv\",\"label\":\"rebecka.s02.1080p.pack.mkv\",\"queuedAt\":1000000,\"url\":\"/scout/p/p1\"}],\"stage\":1,\"stageAt\":1000000,\"startedAt\":1000000}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":1,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:70742:2:2",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"identity\":\"rebecka.s02e02.1080p.a.mkv\",\"label\":\"rebecka.s02e02.1080p.a.mkv\",\"url\":\"/scout/p/a2\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "race": {
+        "value": {
+         "string": "{\"entries\":[{\"identity\":\"rebecka.s02.1080p.pack.mkv\",\"label\":\"rebecka.s02.1080p.pack.mkv\",\"queuedAt\":1000000,\"url\":\"/scout/p/p2\"}],\"stage\":1,\"stageAt\":1000000,\"startedAt\":1000000}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":2,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 1000000
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ],
+    "identity": "rebecka.s02.1080p.pack.mkv"
+   },
+   "ok": false
+  },
+  {
+   "name": "download_cancel_safe: a race release no other download names may be cancelled",
+   "request": {
+    "op": "download_cancel_safe",
+    "row": {
+     "kind": "set",
+     "schema": 2,
+     "name": "download:tv:70742:2:1",
+     "values": {
+      "release": {
+       "value": {
+        "string": "{\"identity\":\"rebecka.s02e01.1080p.b.mkv\",\"label\":\"rebecka.s02e01.1080p.b.mkv\",\"url\":\"/scout/p/b1\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "race": {
+       "value": {
+        "string": "{\"entries\":[{\"identity\":\"rebecka.s02e01.720p.c.mkv\",\"label\":\"rebecka.s02e01.720p.c.mkv\",\"queuedAt\":1000000,\"url\":\"/scout/p/c1\"}],\"stage\":1,\"stageAt\":1000000,\"startedAt\":1000000}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "title": {
+       "value": {
+        "string": "{\"episode\":1,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      },
+      "queuedAt": {
+       "value": {
+        "int": 1000000
+       },
+       "at": [
+        1000000,
+        0,
+        "a1b2c3d4e5f60718"
+       ]
+      }
+     }
+    },
+    "rows": [
+     {
+      "kind": "set",
+      "schema": 2,
+      "name": "download:tv:70742:2:2",
+      "values": {
+       "release": {
+        "value": {
+         "string": "{\"identity\":\"rebecka.s02e02.1080p.a.mkv\",\"label\":\"rebecka.s02e02.1080p.a.mkv\",\"url\":\"/scout/p/a2\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "title": {
+        "value": {
+         "string": "{\"episode\":2,\"mediaId\":70742,\"mediaType\":\"tv\",\"season\":2,\"title\":\"Rebecka Martinsson\"}"
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       },
+       "queuedAt": {
+        "value": {
+         "int": 1000000
+        },
+        "at": [
+         1000000,
+         0,
+         "a1b2c3d4e5f60718"
+        ]
+       }
+      }
+     }
+    ],
+    "identity": "rebecka.s02e01.720p.c.mkv"
    },
    "ok": true
   },
@@ -6003,7 +7140,7 @@
      1
     ],
     "best": 1,
-    "pick": 1
+    "pick": 0
    }
   },
   {
@@ -6027,7 +7164,7 @@
      1
     ],
     "best": 1,
-    "pick": 1
+    "pick": 0
    }
   },
   {
@@ -6166,7 +7303,7 @@
      1
     ],
     "best": 0,
-    "pick": 0
+    "pick": 1
    }
   },
   {
@@ -6433,6 +7570,202 @@
     "order": [
      0,
      1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: Rebecka Martinsson S02E01 — a download takes an uncached 1080p over a cached SD AVI, which Play still takes",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.martinsson.s02e01.swedish.pdtv.xvid-grp.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 3
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 12
+     },
+     {
+      "identity": "rebecka.martinsson.s02e01.1080p.web.h265-grp.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "cached": false,
+      "seeders": 9
+     }
+    ],
+    "original": "sv"
+   },
+   "ok": {
+    "order": [
+     0,
+     1,
+     2
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: a good cached release beats an uncached better picture",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.1080p.web-dl.dv.h265-grp.mkv",
+      "resolution": "1080p",
+      "codec": "hevc",
+      "dolbyVision": true,
+      "cached": false,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-grp.mkv",
+      "resolution": "1080p",
+      "codec": "h264",
+      "cached": true,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     1,
+     0
+    ],
+    "best": 1,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: with no good release cached, a well-seeded uncached 4K is raced before a cached SD",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.480p.web.h264-grp.mkv",
+      "resolution": "480p",
+      "codec": "h264",
+      "cached": true,
+      "seeders": 20
+     },
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: a cached XviD waits for the fallback while an uncached SD the TV decodes is raced",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.dvdrip.xvid-grp.avi",
+      "resolution": "480p",
+      "cached": true,
+      "seeders": 4
+     },
+     {
+      "identity": "rebecka.s02e03.480p.web.h264-grp.mkv",
+      "resolution": "480p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 4
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: an AVI file sinks for a download by its filename alone, at any resolution",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "5d41402abc4b2a76b9719d911017c592aa000001",
+      "filename": "Rebecka.Martinsson.S02E03.1080p.HDTV.avi",
+      "resolution": "1080p",
+      "cached": true,
+      "seeders": 20
+     },
+     {
+      "identity": "5d41402abc4b2a76b9719d911017c592aa000002",
+      "filename": "Rebecka.Martinsson.S02E03.720p.HDTV.x264.mkv",
+      "resolution": "720p",
+      "codec": "h264",
+      "cached": false,
+      "seeders": 20
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1
+    ],
+    "best": 0,
+    "pick": 1
+   }
+  },
+  {
+   "name": "rank_releases: with nothing cached, a download starts the release that should arrive soonest",
+   "request": {
+    "op": "rank_releases",
+    "releases": [
+     {
+      "identity": "rebecka.s02e03.2160p.amzn.web-dl.mkv",
+      "resolution": "2160p",
+      "cached": false,
+      "seeders": 1,
+      "sizeBytes": 20000000000
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-a.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 2,
+      "sizeBytes": 6000000000
+     },
+     {
+      "identity": "rebecka.s02e03.1080p.web.h264-b.mkv",
+      "resolution": "1080p",
+      "cached": false,
+      "seeders": 1,
+      "sizeBytes": 4000000000
+     }
+    ]
+   },
+   "ok": {
+    "order": [
+     0,
+     1,
+     2
     ],
     "best": 0,
     "pick": 1
@@ -8048,12 +9381,12 @@
      "b022f916e009de3d52089206f3695532",
      "fee3c42b428a8786487289d6d6ad544d"
     ],
-    "digest": "ecb81b80ff57a67cc0952b390069e4ad8f44244459565cd36804592847032d0e",
+    "digest": "658b6f0daea0168b630209d5f925bd41352c3cea2e072f014a22ac955f4e21ab",
     "publish": [
      {
       "grant": "d7047d7faa4c6f77e1919c132bb6bd9f",
       "parts": [
-       "TyxKmk_SE_RAdnVbatQIaAHn-gMtw2TV8M333w5s8MAr7g29zDk22OSMZErppD3sM9a9ROv6zb2Na9VEDklXx-7XS8v4hYr_bj6iRHMNcdskPdIEqa-Ggnlxs4zsBnteEWeEUPYwKEJrIyd9kExjSm42mw8Wfpkzk8vKblVJqyHaJnBb66dZ1EGa83CwNAPTSmnlTj20Tdz65kPpKzn-9JtzJSvdo-68EoyKEIidlAXfPvz9_plkHW0GcKc2C6TZxdjVkC1q-1l5IrQSIwgdIdQT6aA7vhaQK-LijiA70cOYYWWuWCfiIARkAM5q8uYIk646p6ZfueC9ohCNXeYGNn55uKcU_KR0FiPyyVG7Z6pQDr0uxOug4l8KYswHuAVjO5hOg9HgZ26LAtNTt5LGTICA3zcsG5uzhtMuOUSInyqWjGMnQOGCdAXdGrVLfxuyf2EEyF1KGKI0I62ziAqk-h5l_g"
+       "TyxKmk_SE_RAdnVbatWIaAHn_iNxR2TDkLa67pr70UiTNz1ObuvrF7fEMnIvhCmy_Zi-hper0hUAMY9cqbrhIKCC8A6iYvGTk0pqo5muaHK7BoEtyt8c9EkMX3qHjtdUPCcyKTE02tAg1kegdw84WQ4sPnn6zizMi_W6z2qnZBA--RbGB5jFXD7tuWgPNS5umxiErtoZO29bsp-kFuoEpaHmJRC_iVHqqbLkxuysCLKz4a6AswSUmO-r6uFO74JmoLTh-t6N5pKgiIoE2IT6zRhp7SoZyk6dxQ5se0a7MU4SjjraLW557sy3EnC10kk5fdG3vP3lu6ZB67biVwoMd1Daa35AFm5YDN8fN58eHOCRx6dC6YzFECNcqKHLg6R3XiDBkh0ILXbte6mkn8sAGzeh0tcquhYMT4ZZTQWWRCW4DWFCEf0aTDELCmEb0x6utwZNOSZIVMlCte_rEP3lQA"
       ],
       "set": "fa55fe2ae16c6d338a484d1b247bb6f6"
      }
@@ -8188,7 +9521,7 @@
       "kind": "title",
       "resume": {
        "at": [
-        1789971200000,
+        1789982000000,
         0,
         "a1b2c3d4e5f60718"
        ],
@@ -8198,7 +9531,7 @@
       },
       "status": {
        "at": [
-        1789971200000,
+        1789982000000,
         0,
         "a1b2c3d4e5f60718"
        ],

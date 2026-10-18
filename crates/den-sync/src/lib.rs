@@ -24,8 +24,8 @@ const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
 pub use downloads::{
-    download_cancel_safe, download_merge, download_next, download_prune, download_retry,
-    download_status, rank_releases,
+    download_cancel_safe, download_escalate, download_merge, download_next, download_prune,
+    download_retry, download_status, rank_releases, RaceState,
 };
 pub use episodes::episode_mark;
 pub use events::commands;
@@ -446,6 +446,29 @@ enum Request {
         row: Value,
         #[serde(default)]
         rows: Vec<Value>,
+        /// One of the row's race releases, instead of its `release`.
+        #[serde(default)]
+        identity: Option<String>,
+    },
+    /// Library v4 §17: one pass of a download's race — what to take, add and cancel. Row-free, so den-hearth calls it.
+    DownloadEscalate {
+        #[serde(default)]
+        releases: Vec<Value>,
+        #[serde(default)]
+        original: Option<String>,
+        #[serde(default)]
+        preferred: Option<String>,
+        #[serde(default)]
+        tried: Vec<String>,
+        #[serde(default)]
+        in_flight: Vec<Value>,
+        #[serde(default)]
+        stage: i64,
+        stage_at: i64,
+        started_at: i64,
+        #[serde(default)]
+        capped_at: Option<i64>,
+        now: i64,
     },
     /// Library v4 §17: the live download rows to tombstone now.
     DownloadPrune {
@@ -1063,7 +1086,36 @@ fn run(request: Request) -> Result<Value, String> {
             complete,
         } => download_next(&row, &releases, &resolution, complete),
         Request::DownloadRetry { row, now } => download_retry(&row, now),
-        Request::DownloadCancelSafe { row, rows } => download_cancel_safe(&row, &rows),
+        Request::DownloadCancelSafe {
+            row,
+            rows,
+            identity,
+        } => download_cancel_safe(&row, &rows, identity.as_deref()),
+        Request::DownloadEscalate {
+            releases,
+            original,
+            preferred,
+            tried,
+            in_flight,
+            stage,
+            stage_at,
+            started_at,
+            capped_at,
+            now,
+        } => download_escalate(
+            &releases,
+            original.as_deref(),
+            preferred.as_deref(),
+            &tried,
+            &in_flight,
+            &RaceState {
+                stage,
+                stage_at,
+                started_at,
+                capped_at,
+            },
+            now,
+        ),
         Request::DownloadPrune {
             rows,
             states,

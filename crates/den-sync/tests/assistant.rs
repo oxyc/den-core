@@ -1744,8 +1744,8 @@ fn library_documents() -> Vec<Value> {
             "status": {"value": "watched", "at": [0, 1, ""]},
             "reaction": {"value": "like", "at": [0, 1, ""]}}),
         json!({"format": 4, "kind": "title", "title": {"type": "movie", "id": 680},
-            "status": {"value": "inProgress", "at": st(t(8))},
-            "resume": {"value": 0.4, "at": st(t(8)), "viewing": 0, "seconds": 2000}}),
+            "status": {"value": "inProgress", "at": st(t(5))},
+            "resume": {"value": 0.4, "at": st(t(5)), "viewing": 0, "seconds": 2000}}),
         json!({"format": 4, "kind": "title", "title": {"type": "tv", "id": 1399},
             "status": {"value": "inProgress", "at": st(t(6))},
             "reaction": {"value": "dislike", "at": st(t(4))}}),
@@ -1777,12 +1777,14 @@ fn expected_lists() -> Value {
     let t = |h: u64| NOW - h * HOUR_;
     json!({
         "watchlist": [{"title": {"type": "movie", "id": 550}, "addedAt": t(10)}],
+        // One order for films and series, newest first: the film paused an hour after the series' last mark leads,
+        // and the series known only by an import has no time and comes last.
         "continue": [
+            {"title": {"type": "movie", "id": 680}, "action": "resume", "fraction": 0.4, "at": t(5)},
             {"title": {"type": "tv", "id": 1399}, "action": "resume", "season": 1, "episode": 2, "fraction": 0.5,
                 "at": t(6)},
             {"title": {"type": "tv", "id": 1396}, "action": "next", "season": 1, "episode": 2, "fraction": 0.0,
                 "at": null},
-            {"title": {"type": "movie", "id": 680}, "action": "resume", "fraction": 0.4, "at": t(8)},
         ],
         "seen": [
             {"title": {"type": "tv", "id": 1396}, "season": 1, "episode": 1, "at": t(5)},
