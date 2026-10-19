@@ -1,12 +1,15 @@
 //! §9 Tracker delivery on documents: targets from title and season documents, receipts from delivery documents,
 //! pending commands for `decide`, settling an entry, and the fit check of a delivery document write.
 
-use super::doc::{entry_order, identity, safe_u64, Identity, Kind, FORMAT};
+use super::doc::{entry_order, identity, safe_u64, sanitize, Identity, Kind, FORMAT};
 use super::jcs;
 use super::state;
 use crate::library_v3;
 use crate::wire::{stamp, Stamp};
+use serde::Serialize;
+use serde_json::value::RawValue;
 use serde_json::{json, Map, Value};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -43,15 +46,18 @@ pub struct Target {
 
 impl Target {
     pub fn built_from(&self) -> Value {
-        let mut out =
-            json!({"key": self.key, "kind": self.kind, "value": self.value, "stamp": self.stamp});
-        if let Some(p) = self.p {
-            out["p"] = json!(p);
+        json!(self.row())
+    }
+
+    fn row(&self) -> BuiltFrom {
+        BuiltFrom {
+            key: self.key.clone(),
+            kind: self.kind,
+            p: self.p,
+            stamp: self.stamp.clone(),
+            value: self.value.clone(),
+            watched_at: self.watched_at,
         }
-        if let Some(w) = self.watched_at {
-            out["watched_at"] = json!(w);
-        }
-        out
     }
 }
 
@@ -324,35 +330,95 @@ pub struct Account {
     pub removals_sent: Vec<i64>,
 }
 
+/// A document as the request spells it, or as the caller already holds it. It is read each time it is used, so a pass
+/// holds one document read at a time: read, a library's documents are many times the size of their text.
+#[derive(Clone, Copy)]
+pub enum Source<'a> {
+    Value(&'a Value),
+    Raw(&'a RawValue),
+}
+
+/// A document is no JSON value (a number out of range, a lone surrogate): the request is refused, as when it was
+/// parsed whole.
+const UNPARSED: &str = "invalid_request";
+
+impl<'a> Source<'a> {
+    fn value(self) -> Result<Cow<'a, Value>, ()> {
+        match self {
+            Source::Value(value) => Ok(Cow::Borrowed(value)),
+            Source::Raw(raw) => serde_json::from_str(raw.get())
+                .map(Cow::Owned)
+                .map_err(|_| ()),
+        }
+    }
+
+    /// The document's identity and whether its `format` is newer, checked in `checked`'s order. `Err(Err(_))` is a
+    /// source that is no JSON value; `Err(Ok(_))` a document this spec refuses.
+    fn find(self) -> Result<(Identity, bool), Result<String, String>> {
+        let value = self.value().map_err(|()| Err(UNPARSED.to_owned()))?;
+        let map = value.as_object().ok_or(Ok("invalid_document".to_owned()))?;
+        let id = identity(map).map_err(Ok)?;
+        match map.get("format").and_then(Value::as_u64) {
+            Some(FORMAT) => Ok((id, false)),
+            Some(f) if f > FORMAT => Ok((id, true)),
+            _ => Err(Ok("invalid_format".to_owned())),
+        }
+    }
+
+    /// A document `Snapshot::read` has found, read as a format-4 reader reads it: `checked`, or a newer one read for
+    /// the fields this spec defines, so a part a newer format reshaped cannot fail the pass (every target it holds or
+    /// names is held).
+    fn read(self) -> Map<String, Value> {
+        let Ok(Value::Object(mut doc)) = self.value().map(Cow::into_owned) else {
+            return Map::new();
+        };
+        let Ok(id) = identity(&doc) else {
+            return Map::new();
+        };
+        if doc.get("format").and_then(Value::as_u64) == Some(FORMAT) {
+            sanitize(&id, &mut doc, &mut Vec::new());
+            doc
+        } else {
+            super::read_newer(&id, &doc, &mut Vec::new())
+        }
+    }
+}
+
 /// The documents one pass reads, by name.
-pub struct Snapshot {
-    pub titles: BTreeMap<String, Map<String, Value>>,
-    pub seasons: BTreeMap<String, Map<String, Value>>,
-    pub delivery: BTreeMap<String, Map<String, Value>>,
+pub struct Snapshot<'a> {
+    pub titles: BTreeMap<String, Source<'a>>,
+    pub seasons: BTreeMap<String, Source<'a>>,
+    pub delivery: BTreeMap<String, Source<'a>>,
     /// Names of documents with a `format` above 4: every target they hold or name is held (§4 *Newer rows*).
     pub newer: BTreeSet<String>,
 }
 
-impl Snapshot {
-    pub fn read(documents: &[Value]) -> Result<Self, String> {
+impl<'a> Snapshot<'a> {
+    /// Every document checked and found by name. The outer error is a document that is no JSON value, which refuses
+    /// the request before any other check; the inner one the first document this spec refuses.
+    pub fn read(
+        documents: impl IntoIterator<Item = Source<'a>>,
+    ) -> Result<Result<Self, String>, String> {
         let mut out = Snapshot {
             titles: BTreeMap::new(),
             seasons: BTreeMap::new(),
             delivery: BTreeMap::new(),
             newer: BTreeSet::new(),
         };
+        let mut refused = None;
         for doc in documents {
-            let map = doc.as_object().ok_or("invalid_document")?;
-            let id = identity(map)?;
-            let doc = match super::checked(doc) {
-                Ok((_, doc)) => doc,
-                Err(e) if e == "newer_format" => {
-                    // Read as a format-4 reader reads it, so a part a newer format reshaped cannot fail the pass;
-                    // every target it holds or names is held below.
-                    out.newer.insert(id.name());
-                    super::read_newer(&id, map, &mut Vec::new())
+            let id = match doc.find() {
+                Ok((id, newer)) => {
+                    if newer {
+                        out.newer.insert(id.name());
+                    }
+                    id
                 }
-                Err(e) => return Err(e),
+                Err(Err(unparsed)) => return Err(unparsed),
+                Err(Ok(e)) => {
+                    refused.get_or_insert(e);
+                    continue;
+                }
             };
             let bucket = match id.kind {
                 Kind::Title => &mut out.titles,
@@ -361,7 +427,17 @@ impl Snapshot {
             };
             bucket.insert(id.name(), doc);
         }
-        Ok(out)
+        Ok(match refused {
+            Some(e) => Err(e),
+            None => Ok(out),
+        })
+    }
+
+    /// A delivery document's `entries`, if it has any.
+    fn entries(&self, name: &str) -> Option<Value> {
+        self.delivery
+            .get(name)
+            .and_then(|d| d.read().remove("entries"))
     }
 }
 
@@ -369,24 +445,20 @@ fn delivery_name(account: &Account, coordinate: &str) -> String {
     format!("dlv:{}:{}:{coordinate}", account.provider, account.account)
 }
 
-/// Every target of the snapshot with the receipt name and key it settles into.
-pub fn targets_for(
+/// Every target of the snapshot, in order, with the receipt entry it settles into, each passed to `out` as it is
+/// made: a library has tens of thousands, and a pass keeps only what it decides.
+pub fn for_each_target(
     snapshot: &Snapshot,
     account: &Account,
     now: i64,
-) -> Result<Vec<(Target, Option<Value>)>, String> {
-    let mut out = Vec::new();
-    let entry = |document: &str, key: &str| {
-        snapshot
-            .delivery
-            .get(document)
-            .and_then(|d| d.get("entries"))
-            .and_then(|e| e.get(key))
-            .cloned()
-    };
+    out: &mut dyn FnMut(Target, Option<Value>) -> Result<(), String>,
+) -> Result<(), String> {
     for (name, title) in &snapshot.titles {
+        let title = &title.read();
         let coordinate = name.trim_start_matches("title:");
         let document = delivery_name(account, coordinate);
+        let entries = snapshot.entries(&document);
+        let entry = |key: &str| entries.as_ref().and_then(|e| e.get(key)).cloned();
         let film = coordinate.starts_with("movie:");
         let deleted = is_deleted(title);
         let status = field(title, "status").map(|s| s["value"].clone());
@@ -408,29 +480,26 @@ pub fn targets_for(
             unwatch_first: None,
             title: name.clone(),
         };
-        out.push((
-            make("list", "list", json!(list), list_stamp),
-            entry(&document, "list"),
-        ));
+        out(make("list", "list", json!(list), list_stamp), entry("list"))?;
         if deleted {
             continue;
         }
         let reaction = field(title, "reaction")
             .map(|r| r["value"].clone())
             .unwrap_or(Value::Null);
-        out.push((
+        out(
             make("rating", "rating", reaction, field_stamp(title, "reaction")),
-            entry(&document, "rating"),
-        ));
+            entry("rating"),
+        )?;
         if film {
-            let current = entry(&document, "watch");
+            let current = entry("watch");
             let parsed = current.as_ref().and_then(receipt);
             let (value, stamp, p, watched_at, first) = film_value(title, now, parsed.as_ref())?;
             let mut target = make("watch", "film", value, stamp);
             target.p = Some(p);
             target.watched_at = watched_at;
             target.unwatch_first = first;
-            out.push((target, current));
+            out(target, current)?;
         }
     }
     for (name, season) in &snapshot.seasons {
@@ -442,12 +511,15 @@ pub fn targets_for(
                 .map(|(t, _)| t)
                 .unwrap_or(coordinate)
         );
-        let title = snapshot.titles.get(&title_name);
+        let title = snapshot.titles.get(&title_name).map(|t| t.read());
+        let title = title.as_ref();
         if title.is_some_and(is_deleted) {
             continue;
         }
+        let season = &season.read();
         let resets = state::resets(title, Some(season));
         let document = delivery_name(account, coordinate);
+        let entries = snapshot.entries(&document);
         for (key, register) in season
             .get("episodes")
             .and_then(Value::as_object)
@@ -457,11 +529,11 @@ pub fn targets_for(
             if !super::doc::valid_episode_key(key) {
                 continue;
             }
-            let current = entry(&document, key);
+            let current = entries.as_ref().and_then(|e| e.get(key)).cloned();
             let parsed = current.as_ref().and_then(receipt);
             let (value, stamp, p, watched_at, first) =
                 episode_value(register, &resets, now, parsed.as_ref())?;
-            out.push((
+            out(
                 Target {
                     document: document.clone(),
                     key: key.clone(),
@@ -474,49 +546,106 @@ pub fn targets_for(
                     title: title_name.clone(),
                 },
                 current,
-            ));
+            )?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// What a pass decides for one target.
 pub enum Decision {
-    Command(Value),
+    Command(PendingCommand),
     /// Settled with its current value, no command (§9 *Pending*, v3 §6 command table).
-    Settle(Value),
+    Settle(BuiltFrom),
     Nothing,
 }
 
-fn command(target: &Target, kind: &str, baseline: bool, receipt: Option<&Receipt>) -> Value {
-    let mut out = json!({
-        "kind": kind,
-        "key": target.key,
-        "document": target.document,
-        "title": target.title,
-        "at": target.stamp.0.max(0),
-        "current": true,
-        "baseline": baseline || target.stamp.0 == 0,
-        "episode": target.kind == "episode",
-        "added": kind == "list" && target.value == json!("in"),
-        "rating": if kind == "rating" { json!(rating_number(&target.value)) } else { Value::Null },
-        "built_from": target.built_from(),
-    });
-    if let Some(p) = target.p {
-        out["p"] = json!(p);
+/// A target's value as a command or settle is built from it (`built_from`). A pass can hold tens of thousands, so
+/// they are rows, written straight into the answer; the members are in the order a JSON object of them sorts in.
+#[derive(Serialize)]
+pub struct BuiltFrom {
+    key: String,
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    p: Option<i64>,
+    stamp: Stamp,
+    value: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    watched_at: Option<u64>,
+}
+
+/// A pending command for `decide` (§9 *Pending*), as a row like `BuiltFrom`.
+#[derive(Serialize)]
+pub struct PendingCommand {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acknowledged_rating: Option<u64>,
+    added: bool,
+    at: i64,
+    baseline: bool,
+    built_from: BuiltFrom,
+    current: bool,
+    document: String,
+    episode: bool,
+    key: String,
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    p: Option<i64>,
+    rating: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receipt_p: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    removals_held: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    step: Option<&'static str>,
+    title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unverified: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    watched_at: Option<u64>,
+}
+
+/// A target that settles with no command.
+#[derive(Serialize)]
+struct PendingSettle {
+    built_from: BuiltFrom,
+    document: String,
+    key: String,
+}
+
+fn command(
+    target: &Target,
+    kind: &'static str,
+    baseline: bool,
+    receipt: Option<&Receipt>,
+) -> PendingCommand {
+    PendingCommand {
+        acknowledged_rating: match receipt {
+            Some(Receipt::Field { remote, .. }) => *remote,
+            _ => None,
+        },
+        added: kind == "list" && target.value == json!("in"),
+        at: target.stamp.0.max(0),
+        baseline: baseline || target.stamp.0 == 0,
+        built_from: target.row(),
+        current: true,
+        document: target.document.clone(),
+        episode: target.kind == "episode",
+        key: target.key.clone(),
+        kind,
+        p: target.p,
+        rating: (kind == "rating")
+            .then(|| rating_number(&target.value))
+            .flatten(),
+        receipt_p: match receipt {
+            Some(Receipt::Watch { p, .. }) => Some(*p),
+            _ => None,
+        },
+        removals_held: None,
+        step: None,
+        title: target.title.clone(),
+        unverified: None,
+        watched_at: target.watched_at,
     }
-    if let Some(w) = target.watched_at {
-        out["watched_at"] = json!(w);
-    }
-    match receipt {
-        Some(Receipt::Watch { p, .. }) => out["receipt_p"] = json!(p),
-        Some(Receipt::Field {
-            remote: Some(remote),
-            ..
-        }) => out["acknowledged_rating"] = json!(remote),
-        _ => {}
-    }
-    out
 }
 
 fn regression(target: &Target, receipt: &Receipt) -> bool {
@@ -597,12 +726,12 @@ fn decide_target(target: &Target, entry: Option<&Value>, account: &Account, now:
             // Only `in → gone` is a list removal (v3 §6 command table): with no receipt, `gone` settles silently.
             return match change_command(target, None) {
                 Some(kind) => Decision::Command(command(target, kind, false, None)),
-                None => Decision::Settle(target.built_from()),
+                None => Decision::Settle(target.row()),
             };
         }
         return match change_command(target, None).filter(|_| additive(target)) {
             Some(kind) => Decision::Command(command(target, kind, true, None)),
-            None => Decision::Settle(target.built_from()),
+            None => Decision::Settle(target.row()),
         };
     };
     if let Receipt::Owed { value, .. } = &r {
@@ -610,7 +739,7 @@ fn decide_target(target: &Target, entry: Option<&Value>, account: &Account, now:
             // Owed as baseline: an additive value is decided against the snapshot; any other settles as it is.
             return match change_command(target, None).filter(|_| additive(target)) {
                 Some(kind) => Decision::Command(command(target, kind, true, None)),
-                None => Decision::Settle(target.built_from()),
+                None => Decision::Settle(target.row()),
             };
         }
         let as_receipt = Receipt::Field {
@@ -625,10 +754,10 @@ fn decide_target(target: &Target, entry: Option<&Value>, account: &Account, now:
             return match change_command(target, Some(&r)) {
                 Some(kind) if !watch_none => {
                     let mut cmd = command(target, kind, true, Some(&r));
-                    cmd["unverified"] = json!(true);
+                    cmd.unverified = Some(true);
                     Decision::Command(cmd)
                 }
-                _ => Decision::Settle(target.built_from()),
+                _ => Decision::Settle(target.row()),
             };
         }
         return Decision::Nothing;
@@ -657,7 +786,7 @@ fn decide_against(target: &Target, r: &Receipt, unverified: bool) -> Decision {
         first.watched_at = None;
         first.unwatch_first = None;
         let mut cmd = command(&first, "unwatched", false, Some(r));
-        cmd["step"] = json!("unwatch_then_remark");
+        cmd.step = Some("unwatch_then_remark");
         return Decision::Command(cmd);
     }
     // Timeless values against a receipt other than `n`, `out` or `null` are decided as `baseline` (v3 §6).
@@ -671,11 +800,11 @@ fn decide_against(target: &Target, r: &Receipt, unverified: bool) -> Decision {
         Some(kind) => {
             let mut cmd = command(target, kind, baseline, Some(r));
             if unverified {
-                cmd["unverified"] = json!(true);
+                cmd.unverified = Some(true);
             }
             Decision::Command(cmd)
         }
-        None => Decision::Settle(target.built_from()),
+        None => Decision::Settle(target.row()),
     }
 }
 
@@ -711,17 +840,49 @@ pub fn account(deliver: &Value) -> Result<Account, String> {
 /// `removals_sent` is required, so a binding that forgets it fails instead of turning the 120 s rule off. A send
 /// time after `now` is not counted, so the client passes a send it still counts as recent on another clock (after its
 /// wall clock stepped back) as `now`.
-pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result<Value, String> {
+pub fn pending_targets<'a>(
+    documents: impl IntoIterator<Item = Source<'a>>,
+    deliver: &Value,
+    now: i64,
+) -> Result<Value, String> {
+    Ok(json!(pending(documents, deliver, now)?))
+}
+
+/// `pending_targets`'s answer, as rows: a pass over a library that has not been delivered holds a command or a
+/// settle for nearly every title and episode, which as `Value`s would be many times the answer's size.
+#[derive(Serialize)]
+pub struct Pending {
+    approval: Option<Stamp>,
+    commands: Vec<PendingCommand>,
+    greatest_epoch: u64,
+    held: Vec<Value>,
+    removals: Option<Removals>,
+    settle: Vec<PendingSettle>,
+    unverified: BTreeSet<u64>,
+}
+
+#[derive(Serialize)]
+struct Removals {
+    held: Stamp,
+}
+
+pub fn pending<'a>(
+    documents: impl IntoIterator<Item = Source<'a>>,
+    deliver: &Value,
+    now: i64,
+) -> Result<Pending, String> {
+    let snapshot = Snapshot::read(documents)?;
     if !deliver["removals_sent"].is_array() {
         return Err("invalid_account".into());
     }
     let mut account = account(deliver)?;
-    let snapshot = Snapshot::read(documents)?;
-    account.unverified = unverified(&snapshot, &account);
+    let snapshot = snapshot?;
+    let (unverified, greatest_epoch) = receipt_epochs(&snapshot, &account);
+    account.unverified = unverified;
     let mut commands = Vec::new();
     let mut settles = Vec::new();
     let mut held = Vec::new();
-    for (target, entry) in targets_for(&snapshot, &account, now)? {
+    for_each_target(&snapshot, &account, now, &mut |target, entry| {
         let season_doc = target
             .document
             .split(':')
@@ -741,15 +902,19 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
             held.push(
                 json!({"document": target.document, "key": target.key, "reason": "newer_format"}),
             );
-            continue;
+            return Ok(());
         }
         match decide_target(&target, entry.as_ref(), &account, now) {
             Decision::Command(cmd) => commands.push(cmd),
-            Decision::Settle(built) => settles
-                .push(json!({"document": target.document, "key": target.key, "built_from": built})),
+            Decision::Settle(built_from) => settles.push(PendingSettle {
+                built_from,
+                document: target.document,
+                key: target.key,
+            }),
             Decision::Nothing => {}
         }
-    }
+        Ok(())
+    })?;
     // The removals latch (v3 §6 *Accounts*, v4 §9). List removals stamped after the approval are counted. The latch
     // is closed while its `held` stamp is later than its approval, or its value is malformed (a safety latch fails
     // closed). It closes when the counted removals pending now and the list removals sent since the approval in the
@@ -763,11 +928,8 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
             None => (None, None, true),
         },
     };
-    let removal_stamp = |c: &Value| {
-        (c["kind"] == "list" && c["added"] == false)
-            .then(|| stamp(&c["built_from"]["stamp"]).ok())
-            .flatten()
-    };
+    let removal_stamp =
+        |c: &PendingCommand| (c.kind == "list" && !c.added).then(|| c.built_from.stamp.clone());
     let is_counted = |s: &Stamp| approved.as_ref().is_none_or(|a| s > a);
     let removals: Vec<Stamp> = commands.iter().filter_map(removal_stamp).collect();
     let counted: Vec<&Stamp> = removals.iter().filter(|s| is_counted(s)).collect();
@@ -788,7 +950,7 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
     for c in commands.iter_mut() {
         let held = removal_stamp(c).is_some_and(|s| (closed && is_counted(&s)) || closes_by_rate);
         if held {
-            c["removals_held"] = json!(true);
+            c.removals_held = Some(true);
         }
     }
     // What the holder writes when the latch closes now: `held` at the latest removal it holds, so an approval of
@@ -810,7 +972,7 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
     // itself held, so listed: nothing stamped after the list was shown is approved unseen.
     let approval = commands
         .iter()
-        .filter(|c| c["removals_held"] == json!(true))
+        .filter(|c| c.removals_held == Some(true))
         .filter_map(removal_stamp)
         .max()
         .map(|latest| {
@@ -820,43 +982,26 @@ pub fn pending_targets(documents: &[Value], deliver: &Value, now: i64) -> Result
                 .fold(latest, std::cmp::max)
         });
     commands.sort_by(|a, b| {
-        a["at"]
-            .as_i64()
-            .cmp(&b["at"].as_i64())
-            .then(a["document"].as_str().cmp(&b["document"].as_str()))
-            .then(a["key"].as_str().cmp(&b["key"].as_str()))
+        a.at.cmp(&b.at)
+            .then(a.document.cmp(&b.document))
+            .then(a.key.cmp(&b.key))
     });
-    // The epoch rule of a lease take reads this account's settle epochs only (§9).
-    let own = delivery_name(&account, "");
-    let greatest_epoch = snapshot
-        .delivery
-        .iter()
-        .filter(|(name, _)| name.starts_with(&own))
-        .flat_map(|(_, d)| {
-            d.get("entries")
-                .and_then(Value::as_object)
-                .into_iter()
-                .flatten()
-        })
-        .filter_map(|(_, e)| entry_order(e))
-        .map(|(epoch, _, _)| epoch)
-        .max()
-        .unwrap_or(0);
-    Ok(json!({
-        "commands": commands,
-        "settle": settles,
-        "held": held,
-        "removals": closing_at.map_or(Value::Null, |held| json!({"held": held})),
-        "approval": approval.map_or(Value::Null, |a| json!(a)),
-        "greatest_epoch": greatest_epoch,
-        "unverified": account.unverified,
-    }))
+    Ok(Pending {
+        approval,
+        commands,
+        greatest_epoch,
+        held,
+        removals: closing_at.map(|held| Removals { held }),
+        settle: settles,
+        unverified: account.unverified,
+    })
 }
 
 /// The account's unverified epochs after this read (v3 §6 *Unverified receipts*): those `set:deliver` lists, and every
 /// settle epoch ≥ 2 its receipts hold from two different devices, less any epoch no receipt holds any more. The
-/// holder writes the result back to `unverified` when it differs.
-fn unverified(snapshot: &Snapshot, account: &Account) -> BTreeSet<u64> {
+/// holder writes the result back to `unverified` when it differs. Also the greatest settle epoch they hold, which is
+/// all the epoch rule of a lease take reads (§9).
+fn receipt_epochs(snapshot: &Snapshot, account: &Account) -> (BTreeSet<u64>, u64) {
     let own = delivery_name(account, "");
     // Every entry counts, intents and owed `b` entries included: any of them settled under an epoch says who held it.
     let mut devices: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
@@ -866,6 +1011,7 @@ fn unverified(snapshot: &Snapshot, account: &Account) -> BTreeSet<u64> {
         .filter(|(name, _)| name.starts_with(&own))
     {
         for entry in document
+            .read()
             .get("entries")
             .and_then(Value::as_object)
             .into_iter()
@@ -880,13 +1026,15 @@ fn unverified(snapshot: &Snapshot, account: &Account) -> BTreeSet<u64> {
         .iter()
         .filter(|(epoch, by)| **epoch >= 2 && by.len() > 1)
         .map(|(epoch, _)| *epoch);
-    account
+    let unverified = account
         .unverified
         .iter()
         .copied()
         .chain(shared)
         .filter(|epoch| *epoch >= 2 && devices.contains_key(epoch))
-        .collect()
+        .collect();
+    let greatest = devices.keys().next_back().copied().unwrap_or(0);
+    (unverified, greatest)
 }
 
 /// Sending elements every settle and intent of a target keeps: `[-1, I]` and `[p, null, T]` (v3 §6 *Intent*).

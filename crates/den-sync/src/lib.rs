@@ -169,12 +169,6 @@ enum Request {
         since: Stamp,
         now: i64,
     },
-    /// Library v4 §9: the documents, delivery documents included, and the account's `set:deliver` facts.
-    PendingTargetsV4 {
-        documents: Vec<Value>,
-        deliver: Value,
-        now: i64,
-    },
     Settle {
         outcome: Value,
         built_from: Value,
@@ -708,6 +702,56 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
     )
 }
 
+/// Library v4 §9 `pending_targets_v4`: the documents, delivery documents included, and the account's `set:deliver`
+/// facts. Read apart from `Request` for the reason `ProjectionRequest` is: Den Web sends the whole library, and each
+/// document is parsed only when the pass reads it (`delivery::Source`).
+#[derive(Deserialize)]
+struct PendingTargetsRequest<'a> {
+    #[serde(borrow)]
+    documents: Vec<&'a serde_json::value::RawValue>,
+    deliver: Value,
+    now: i64,
+}
+
+/// `pending_targets_v4`'s whole answer, enveloped, when `input` names it, else `None`. Its rows are written straight
+/// into the answer.
+fn pending_targets_op(input: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Op<'a> {
+        #[serde(borrow)]
+        op: std::borrow::Cow<'a, str>,
+    }
+    #[derive(serde::Serialize)]
+    struct Answer {
+        ok: library_v4::delivery::Pending,
+        version: u8,
+    }
+    if bounded(input).is_err() || !input.contains("pending_targets_v4") {
+        return None;
+    }
+    if serde_json::from_str::<Op>(input).ok()?.op != "pending_targets_v4" {
+        return None;
+    }
+    let pending = serde_json::from_str::<PendingTargetsRequest>(input)
+        .map_err(|_| "invalid_request".to_string())
+        .and_then(|request| {
+            library_v4::delivery::pending(
+                request
+                    .documents
+                    .iter()
+                    .map(|d| library_v4::delivery::Source::Raw(d)),
+                &request.deliver,
+                request.now,
+            )
+        });
+    Some(match pending {
+        Ok(ok) => {
+            serde_json::to_string(&Answer { ok, version: 1 }).expect("an answer always serializes")
+        }
+        Err(error) => envelope(Err(error)),
+    })
+}
+
 fn yes() -> bool {
     true
 }
@@ -717,6 +761,9 @@ fn yes() -> bool {
 /// Every op, the assistant's included: the native binding's one entry. The web splits it in two, `evaluate_core` and
 /// `evaluate_assistant`, so the assistant crypto loads only where it is used.
 pub fn evaluate(input: &str) -> String {
+    if let Some(answer) = pending_targets_op(input) {
+        return answer;
+    }
     envelope(bounded(input).and_then(|()| {
         if let Some(answer) = projection_op(input) {
             return answer;
@@ -734,6 +781,9 @@ pub fn evaluate(input: &str) -> String {
 /// Every op but the assistant's: the web's main module. An assistant op is `assistant_module`, so a caller that sent
 /// it to the wrong module says so rather than `invalid_request`.
 pub fn evaluate_core(input: &str) -> String {
+    if let Some(answer) = pending_targets_op(input) {
+        return answer;
+    }
     envelope(
         bounded(input).and_then(|()| match tagged::<Request>(input) {
             Ok(request) => run(request),
@@ -1061,11 +1111,6 @@ fn run(request: Request) -> Result<Value, String> {
             since,
             now,
         } => library_v3::pending_targets(&targets, &receipts, &since, now),
-        Request::PendingTargetsV4 {
-            documents,
-            deliver,
-            now,
-        } => library_v4::delivery::pending_targets(&documents, &deliver, now),
         Request::Settle {
             outcome,
             built_from,
