@@ -603,7 +603,8 @@ pub fn projection(
     let skipped = lists.skipped;
     let counts = json!({"watchlist": lists.watchlist.len(), "continue": lists.continuing.len(),
         "seen": lists.seen.len(), "rated": lists.rated.len()});
-    let (content, digest) = crate::projection::content(lists, crate::projection::hide(lib.prefs));
+    let (mut content, digest) =
+        crate::projection::content(lists, crate::projection::hide(lib.prefs));
     let mut publish = Vec::new();
     let mut delete = Vec::new();
     for (id, value) in settings(read_row, READ_ROW)?.into_iter().flatten() {
@@ -613,10 +614,10 @@ pub fn projection(
             delete.push(json!(id));
             continue;
         };
-        let view = crate::projection::view(lib, id, &content, now);
+        crate::projection::view(lib, id, &mut content, now);
         let sealed = den_assistant::seal_projection(
             &key,
-            &view,
+            &content,
             &crate::projection::random_for(&random, id),
         )
         .map_err(|_| "too_large")?;

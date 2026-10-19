@@ -1719,6 +1719,39 @@ fn a_large_library_projects_whole() {
     .is_err());
 }
 
+/// A document that is no JSON value (a number out of range, a lone surrogate) refuses the whole projection request,
+/// before anything else in it is checked, though the documents are parsed one at a time; one that is a value but no
+/// document is skipped.
+#[test]
+fn a_document_that_is_no_json_value_refuses_the_request() {
+    let request = |library: &str, documents: &str| {
+        format!(
+            r#"{{"op":"assistant_projection","library":"{library}","head":1,"random":"{}","now":{NOW},"documents":{documents}}}"#,
+            "22".repeat(32)
+        )
+    };
+    let title = r#"{"format":4,"kind":"title","title":{"type":"movie","id":550}"#;
+    for documents in [
+        r#"[{"n":1e400}]"#.to_owned(),
+        r#"["\ud800"]"#.to_owned(),
+        format!(r#"[{title},"n":"\udc00x"}}]"#),
+    ] {
+        for library in [LIBRARY, "not a library"] {
+            let input = request(library, &documents);
+            for answer in [evaluate(&input), den_sync::evaluate_assistant(&input)] {
+                assert_eq!(
+                    serde_json::from_str::<Value>(&answer).unwrap(),
+                    json!({"version": 1, "error": "invalid_request"}),
+                    "{input}"
+                );
+            }
+        }
+    }
+    let answer: Value =
+        serde_json::from_str(&evaluate(&request(LIBRARY, r#"[1, "a", null, {}]"#))).unwrap();
+    assert_eq!(answer["ok"]["skipped"], 4, "{answer}");
+}
+
 fn st(t: u64) -> Value {
     json!([t, 0, D])
 }
