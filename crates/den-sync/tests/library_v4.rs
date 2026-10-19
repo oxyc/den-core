@@ -2977,6 +2977,45 @@ fn malformed_input_is_an_error_not_a_panic() {
     }
 }
 
+/// `pending_targets_v4` reads each document only when its pass does, and answers as when it parsed the request whole:
+/// a document that is no JSON value refuses the request before anything else is checked, wherever it is, and one this
+/// spec refuses is reported after the account is checked.
+#[test]
+fn a_pending_pass_refuses_as_a_whole_request_did() {
+    let request = |documents: &str, deliver: &Value| {
+        format!(
+            r#"{{"op":"pending_targets_v4","now":1,"deliver":{deliver},"documents":{documents}}}"#
+        )
+    };
+    let title = r#"{"format":4,"kind":"title","title":{"type":"movie","id":550}}"#;
+    let missing = json!({"provider": "simkl", "account": "4812736", "since": st(1)});
+    for (documents, deliver, error) in [
+        (r#"[{"n":1e400}]"#.to_owned(), simkl(1), "invalid_request"),
+        (
+            r#"["\ud800"]"#.to_owned(),
+            missing.clone(),
+            "invalid_request",
+        ),
+        (
+            format!(r#"[1,{title},{{"n":1e400}}]"#),
+            missing.clone(),
+            "invalid_request",
+        ),
+        (r#"{"a":1}"#.to_owned(), simkl(1), "invalid_request"),
+        (format!(r#"[1,{title}]"#), missing, "invalid_account"),
+        (format!(r#"[{title},1,{{}}]"#), simkl(1), "invalid_document"),
+    ] {
+        let input = request(&documents, &deliver);
+        for answer in [den_sync::evaluate(&input), den_sync::evaluate_core(&input)] {
+            assert_eq!(
+                serde_json::from_str::<Value>(&answer).unwrap(),
+                json!({"version": 1, "error": error}),
+                "{input}"
+            );
+        }
+    }
+}
+
 // ---- den-spec vectors -------------------------------------------------------------------------------------------
 
 fn spec_dir() -> Option<PathBuf> {

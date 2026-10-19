@@ -2,7 +2,7 @@
 //! against the shipped `library_v3` reference before anything is committed.
 
 use super::codec;
-use super::delivery::{self, Snapshot};
+use super::delivery::{self, Snapshot, Source};
 use super::doc::{
     identity, sanitize, sanitize_register, valid_account, valid_episode_key, valid_provider,
     Identity, Kind,
@@ -666,10 +666,10 @@ fn v3_targets(
     // this comparison does not verify the target rules: the delivery vectors do.
     let deliver = json!({"provider": provider, "account": account, "since": [0, 0, ""]});
     docs.retain(|d| d.is_object());
-    let snapshot = Snapshot::read(&docs)?;
+    let snapshot = Snapshot::read(docs.iter().map(Source::Value))??;
     let account_facts = delivery::account(&deliver)?;
     let mut targets = Vec::new();
-    for (target, _) in delivery::targets_for(&snapshot, &account_facts, now)? {
+    delivery::for_each_target(&snapshot, &account_facts, now, &mut |target, _| {
         let coordinate = target
             .document
             .splitn(4, ':')
@@ -679,11 +679,11 @@ fn v3_targets(
         let mut built = target.built_from();
         built["key"] = json!(format!("{coordinate}#{}", target.key));
         // A watch target valued `none` makes no command and writes no receipt (v3 §6 command table).
-        if (built["kind"] == "film" || built["kind"] == "episode") && built["value"] == "none" {
-            continue;
+        if !((built["kind"] == "film" || built["kind"] == "episode") && built["value"] == "none") {
+            targets.push(built);
         }
-        targets.push(built);
-    }
+        Ok(())
+    })?;
     Ok((targets, Value::Object(receipts)))
 }
 
@@ -896,7 +896,7 @@ pub fn v4_dry_run(rows: &[Value], form: &Value, now: i64) -> Result<Value, Strin
         let v3 = library_v3::pending_targets(&targets, &receipts, &since, now)?;
         let deliver =
             json!({"provider": provider, "account": account, "since": since, "removals_sent": []});
-        let v4 = delivery::pending_targets(&documents, &deliver, now)?;
+        let v4 = delivery::pending_targets(documents.iter().map(Source::Value), &deliver, now)?;
         let prefix = format!("dlv:{provider}:{account}:");
         let mut v3_set: BTreeMap<String, Value> = BTreeMap::new();
         for cmd in v3.as_array().into_iter().flatten() {
