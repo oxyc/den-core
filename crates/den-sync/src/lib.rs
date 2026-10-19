@@ -282,10 +282,6 @@ enum Request {
         kind: String,
         input: Value,
     },
-    /// Profiles v1: account every authenticated legacy row into household/Owner migration material.
-    ProfilesMigrationPartitionRows {
-        input: Value,
-    },
     /// Profiles v1: construct and stored-validate the first Owner-only directory.
     ProfilesMigrationConstructDirectory {
         input: Value,
@@ -719,6 +715,13 @@ struct V4DryRunRequest<'a> {
     now: i64,
 }
 
+/// Profiles v1: account every authenticated legacy row into household/Owner migration material.
+#[derive(Deserialize)]
+struct PartitionRequest<'a> {
+    #[serde(borrow)]
+    input: &'a serde_json::value::RawValue,
+}
+
 /// The answer, enveloped, of an op Den Web sends a whole library to, when `input` names one, else `None`. They are
 /// read apart from `Request` for the reason `ProjectionRequest` is: each document or row stays a slice of the request
 /// until it is used. Their answers are written straight from what they hold, not built as `Value`s first.
@@ -743,7 +746,12 @@ fn library_op(input: &str) -> Option<String> {
     fn read<'a, T: Deserialize<'a>>(input: &'a str) -> Result<T, String> {
         serde_json::from_str(input).map_err(|_| "invalid_request".to_string())
     }
-    const OPS: [&str; 3] = ["pending_targets_v4", "v4_form", "v4_dry_run"];
+    const OPS: [&str; 4] = [
+        "pending_targets_v4",
+        "v4_form",
+        "v4_dry_run",
+        "profiles_migration_partition_rows",
+    ];
     if bounded(input).is_err() || !OPS.iter().any(|op| input.contains(op)) {
         return None;
     }
@@ -766,6 +774,9 @@ fn library_op(input: &str) -> Option<String> {
                 library_v4::switch::v4_dry_run(&r.rows, r.form, r.now)
             }))
         }
+        "profiles_migration_partition_rows" => answer(
+            read(input).and_then(|r: PartitionRequest| profiles::migration_partition(r.input)),
+        ),
         _ => return None,
     })
 }
@@ -1195,9 +1206,6 @@ fn run(request: Request) -> Result<Value, String> {
         }
         Request::ProfilesMigrationDigest { kind, input } => {
             profiles::migration_digest(&kind, &input)
-        }
-        Request::ProfilesMigrationPartitionRows { input } => {
-            profiles::migration_partition_rows(&input)
         }
         Request::ProfilesMigrationConstructDirectory { input }
         | Request::ProfilesConstructDirectory { input } => {
