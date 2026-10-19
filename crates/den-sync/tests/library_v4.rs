@@ -3016,6 +3016,47 @@ fn a_pending_pass_refuses_as_a_whole_request_did() {
     }
 }
 
+/// The switch reads each row, and each document of the form, only when it uses it, and answers as when it parsed the
+/// request whole: a row or form document that is no JSON value refuses the request before anything else is checked,
+/// and a form that is no object, or holds no list of documents, is `invalid_form`.
+#[test]
+fn a_switch_refuses_as_a_whole_request_did() {
+    let ep = r#"{"k":"a","seq":1,"bytes":1,"row":{"kind":"ep","schema":2,"title":{"type":"tv","id":1},"season":1,"episode":1,"progress":{"value":1,"viewing":0,"at":[1,0,"a1b2c3d4e5f60718"]}}}"#;
+    let form = |rows: &str| {
+        format!(r#"{{"op":"v4_form","rows":{rows},"base":1,"performer":"{D}","now":1}}"#)
+    };
+    let dry = |rows: &str, form: &str| {
+        format!(r#"{{"op":"v4_dry_run","rows":{rows},"form":{form},"now":1}}"#)
+    };
+    for (input, error) in [
+        (form(r#"[{"row":{"n":1e400}}]"#), "invalid_request"),
+        (form(&format!(r#"[{ep},"\ud800"]"#)), "invalid_request"),
+        (form(&format!(r#"[{ep}]"#)), "pre_v3"),
+        (form(r#"{"a":1}"#), "invalid_request"),
+        (dry(r#"[{"row":{"n":1e400}}]"#, "1"), "invalid_request"),
+        (dry("[]", "1"), "invalid_form"),
+        (dry("[]", "[1e400]"), "invalid_request"),
+        (dry("[]", r#"{"documents":5}"#), "invalid_form"),
+        (dry("[]", r#"{"documents":[{"name":1}]}"#), "invalid_form"),
+        (
+            dry("[]", r#"{"documents":[{"name":1},{"n":1e400}]}"#),
+            "invalid_request",
+        ),
+        (
+            dry("[]", r#"{"documents":[],"rows":1e400}"#),
+            "invalid_request",
+        ),
+    ] {
+        for answer in [den_sync::evaluate(&input), den_sync::evaluate_core(&input)] {
+            assert_eq!(
+                serde_json::from_str::<Value>(&answer).unwrap(),
+                json!({"version": 1, "error": error}),
+                "{input}"
+            );
+        }
+    }
+}
+
 // ---- den-spec vectors -------------------------------------------------------------------------------------------
 
 fn spec_dir() -> Option<PathBuf> {
