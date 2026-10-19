@@ -3,6 +3,8 @@
 
 use crate::library_v4::{codec, jcs};
 use crate::wire::{Stamp, MAX_SAFE_INTEGER};
+use serde::Serialize;
+use serde_json::value::RawValue;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
@@ -1627,18 +1629,70 @@ pub fn seed_preferences(input: &Value) -> Result<Value, String> {
 /// topology. The caller opens and name-binds ciphertext; this pure boundary refuses unreadable or ambiguous evidence
 /// and never performs encryption, storage, or I/O.
 pub fn migration_partition_rows(input: &Value) -> Result<Value, String> {
-    let input = object(input, "invalid_partition_input")?;
-    if !exact_members(input, &["base", "ownerPolicyAt", "rows"]) {
+    let text = RawValue::from_string(input.to_string()).map_err(|_| "invalid_partition_input")?;
+    serde_json::to_value(migration_partition(&text)?).map_err(|_| "invalid_partition_input".into())
+}
+
+/// `migration_partition_rows`'s answer. Each projection and account is held as its JSON text: the household's rows,
+/// documents among them, are many times their size as `Value`s. The members are in the order a JSON object of them
+/// sorts in.
+#[derive(Serialize)]
+pub struct Partition {
+    accounting: Vec<Box<RawValue>>,
+    household: Vec<Box<RawValue>>,
+    owner: Vec<Box<RawValue>>,
+    #[serde(rename = "ownerPolicy")]
+    owner_policy: Value,
+}
+
+/// A value of the request; one that is no JSON value refuses it, as when the request was parsed whole.
+fn read(raw: &RawValue) -> Result<Value, String> {
+    serde_json::from_str(raw.get()).map_err(|_| "invalid_request".to_string())
+}
+
+/// `migration_partition_rows` of `input` as the request spells it. Every member and row is checked to be a JSON
+/// value first, a row at a time, and each row is read again when it is partitioned, so one is held read at a time.
+pub fn migration_partition(input: &RawValue) -> Result<Partition, String> {
+    let members: BTreeMap<String, &RawValue> = match serde_json::from_str(input.get()) {
+        Ok(members) => members,
+        Err(_) => {
+            read(input)?;
+            return Err("invalid_partition_input".into());
+        }
+    };
+    let mut fields = Map::new();
+    let mut rows = None;
+    for (member, raw) in &members {
+        if member == "rows" {
+            if let Ok(list) = serde_json::from_str::<Vec<&RawValue>>(raw.get()) {
+                for row in &list {
+                    read(row)?;
+                }
+                rows = Some(list);
+                continue;
+            }
+        }
+        fields.insert(member.clone(), read(raw)?);
+    }
+    if members.len() != 3
+        || !["base", "ownerPolicyAt", "rows"]
+            .iter()
+            .all(|member| members.contains_key(*member))
+    {
         return Err("invalid_partition_input".into());
     }
-    let base = input["base"]
-        .as_u64()
+    let base = fields
+        .get("base")
+        .and_then(Value::as_u64)
         .filter(|base| *base <= MAX_SAFE_INTEGER)
         .ok_or("invalid_partition_input")?;
-    stamp(&input["ownerPolicyAt"]).map_err(|_| "invalid_partition_input")?;
-    let rows = input["rows"].as_array().ok_or("invalid_partition_input")?;
-    for value in rows {
-        let row = object(value, "invalid_source_row")?;
+    let owner_policy_at = fields.get("ownerPolicyAt").cloned().unwrap_or_default();
+    stamp(&owner_policy_at).map_err(|_| "invalid_partition_input")?;
+    let rows = rows.ok_or("invalid_partition_input")?;
+    let mut sorted = Vec::with_capacity(rows.len());
+    for raw in rows {
+        let value = read(raw)?;
+        let row = object(&value, "invalid_source_row")?;
         if !exact_members(row, &["k", "seq", "v", "opened"])
             || row["k"]
                 .as_str()
@@ -1651,45 +1705,40 @@ pub fn migration_partition_rows(input: &Value) -> Result<Value, String> {
         {
             return Err("invalid_source_row".into());
         }
+        sorted.push((row["k"].as_str().unwrap_or_default().to_owned(), raw));
     }
-    let mut rows = rows.iter().collect::<Vec<_>>();
-    rows.sort_by(|a, b| {
-        a["k"]
-            .as_str()
-            .expect("source rows prevalidated")
-            .as_bytes()
-            .cmp(
-                b["k"]
-                    .as_str()
-                    .expect("source rows prevalidated")
-                    .as_bytes(),
-            )
-    });
+    sorted.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
 
     let mut keys = BTreeSet::new();
     let mut sequences = BTreeSet::new();
     let mut names = BTreeSet::new();
-    let mut household = Vec::new();
-    let mut owner = Vec::new();
+    let mut household_text = Vec::new();
+    let mut owner_text = Vec::new();
     let mut accounting = Vec::new();
     let mut owner_policy = json!({
         "value": normalize_legacy(None)?,
-        "at": input["ownerPolicyAt"].clone(),
+        "at": owner_policy_at,
     });
+    let text =
+        |value: &Value| serde_json::value::to_raw_value(value).map_err(|_| "invalid_source_row");
 
-    for value in rows {
-        let row = object(value, "invalid_source_row")?;
-        let key = row["k"].as_str().expect("source rows prevalidated");
-        let sequence = row["seq"].as_u64().expect("source rows prevalidated");
-        let sealed = row["v"].as_str().expect("source rows prevalidated");
-        if !keys.insert(key) || !sequences.insert(sequence) {
+    for (_, raw) in sorted {
+        let value = read(raw)?;
+        let row = object(&value, "invalid_source_row")?;
+        let key = row["k"].as_str().unwrap_or_default();
+        let sequence = row["seq"].as_u64().unwrap_or_default();
+        let sealed = row["v"].as_str().unwrap_or_default();
+        if !keys.insert(key.to_owned()) || !sequences.insert(sequence) {
             return Err("invalid_source_row".into());
         }
+        // This row's projections, written as text once it is partitioned.
+        let mut household = Vec::new();
+        let mut owner = Vec::new();
         let opened = object(&row["opened"], "invalid_source_row")?;
         let status = opened["status"].as_str().ok_or("invalid_source_row")?;
         let name = match opened.get("name") {
             Some(Value::String(name)) if !name.is_empty() => {
-                if !names.insert(name.as_str()) {
+                if !names.insert(name.clone()) {
                     return Err("duplicate_logical_name".into());
                 }
                 Some(name.as_str())
@@ -1786,15 +1835,23 @@ pub fn migration_partition_rows(input: &Value) -> Result<Value, String> {
             }
             _ => return Err("invalid_source_row".into()),
         }
-        accounting.push(json!({"k":key, "seq":sequence, "destinations":destinations}));
+        for projection in &household {
+            household_text.push(text(projection)?);
+        }
+        for projection in &owner {
+            owner_text.push(text(projection)?);
+        }
+        accounting.push(text(
+            &json!({"k":key, "seq":sequence, "destinations":destinations}),
+        )?);
     }
 
-    Ok(json!({
-        "household": household,
-        "owner": owner,
-        "ownerPolicy": owner_policy,
-        "accounting": accounting,
-    }))
+    Ok(Partition {
+        accounting,
+        household: household_text,
+        owner: owner_text,
+        owner_policy,
+    })
 }
 
 /// Construct the first Owner-only directory from explicit verified inputs, then validate it with the stored

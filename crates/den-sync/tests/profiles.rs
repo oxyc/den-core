@@ -464,6 +464,34 @@ fn migration_row_partition_rejects_ambiguous_authenticated_evidence() {
     );
 }
 
+/// The partition reads each row only when it uses it, and answers as when it parsed the request whole: a member or
+/// row that is no JSON value refuses the request before anything else is checked.
+#[test]
+fn migration_row_partition_refuses_as_a_whole_request_did() {
+    let at = r#"[1,0,"a1b2c3d4e5f60718"]"#;
+    let input = |rest: &str| format!(r#"{{"base":1,"ownerPolicyAt":{at},{rest}}}"#);
+    for (input, error) in [
+        (r#""rows""#.to_owned(), "invalid_partition_input"),
+        ("[1e400]".to_owned(), "invalid_request"),
+        (input(r#""rows":5"#), "invalid_partition_input"),
+        (input(r#""rows":[1]"#), "invalid_source_row"),
+        (input(r#""rows":[{"n":1e400}]"#), "invalid_request"),
+        (input(r#""rows":[1,{"n":1e400}]"#), "invalid_request"),
+        (input(r#""rows":[],"more":1"#), "invalid_partition_input"),
+        (input(r#""rows":[1],"more":1e400"#), "invalid_request"),
+        (input(r#""rows":[]"#), "ok"),
+    ] {
+        let request = format!(r#"{{"op":"profiles_migration_partition_rows","input":{input}}}"#);
+        for answer in [evaluate(&request), den_sync::evaluate_core(&request)] {
+            let answer: Value = serde_json::from_str(&answer).unwrap();
+            match error {
+                "ok" => assert!(answer.get("ok").is_some(), "{request}: {answer}"),
+                _ => assert_eq!(answer, json!({"version": 1, "error": error}), "{request}"),
+            }
+        }
+    }
+}
+
 #[test]
 fn migration_digest_rejects_duplicate_rows_and_unknown_kinds() {
     let fixture: Value = serde_json::from_str(include_str!("fixtures/profiles-v1.json")).unwrap();
