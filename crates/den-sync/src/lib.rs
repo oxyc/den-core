@@ -388,21 +388,6 @@ enum Request {
         identity: Value,
         commands: Vec<Value>,
     },
-    /// Library v4 §10: every row through `base` → the switch's rows.
-    V4Form {
-        rows: Vec<Value>,
-        base: u64,
-        performer: String,
-        now: i64,
-        #[serde(default)]
-        stored_cap: Option<u64>,
-    },
-    /// Library v4 §10 step 2: the log through `base` + `v4_form`'s output → pass or abort.
-    V4DryRun {
-        rows: Vec<Value>,
-        form: Value,
-        now: i64,
-    },
     SwitchReady {
         input: Value,
     },
@@ -703,8 +688,7 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
 }
 
 /// Library v4 §9 `pending_targets_v4`: the documents, delivery documents included, and the account's `set:deliver`
-/// facts. Read apart from `Request` for the reason `ProjectionRequest` is: Den Web sends the whole library, and each
-/// document is parsed only when the pass reads it (`delivery::Source`).
+/// facts.
 #[derive(Deserialize)]
 struct PendingTargetsRequest<'a> {
     #[serde(borrow)]
@@ -713,42 +697,76 @@ struct PendingTargetsRequest<'a> {
     now: i64,
 }
 
-/// `pending_targets_v4`'s whole answer, enveloped, when `input` names it, else `None`. Its rows are written straight
-/// into the answer.
-fn pending_targets_op(input: &str) -> Option<String> {
+/// Library v4 §10: every row through `base` → the switch's rows.
+#[derive(Deserialize)]
+struct V4FormRequest<'a> {
+    #[serde(borrow)]
+    rows: Vec<library_v4::switch::Entry<'a>>,
+    base: u64,
+    performer: String,
+    now: i64,
+    #[serde(default)]
+    stored_cap: Option<u64>,
+}
+
+/// Library v4 §10 step 2: the log through `base` + `v4_form`'s output → pass or abort.
+#[derive(Deserialize)]
+struct V4DryRunRequest<'a> {
+    #[serde(borrow)]
+    rows: Vec<library_v4::switch::Entry<'a>>,
+    #[serde(borrow)]
+    form: &'a serde_json::value::RawValue,
+    now: i64,
+}
+
+/// The answer, enveloped, of an op Den Web sends a whole library to, when `input` names one, else `None`. They are
+/// read apart from `Request` for the reason `ProjectionRequest` is: each document or row stays a slice of the request
+/// until it is used. Their answers are written straight from what they hold, not built as `Value`s first.
+fn library_op(input: &str) -> Option<String> {
     #[derive(Deserialize)]
     struct Op<'a> {
         #[serde(borrow)]
         op: std::borrow::Cow<'a, str>,
     }
     #[derive(serde::Serialize)]
-    struct Answer {
-        ok: library_v4::delivery::Pending,
+    struct Answer<T> {
+        ok: T,
         version: u8,
     }
-    if bounded(input).is_err() || !input.contains("pending_targets_v4") {
+    fn answer<T: serde::Serialize>(result: Result<T, String>) -> String {
+        match result {
+            Ok(ok) => serde_json::to_string(&Answer { ok, version: 1 })
+                .expect("an answer always serializes"),
+            Err(error) => envelope(Err(error)),
+        }
+    }
+    fn read<'a, T: Deserialize<'a>>(input: &'a str) -> Result<T, String> {
+        serde_json::from_str(input).map_err(|_| "invalid_request".to_string())
+    }
+    const OPS: [&str; 3] = ["pending_targets_v4", "v4_form", "v4_dry_run"];
+    if bounded(input).is_err() || !OPS.iter().any(|op| input.contains(op)) {
         return None;
     }
-    if serde_json::from_str::<Op>(input).ok()?.op != "pending_targets_v4" {
-        return None;
-    }
-    let pending = serde_json::from_str::<PendingTargetsRequest>(input)
-        .map_err(|_| "invalid_request".to_string())
-        .and_then(|request| {
+    let op = serde_json::from_str::<Op>(input).ok()?.op;
+    Some(match &*op {
+        "pending_targets_v4" => answer(read(input).and_then(|r: PendingTargetsRequest| {
             library_v4::delivery::pending(
-                request
-                    .documents
+                r.documents
                     .iter()
                     .map(|d| library_v4::delivery::Source::Raw(d)),
-                &request.deliver,
-                request.now,
+                &r.deliver,
+                r.now,
             )
-        });
-    Some(match pending {
-        Ok(ok) => {
-            serde_json::to_string(&Answer { ok, version: 1 }).expect("an answer always serializes")
+        })),
+        "v4_form" => answer(read(input).and_then(|r: V4FormRequest| {
+            library_v4::switch::v4_form(&r.rows, r.base, &r.performer, r.now, r.stored_cap)
+        })),
+        "v4_dry_run" => {
+            answer(read(input).and_then(|r: V4DryRunRequest| {
+                library_v4::switch::v4_dry_run(&r.rows, r.form, r.now)
+            }))
         }
-        Err(error) => envelope(Err(error)),
+        _ => return None,
     })
 }
 
@@ -761,7 +779,7 @@ fn yes() -> bool {
 /// Every op, the assistant's included: the native binding's one entry. The web splits it in two, `evaluate_core` and
 /// `evaluate_assistant`, so the assistant crypto loads only where it is used.
 pub fn evaluate(input: &str) -> String {
-    if let Some(answer) = pending_targets_op(input) {
+    if let Some(answer) = library_op(input) {
         return answer;
     }
     envelope(bounded(input).and_then(|()| {
@@ -781,7 +799,7 @@ pub fn evaluate(input: &str) -> String {
 /// Every op but the assistant's: the web's main module. An assistant op is `assistant_module`, so a caller that sent
 /// it to the wrong module says so rather than `invalid_request`.
 pub fn evaluate_core(input: &str) -> String {
-    if let Some(answer) = pending_targets_op(input) {
+    if let Some(answer) = library_op(input) {
         return answer;
     }
     envelope(
@@ -1244,14 +1262,6 @@ fn run(request: Request) -> Result<Value, String> {
             identity,
             commands,
         } => library_v4::delivery::delivery_write(document.as_ref(), &identity, &commands),
-        Request::V4Form {
-            rows,
-            base,
-            performer,
-            now,
-            stored_cap,
-        } => library_v4::switch::v4_form(&rows, base, &performer, now, stored_cap),
-        Request::V4DryRun { rows, form, now } => library_v4::switch::v4_dry_run(&rows, &form, now),
         Request::SwitchReady { input } => library_v3::switch_ready(&input),
         Request::DownloadMerge { a, b } => download_merge(&a, &b),
         Request::DownloadStatus {

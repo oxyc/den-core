@@ -834,20 +834,6 @@ pub fn account(deliver: &Value) -> Result<Account, String> {
     })
 }
 
-/// `pending_targets` (§9, v3 §6) for one account. `deliver` is the account's `set:deliver` facts, read by the
-/// client: `{provider, account, since, removals?, unverified?, removals_sent}`, `removals` the parsed latch object
-/// and `removals_sent` the times (ms) the holder sent list removals for the account, kept by it across restarts.
-/// `removals_sent` is required, so a binding that forgets it fails instead of turning the 120 s rule off. A send
-/// time after `now` is not counted, so the client passes a send it still counts as recent on another clock (after its
-/// wall clock stepped back) as `now`.
-pub fn pending_targets<'a>(
-    documents: impl IntoIterator<Item = Source<'a>>,
-    deliver: &Value,
-    now: i64,
-) -> Result<Value, String> {
-    Ok(json!(pending(documents, deliver, now)?))
-}
-
 /// `pending_targets`'s answer, as rows: a pass over a library that has not been delivered holds a command or a
 /// settle for nearly every title and episode, which as `Value`s would be many times the answer's size.
 #[derive(Serialize)]
@@ -861,11 +847,23 @@ pub struct Pending {
     unverified: BTreeSet<u64>,
 }
 
+impl Pending {
+    pub fn commands(&self) -> &[PendingCommand] {
+        &self.commands
+    }
+}
+
 #[derive(Serialize)]
 struct Removals {
     held: Stamp,
 }
 
+/// `pending_targets` (§9, v3 §6) for one account. `deliver` is the account's `set:deliver` facts, read by the
+/// client: `{provider, account, since, removals?, unverified?, removals_sent}`, `removals` the parsed latch object
+/// and `removals_sent` the times (ms) the holder sent list removals for the account, kept by it across restarts.
+/// `removals_sent` is required, so a binding that forgets it fails instead of turning the 120 s rule off. A send
+/// time after `now` is not counted, so the client passes a send it still counts as recent on another clock (after its
+/// wall clock stepped back) as `now`.
 pub fn pending<'a>(
     documents: impl IntoIterator<Item = Source<'a>>,
     deliver: &Value,

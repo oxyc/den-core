@@ -701,6 +701,11 @@ pub fn v3_form_with_context(
 /// stray event touches is kept as it is and yields no film play, since its plays already live in its `wat` row.
 /// Seeds nothing; the caller commits it with an unchanged wire minimum.
 pub fn v3_compact(rows: &[Value], now: i64) -> Result<Value, String> {
+    v3_compact_owned(rows.to_vec(), now).map(Value::Array)
+}
+
+/// `v3_compact` of rows the caller no longer needs, which become the output rather than being copied into it.
+pub fn v3_compact_owned(rows: Vec<Value>, now: i64) -> Result<Vec<Value>, String> {
     let stray = |row: &Value| {
         is_event_row(row)
             || row["schema"] == json!(1) && row.get("after").is_some()
@@ -721,23 +726,22 @@ pub fn v3_compact(rows: &[Value], now: i64) -> Result<Value, String> {
         })
         .cloned()
         .collect::<Vec<_>>();
-    let folded = v3_form(&to_fold, now).map_err(|error| format!("v3_compact:{error}"))?;
+    let folded = match v3_form(&to_fold, now).map_err(|error| format!("v3_compact:{error}"))? {
+        Value::Array(folded) => folded,
+        _ => Vec::new(),
+    };
+    drop(to_fold);
     let mut output: Map<String, Value> = Map::new();
     let mut unknown = Vec::new();
-    for row in rows
-        .iter()
-        .filter(|row| !stray(row))
-        .chain(folded.as_array().into_iter().flatten())
-    {
-        match name(row) {
+    for row in rows.into_iter().filter(|row| !stray(row)).chain(folded) {
+        match name(&row) {
             Ok(row_name) if matches!(row["kind"].as_str(), Some("rec" | "set" | "wat" | "snt")) => {
-                put(&mut output, row_name, row.clone())
-                    .map_err(|error| format!("v3_compact:{error}"))?
+                put(&mut output, row_name, row).map_err(|error| format!("v3_compact:{error}"))?
             }
-            _ => unknown.push(row.clone()),
+            _ => unknown.push(row),
         }
     }
-    Ok(Value::Array(output.into_values().chain(unknown).collect()))
+    Ok(output.into_values().chain(unknown).collect())
 }
 
 fn switch_setting(value: Value, at: &Stamp) -> Value {
