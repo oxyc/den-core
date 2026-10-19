@@ -670,6 +670,10 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
         #[serde(borrow)]
         op: std::borrow::Cow<'a, str>,
     }
+    // Every op comes through here: only one that could be a projection is parsed for its name.
+    if !input.contains("assistant_projection") {
+        return None;
+    }
     if serde_json::from_str::<Op>(input).ok()?.op != "assistant_projection" {
         return None;
     }
