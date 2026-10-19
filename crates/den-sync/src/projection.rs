@@ -6,6 +6,7 @@ use crate::library_v4::{self, doc::Kind, state};
 use crate::series::{continue_entry, ContinueInput};
 use crate::wire::{canonical, stamp};
 use hkdf::Hkdf;
+use serde_json::value::RawValue;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -17,7 +18,8 @@ const RANDOM_INFO: &[u8] = b"den/assistant/projection/grant/v1\0";
 /// it read them at.
 pub struct Library<'a> {
     pub library: &'a str,
-    pub documents: &'a [Value],
+    /// As the request spells them: each is parsed when it is read.
+    pub documents: &'a [&'a RawValue],
     /// By TMDB id (`"1399"`): `{"seasons": [{season, episodes}], "last_aired": {season, episode} | null}`.
     pub layouts: &'a Map<String, Value>,
     pub head: u64,
@@ -61,16 +63,26 @@ pub struct Lists {
     pub skipped: u64,
 }
 
+/// A document read as state is read from it, with its identity; `None` when it cannot be. One that is no JSON value
+/// refuses the request (`projection_op` has already checked that none is).
+type Read = Option<(library_v4::doc::Identity, Map<String, Value>)>;
+
+fn read(document: &RawValue) -> Result<Read, String> {
+    let value = serde_json::from_str(document.get()).map_err(|_| "invalid_request")?;
+    Ok(library_v4::into_readable(value).ok().and_then(|doc| {
+        let identity = library_v4::doc::identity(&doc).ok()?;
+        Some((identity, doc))
+    }))
+}
+
 pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
     let mut titles: BTreeMap<(String, u64), Map<String, Value>> = BTreeMap::new();
-    let mut seasons: BTreeMap<u64, BTreeMap<u64, Map<String, Value>>> = BTreeMap::new();
+    // A season document is only found here, and read again when its series is: the seasons hold most of a library, and
+    // only one of them is held at a time.
+    let mut seasons: BTreeMap<u64, BTreeMap<u64, &RawValue>> = BTreeMap::new();
     let mut skipped = 0u64;
     for document in lib.documents {
-        let Ok(doc) = library_v4::readable(document) else {
-            skipped += 1;
-            continue;
-        };
-        let Ok(identity) = library_v4::doc::identity(&doc) else {
+        let Some((identity, doc)) = read(document)? else {
             skipped += 1;
             continue;
         };
@@ -82,7 +94,7 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
                 seasons
                     .entry(identity.id)
                     .or_default()
-                    .insert(identity.season.unwrap_or(0), doc);
+                    .insert(identity.season.unwrap_or(0), *document);
             }
             Kind::Delivery => {}
         }
@@ -147,7 +159,12 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
         let mut latest: Option<(i64, u64, u64, f64)> = None;
         let mut finished: Option<(u64, u64)> = None;
         let mut flag: Option<(u64, u64)> = None;
-        for (season, doc) in by_season {
+        for (season, document) in by_season {
+            // It was read once already, so it reads the same again.
+            let Some((_, doc)) = read(document)? else {
+                continue;
+            };
+            let doc = &doc;
             let Some(episodes) = doc.get("episodes").and_then(Value::as_object) else {
                 continue;
             };
@@ -277,21 +294,28 @@ fn push_plays(seen: &mut Vec<Value>, state: &Value, base: Value) {
     }
 }
 
-/// The projection object for one grant (§15): the lists, with who it is for, when, and the log head they were read at.
-pub fn view(lib: &Library, grant: &str, content: &Value, now: u64) -> Value {
-    let mut object = content.as_object().cloned().expect("an object");
+/// Makes `content` the projection object for one grant (§15): the lists, with who it is for, when, and the log head
+/// they were read at. In place, since the lists are most of a projection: each grant's call replaces the members the
+/// last one set.
+pub fn view(lib: &Library, grant: &str, content: &mut Value, now: u64) {
+    let object = content.as_object_mut().expect("an object");
     object.insert("v".into(), json!(1));
     object.insert("library".into(), json!(lib.library));
     object.insert("grant".into(), json!(grant));
     object.insert("at".into(), json!(now));
     object.insert("head".into(), json!(lib.head));
-    Value::Object(object)
 }
 
 /// The lists as one object, and its digest: what changed since the last publish, whoever it is for and whenever.
 pub fn content(lists: Lists, hide: Value) -> (Value, String) {
-    let content = json!({"watchlist": lists.watchlist, "continue": lists.continuing, "seen": lists.seen,
-        "rated": lists.rated, "hide": hide});
+    // Moved in, not `json!`, which would serialize a copy of every list.
+    let content = Value::Object(Map::from_iter([
+        ("watchlist".to_owned(), Value::Array(lists.watchlist)),
+        ("continue".to_owned(), Value::Array(lists.continuing)),
+        ("seen".to_owned(), Value::Array(lists.seen)),
+        ("rated".to_owned(), Value::Array(lists.rated)),
+        ("hide".to_owned(), hide),
+    ]));
     let digest = den_assistant::hex(&Sha256::digest(canonical(&content)));
     (content, digest)
 }

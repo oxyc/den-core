@@ -628,27 +628,6 @@ enum AssistantRequest {
         client: String,
         now: u64,
     },
-    /// Assistant v1 §15: the library's documents → the projection for every live read grant, sealed, and the read
-    /// grants whose projection den-edge should drop.
-    AssistantProjection {
-        library: String,
-        #[serde(default)]
-        documents: Vec<Value>,
-        #[serde(default)]
-        layouts: serde_json::Map<String, Value>,
-        head: u64,
-        #[serde(default)]
-        read: Option<Value>,
-        #[serde(default)]
-        grants: Option<Value>,
-        /// The `set:prefs` row, for the projection's hide rules.
-        #[serde(default)]
-        prefs: Option<Value>,
-        #[serde(default, rename = "localRevoked")]
-        local_revoked: Vec<String>,
-        random: String,
-        now: u64,
-    },
     /// Assistant v1 §5: the applied entries to drop, from the row and the device's own record.
     AssistantPrune {
         #[serde(default)]
@@ -657,6 +636,72 @@ enum AssistantRequest {
         local_applied: serde_json::Map<String, Value>,
         now: u64,
     },
+}
+
+/// Assistant v1 §15: the library's documents → the projection for every live read grant, sealed, and the read grants
+/// whose projection den-edge should drop. Read apart from `AssistantRequest`: an internally tagged enum buffers its
+/// fields, so it cannot leave the documents as slices of the request. Each is parsed only when it is read
+/// (`projection::lists`), so the whole library is never held as `Value`s at once.
+#[derive(Deserialize)]
+struct ProjectionRequest<'a> {
+    library: String,
+    #[serde(default, borrow)]
+    documents: Vec<&'a serde_json::value::RawValue>,
+    #[serde(default)]
+    layouts: serde_json::Map<String, Value>,
+    head: u64,
+    #[serde(default)]
+    read: Option<Value>,
+    #[serde(default)]
+    grants: Option<Value>,
+    /// The `set:prefs` row, for the projection's hide rules.
+    #[serde(default)]
+    prefs: Option<Value>,
+    #[serde(default, rename = "localRevoked")]
+    local_revoked: Vec<String>,
+    random: String,
+    now: u64,
+}
+
+/// `assistant_projection`'s answer when `input` names it, else `None`.
+fn projection_op(input: &str) -> Option<Result<Value, String>> {
+    #[derive(Deserialize)]
+    struct Op<'a> {
+        #[serde(borrow)]
+        op: std::borrow::Cow<'a, str>,
+    }
+    if serde_json::from_str::<Op>(input).ok()?.op != "assistant_projection" {
+        return None;
+    }
+    Some(
+        serde_json::from_str::<ProjectionRequest>(input)
+            .ok()
+            // Refused as a whole when a document is no JSON value (a number out of range, a lone surrogate), as when
+            // the documents were parsed with the request: each is parsed and dropped, so only one is held at a time.
+            .filter(|request| {
+                request
+                    .documents
+                    .iter()
+                    .all(|d| serde_json::from_str::<Value>(d.get()).is_ok())
+            })
+            .ok_or_else(|| "invalid_request".to_string())
+            .and_then(|request| {
+                assistant::projection(
+                    &projection::Library {
+                        library: &request.library,
+                        documents: &request.documents,
+                        layouts: &request.layouts,
+                        head: request.head,
+                        prefs: request.prefs.as_ref(),
+                    },
+                    request.read.as_ref(),
+                    request.grants.as_ref(),
+                    &request.local_revoked,
+                    &request.random,
+                    request.now,
+                )
+            }),
+    )
 }
 
 fn yes() -> bool {
@@ -668,15 +713,18 @@ fn yes() -> bool {
 /// Every op, the assistant's included: the native binding's one entry. The web splits it in two, `evaluate_core` and
 /// `evaluate_assistant`, so the assistant crypto loads only where it is used.
 pub fn evaluate(input: &str) -> String {
-    envelope(
-        bounded(input).and_then(|()| match serde_json::from_str::<Request>(input) {
+    envelope(bounded(input).and_then(|()| {
+        if let Some(answer) = projection_op(input) {
+            return answer;
+        }
+        match serde_json::from_str::<Request>(input) {
             Ok(request) => run(request),
             Err(_) => match serde_json::from_str::<AssistantRequest>(input) {
                 Ok(request) => run_assistant(request),
                 Err(_) => Err("invalid_request".into()),
             },
-        }),
-    )
+        }
+    }))
 }
 
 /// Every op but the assistant's: the web's main module. An assistant op is `assistant_module`, so a caller that sent
@@ -697,6 +745,9 @@ pub fn evaluate_core(input: &str) -> String {
 /// The assistant ops alone (den-spec `wire/assistant-v1.md`): the web's assistant module.
 pub fn evaluate_assistant(input: &str) -> String {
     envelope(bounded(input).and_then(|()| {
+        if let Some(answer) = projection_op(input) {
+            return answer;
+        }
         serde_json::from_str::<AssistantRequest>(input)
             .map_err(|_| "invalid_request".to_string())
             .and_then(run_assistant)
@@ -766,31 +817,6 @@ fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
             client,
             now,
         } => assistant::keygen_read(&grant, &random, &client, now),
-        AssistantRequest::AssistantProjection {
-            library,
-            documents,
-            layouts,
-            head,
-            read,
-            grants,
-            prefs,
-            local_revoked,
-            random,
-            now,
-        } => assistant::projection(
-            &projection::Library {
-                library: &library,
-                documents: &documents,
-                layouts: &layouts,
-                head,
-                prefs: prefs.as_ref(),
-            },
-            read.as_ref(),
-            grants.as_ref(),
-            &local_revoked,
-            &random,
-            now,
-        ),
         AssistantRequest::AssistantOpen {
             library,
             device,

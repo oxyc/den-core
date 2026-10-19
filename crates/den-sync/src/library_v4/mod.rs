@@ -49,14 +49,22 @@ pub fn read_newer(
 /// A document as state is read from it: like `checked`, but a newer `format` is read for the fields this spec
 /// defines (§4 *Newer rows*).
 pub fn readable(value: &Value) -> Result<Map<String, Value>, String> {
-    match checked(value) {
-        Ok((_, doc)) => Ok(doc),
-        Err(error) if error == "newer_format" => {
-            let doc = value.as_object().ok_or("invalid_document")?;
-            Ok(read_newer(&identity(doc)?, doc, &mut Vec::new()))
-        }
-        Err(error) => Err(error),
+    into_readable(value.clone())
+}
+
+/// `readable` of a document the caller no longer needs, which becomes the result rather than being copied into it.
+pub fn into_readable(value: Value) -> Result<Map<String, Value>, String> {
+    let Value::Object(mut doc) = value else {
+        return Err("invalid_document".into());
+    };
+    // `checked`'s order: the identity is checked before the format.
+    let identity = identity(&doc)?;
+    match doc.get("format").and_then(Value::as_u64) {
+        Some(FORMAT) => sanitize(&identity, &mut doc, &mut Vec::new()),
+        Some(f) if f > FORMAT => return Ok(read_newer(&identity, &doc, &mut Vec::new())),
+        _ => return Err("invalid_format".into()),
     }
+    Ok(doc)
 }
 
 /// `doc_merge` (§6, §9): two versions of one document.
