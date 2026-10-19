@@ -125,10 +125,10 @@ fn household() -> (Vec<Value>, Map<String, Value>) {
     (documents, layouts)
 }
 
-/// One build's peak, above what was live before it, is held to a multiple of the request it reads: the documents are
-/// read one at a time, and the lists — the projection itself — are held once (about 11 times the request). Parsing
-/// every document into a `Value` up front, beside a copy of each as it was read, and copying the lists twice more
-/// took about 36 times; any one of those copies back passes 16.
+/// One build's peak, above what was live before it, is held to twice the request it reads: the documents and layouts
+/// are read one at a time, and the lists are held once, as rows (about 1.6 times the request). Holding the lists as
+/// `Value`s took about 11 times; parsing the documents into `Value`s up front as well, about 36; holding the layouts
+/// or the title documents as `Value`s again passes 2.
 #[test]
 fn a_big_household_builds_its_projection_in_bounded_memory() {
     let (documents, layouts) = household();
@@ -165,7 +165,7 @@ fn a_big_household_builds_its_projection_in_bounded_memory() {
         mb(peak)
     );
     assert!(
-        peak <= 14 * request.len(),
+        peak <= 2 * request.len(),
         "a build held {:.1} MB at once for a {:.1} MB request",
         mb(peak),
         mb(request.len())

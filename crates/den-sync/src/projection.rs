@@ -5,6 +5,9 @@
 use crate::library_v4::{self, doc::Kind, state};
 use crate::series::{continue_entry, ContinueInput};
 use crate::wire::{canonical, stamp};
+use den_assistant::{
+    ContinueRow, Media, ProjectionRows, ProjectionTitle, RatedRow, SeenRow, WatchlistRow,
+};
 use hkdf::Hkdf;
 use serde_json::value::RawValue;
 use serde_json::{json, Map, Value};
@@ -21,14 +24,26 @@ pub struct Library<'a> {
     /// As the request spells them: each is parsed when it is read.
     pub documents: &'a [&'a RawValue],
     /// By TMDB id (`"1399"`): `{"seasons": [{season, episodes}], "last_aired": {season, episode} | null}`.
-    pub layouts: &'a Map<String, Value>,
+    pub layouts: &'a BTreeMap<String, &'a RawValue>,
     pub head: u64,
     /// The `set:prefs` row, for the hide rules; absent is none.
     pub prefs: Option<&'a Value>,
 }
 
-fn title_ref(media: &str, id: u64) -> Value {
-    json!({"type": media, "id": id})
+fn title_ref((media, id): ProjectionTitle) -> Value {
+    json!({"type": media.as_str(), "id": id})
+}
+
+fn title_of(media: &str, id: u64) -> ProjectionTitle {
+    // An identity is a movie or a series (`doc::identity`).
+    (
+        if media == "movie" {
+            Media::Movie
+        } else {
+            Media::Tv
+        },
+        id,
+    )
 }
 
 fn at_of(field: Option<&Value>) -> Option<i64> {
@@ -39,27 +54,37 @@ fn is_true(doc: &Map<String, Value>, field: &str) -> bool {
     doc.get(field).is_some_and(|f| f["value"] == true)
 }
 
-/// Most recent first, untimed last, then by title, season and episode, so one library always gives one list.
-fn newest_first(entries: &mut [Value], key: &str) {
-    let order = |e: &Value| {
-        (
-            std::cmp::Reverse(e[key].as_i64().map_or(i64::MIN, |t| t)),
-            e["title"]["type"].as_str().unwrap_or("").to_owned(),
-            e["title"]["id"].as_u64(),
-            e["season"].as_u64(),
-            e["episode"].as_u64(),
-        )
-    };
-    entries.sort_by_key(order);
+/// The order of a list: most recent first, untimed last, then by title, season and episode, so one library always
+/// gives one list.
+type Order = (
+    std::cmp::Reverse<i64>,
+    ProjectionTitle,
+    Option<u64>,
+    Option<u64>,
+);
+
+fn order(
+    at: &Value,
+    title: ProjectionTitle,
+    season: Option<&Value>,
+    episode: Option<&Value>,
+) -> Order {
+    (
+        std::cmp::Reverse(at.as_i64().unwrap_or(i64::MIN)),
+        title,
+        season.and_then(Value::as_u64),
+        episode.and_then(Value::as_u64),
+    )
 }
 
-/// Every list, uncut, and how many documents could not be read.
+/// Every list, uncut, as rows, and how many documents could not be read. The rows are a small part of what the lists
+/// would be as `Value`s, and a library's Seen list runs to tens of thousands.
 pub struct Lists {
-    pub watchlist: Vec<Value>,
-    pub continuing: Vec<Value>,
-    pub seen: Vec<Value>,
+    pub watchlist: Vec<WatchlistRow>,
+    pub continuing: Vec<ContinueRow>,
+    pub seen: Vec<SeenRow>,
     /// Every title the household rated (`reaction` dislike, like or love), with when.
-    pub rated: Vec<Value>,
+    pub rated: Vec<RatedRow>,
     pub skipped: u64,
 }
 
@@ -75,20 +100,25 @@ fn read(document: &RawValue) -> Result<Read, String> {
     }))
 }
 
+/// A document this call has already read, read again: it reads the same.
+fn reread(document: &RawValue) -> Result<Map<String, Value>, String> {
+    Ok(read(document)?.ok_or("invalid_request")?.1)
+}
+
 pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
-    let mut titles: BTreeMap<(String, u64), Map<String, Value>> = BTreeMap::new();
-    // A season document is only found here, and read again when its series is: the seasons hold most of a library, and
-    // only one of them is held at a time.
+    // Each document is only found here, and read again when it is used, so only one is held at a time: the documents
+    // are many times the size of their text once read.
+    let mut titles: BTreeMap<(String, u64), &RawValue> = BTreeMap::new();
     let mut seasons: BTreeMap<u64, BTreeMap<u64, &RawValue>> = BTreeMap::new();
     let mut skipped = 0u64;
     for document in lib.documents {
-        let Some((identity, doc)) = read(document)? else {
+        let Some((identity, _)) = read(document)? else {
             skipped += 1;
             continue;
         };
         match identity.kind {
             Kind::Title => {
-                titles.insert((identity.media.clone(), identity.id), doc);
+                titles.insert((identity.media, identity.id), *document);
             }
             Kind::Season => {
                 seasons
@@ -99,28 +129,27 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
             Kind::Delivery => {}
         }
     }
-    let deleted = |media: &str, id: u64| {
-        titles
-            .get(&(media.to_owned(), id))
-            .is_some_and(|t| is_true(t, "deleted"))
-    };
-
     let mut watchlist = Vec::new();
     let mut seen = Vec::new();
     let mut films = Vec::new();
     let mut rated = Vec::new();
-    for ((media, id), doc) in &titles {
+    for ((media, id), document) in &titles {
+        let doc = &reread(document)?;
         if is_true(doc, "deleted") {
             continue;
         }
+        let title = title_of(media, *id);
         // A rating, not `seen` (a reaction that only says it was seen) and not a cleared one.
         if let Some(reaction) = doc.get("reaction") {
             if let Some(value) = reaction["value"]
                 .as_str()
                 .filter(|v| matches!(*v, "dislike" | "like" | "love"))
             {
-                rated.push(json!({"title": title_ref(media, *id), "value": value,
-                    "at": at_of(Some(reaction)).filter(|t| *t > 0)}));
+                rated.push(RatedRow {
+                    title,
+                    value: json!(value),
+                    at: json!(at_of(Some(reaction)).filter(|t| *t > 0)),
+                });
             }
         }
         let status = doc.get("status").and_then(|s| s["value"].as_str());
@@ -129,42 +158,49 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
                 .get("addedAt")
                 .and_then(Value::as_i64)
                 .or_else(|| at_of(doc.get("status")));
-            watchlist.push(json!({"title": title_ref(media, *id), "addedAt": added}));
+            watchlist.push(WatchlistRow {
+                title,
+                added_at: json!(added),
+            });
         }
         if media == "movie" {
             let film = state::film_state(doc, now)?;
-            push_plays(&mut seen, &film, json!({"title": title_ref(media, *id)}));
+            push_plays(&mut seen, &film, title, None);
             let resume = doc.get("resume");
             let fraction = resume.and_then(|r| r["value"].as_f64()).unwrap_or(0.0);
             let progress_at = at_of(resume).unwrap_or(0);
             let dismissed = is_true(doc, "dismissed")
                 && at_of(doc.get("dismissed")).is_some_and(|d| d >= progress_at);
             if status == Some("inProgress") && !dismissed {
-                films.push(
-                    json!({"title": title_ref(media, *id), "action": "resume", "fraction": fraction,
-                    "at": progress_at}),
-                );
+                films.push(ContinueRow {
+                    title,
+                    action: json!("resume"),
+                    season: None,
+                    episode: None,
+                    fraction: json!(fraction),
+                    at: json!(progress_at),
+                });
             }
         }
     }
 
     let mut series = Vec::new();
     for (id, by_season) in &seasons {
-        if deleted("tv", *id) {
+        let title = match titles.get(&("tv".to_owned(), *id)) {
+            Some(document) => Some(reread(document)?),
+            None => None,
+        };
+        let title = title.as_ref();
+        if title.is_some_and(|t| is_true(t, "deleted")) {
             continue;
         }
-        let title = titles.get(&("tv".to_owned(), *id));
         // The three summaries `continue_entry` asks for: the mark touched last, the furthest finished, the furthest
         // watched with no mark of its own.
         let mut latest: Option<(i64, u64, u64, f64)> = None;
         let mut finished: Option<(u64, u64)> = None;
         let mut flag: Option<(u64, u64)> = None;
         for (season, document) in by_season {
-            // It was read once already, so it reads the same again.
-            let Some((_, doc)) = read(document)? else {
-                continue;
-            };
-            let doc = &doc;
+            let doc = &reread(document)?;
             let Some(episodes) = doc.get("episodes").and_then(Value::as_object) else {
                 continue;
             };
@@ -180,7 +216,8 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
                 push_plays(
                     &mut seen,
                     &state,
-                    json!({"title": title_ref("tv", *id), "season": season, "episode": episode}),
+                    (Media::Tv, *id),
+                    Some((*season, episode)),
                 );
                 let mark = if let Some(resume) = state["resume"].as_object() {
                     Some((
@@ -215,7 +252,12 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
         if latest.is_none() && flag.is_none() {
             continue;
         }
-        let layout = lib.layouts.get(&id.to_string());
+        // Every layout parses (`projection_op` checked them all).
+        let layout: Option<Value> = match lib.layouts.get(&id.to_string()) {
+            Some(raw) => Some(serde_json::from_str(raw.get()).map_err(|_| "invalid_request")?),
+            None => None,
+        };
+        let layout = layout.as_ref();
         let dismissed_at = title
             .filter(|t| is_true(t, "dismissed"))
             .and_then(|t| at_of(t.get("dismissed")));
@@ -234,19 +276,22 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
         if answer["action"] == "none" || answer["episode"].is_null() {
             continue;
         }
-        series.push(
-            json!({"title": title_ref("tv", *id), "action": answer["action"],
-                "season": answer["episode"]["season"], "episode": answer["episode"]["episode"],
-                "fraction": answer["fraction"], "at": latest.map(|l| l.0)}),
-        );
+        series.push(ContinueRow {
+            title: (Media::Tv, *id),
+            action: answer["action"].clone(),
+            season: Some(answer["episode"]["season"].clone()),
+            episode: Some(answer["episode"]["episode"].clone()),
+            fraction: answer["fraction"].clone(),
+            at: json!(latest.map(|l| l.0)),
+        });
     }
     // Series and films in one order, latest first: a series by its latest mark, a film by its resume. A series known
     // only by a flag has no time and comes last.
-    let mut continuing: Vec<Value> = series.into_iter().chain(films).collect();
-    newest_first(&mut continuing, "at");
-    newest_first(&mut watchlist, "addedAt");
-    newest_first(&mut seen, "at");
-    newest_first(&mut rated, "at");
+    let mut continuing: Vec<ContinueRow> = series.into_iter().chain(films).collect();
+    continuing.sort_by_key(|r| order(&r.at, r.title, r.season.as_ref(), r.episode.as_ref()));
+    watchlist.sort_by_key(|r| order(&r.added_at, r.title, None, None));
+    seen.sort_by_key(|r| order(&r.at, r.title, r.season.as_ref(), r.episode.as_ref()));
+    rated.sort_by_key(|r| order(&r.at, r.title, None, None));
     Ok(Lists {
         watchlist,
         continuing,
@@ -259,7 +304,7 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
 /// The household's hide rules (§15), as Den Web sends them to `/recommend` (`hide`), from the `set:prefs` row:
 /// `den.minReleaseYear`, `den.excludedGenreIDs`, `den.excludedLanguages` and `den.hideAnime`. A setting that is
 /// absent, cleared or of another type is no rule.
-pub fn hide(prefs: Option<&Value>) -> Value {
+pub fn hide(prefs: Option<&Value>) -> Map<String, Value> {
     let value = |key: &str| prefs.and_then(|row| row["values"][key]["value"].as_object().cloned());
     let year = value("den.minReleaseYear").and_then(|v| v.get("int").and_then(Value::as_i64));
     let ints = value("den.excludedGenreIDs")
@@ -275,49 +320,121 @@ pub fn hide(prefs: Option<&Value>) -> Value {
         })
         .unwrap_or_default();
     let anime = value("den.hideAnime").is_some_and(|v| v.get("bool") == Some(&json!(true)));
-    json!({"minYear": year, "genres": ints, "languages": strings, "anime": anime})
+    Map::from_iter([
+        ("minYear".to_owned(), json!(year)),
+        ("genres".to_owned(), Value::Array(ints)),
+        ("languages".to_owned(), Value::Array(strings)),
+        ("anime".to_owned(), json!(anime)),
+    ])
 }
 
 /// One Seen entry per visible play of a film or episode, at its time; one untimed entry for something watched with
 /// no play to date it.
-fn push_plays(seen: &mut Vec<Value>, state: &Value, base: Value) {
-    let plays = state["plays"].as_array().cloned().unwrap_or_default();
-    for play in &plays {
-        let mut entry = base.clone();
-        entry["at"] = play[1].clone();
-        seen.push(entry);
+fn push_plays(
+    seen: &mut Vec<SeenRow>,
+    state: &Value,
+    title: ProjectionTitle,
+    episode: Option<(u64, u64)>,
+) {
+    let row = |at: Value| SeenRow {
+        title,
+        season: episode.map(|(s, _)| json!(s)),
+        episode: episode.map(|(_, e)| json!(e)),
+        at,
+    };
+    let plays = state["plays"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    for play in plays {
+        seen.push(row(play[1].clone()));
     }
     if plays.is_empty() && state["watched"] == true {
-        let mut entry = base;
-        entry["at"] = Value::Null;
-        seen.push(entry);
+        seen.push(row(Value::Null));
     }
 }
 
-/// Makes `content` the projection object for one grant (§15): the lists, with who it is for, when, and the log head
-/// they were read at. In place, since the lists are most of a projection: each grant's call replaces the members the
-/// last one set.
-pub fn view(lib: &Library, grant: &str, content: &mut Value, now: u64) {
-    let object = content.as_object_mut().expect("an object");
-    object.insert("v".into(), json!(1));
-    object.insert("library".into(), json!(lib.library));
-    object.insert("grant".into(), json!(grant));
-    object.insert("at".into(), json!(now));
-    object.insert("head".into(), json!(lib.head));
+/// An expanded entry (§15) with its `season` and `episode` when it has them.
+fn entry(
+    title: ProjectionTitle,
+    members: Vec<(&str, &Value)>,
+    place: [Option<&Value>; 2],
+) -> Value {
+    let mut object = Map::from_iter(members.into_iter().map(|(k, v)| (k.to_owned(), v.clone())));
+    object.insert("title".into(), title_ref(title));
+    for (key, value) in ["season", "episode"].into_iter().zip(place) {
+        if let Some(value) = value {
+            object.insert(key.into(), value.clone());
+        }
+    }
+    Value::Object(object)
 }
 
-/// The lists as one object, and its digest: what changed since the last publish, whoever it is for and whenever.
-pub fn content(lists: Lists, hide: Value) -> (Value, String) {
-    // Moved in, not `json!`, which would serialize a copy of every list.
-    let content = Value::Object(Map::from_iter([
-        ("watchlist".to_owned(), Value::Array(lists.watchlist)),
-        ("continue".to_owned(), Value::Array(lists.continuing)),
-        ("seen".to_owned(), Value::Array(lists.seen)),
-        ("rated".to_owned(), Value::Array(lists.rated)),
-        ("hide".to_owned(), hide),
-    ]));
-    let digest = den_assistant::hex(&Sha256::digest(canonical(&content)));
-    (content, digest)
+/// The lists as the projection's rows, and their digest: what changed since the last publish, whoever it is for and
+/// whenever. The digest is SHA-256 of the canonical JSON of the expanded lists
+/// (`{"continue", "hide", "rated", "seen", "watchlist"}`), written an entry at a time so they are never built whole.
+pub fn content(lists: Lists, hide: Map<String, Value>) -> (ProjectionRows, String) {
+    let mut hash = Sha256::new();
+    let mut list = |name: &str, entries: &mut dyn Iterator<Item = Value>| {
+        hash.update(name.as_bytes());
+        hash.update(b"[");
+        for (i, entry) in entries.enumerate() {
+            if i > 0 {
+                hash.update(b",");
+            }
+            hash.update(canonical(&entry));
+        }
+        hash.update(b"]");
+    };
+    list(
+        "{\"continue\":",
+        &mut lists.continuing.iter().map(|r| {
+            let members = vec![
+                ("action", &r.action),
+                ("fraction", &r.fraction),
+                ("at", &r.at),
+            ];
+            entry(r.title, members, [r.season.as_ref(), r.episode.as_ref()])
+        }),
+    );
+    let hide_json = serde_json::to_string(&hide).expect("JSON value always serializes");
+    list(
+        &format!(",\"hide\":{hide_json},\"rated\":"),
+        &mut lists.rated.iter().map(|r| {
+            entry(
+                r.title,
+                vec![("value", &r.value), ("at", &r.at)],
+                [None, None],
+            )
+        }),
+    );
+    list(
+        ",\"seen\":",
+        &mut lists.seen.iter().map(|r| {
+            entry(
+                r.title,
+                vec![("at", &r.at)],
+                [r.season.as_ref(), r.episode.as_ref()],
+            )
+        }),
+    );
+    list(
+        ",\"watchlist\":",
+        &mut lists
+            .watchlist
+            .iter()
+            .map(|r| entry(r.title, vec![("addedAt", &r.added_at)], [None, None])),
+    );
+    hash.update(b"}");
+    let digest = den_assistant::hex(&hash.finalize());
+    let rows = ProjectionRows {
+        watchlist: lists.watchlist,
+        continuing: lists.continuing,
+        seen: lists.seen,
+        rated: Some(lists.rated),
+        hide: Some(hide),
+    };
+    (rows, digest)
 }
 
 /// One grant's 32 random bytes for its seal, from the call's: HKDF-SHA256(ikm = random, info = context ‖ grant), so

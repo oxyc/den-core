@@ -1719,11 +1719,11 @@ fn a_large_library_projects_whole() {
     .is_err());
 }
 
-/// A document that is no JSON value (a number out of range, a lone surrogate) refuses the whole projection request,
-/// before anything else in it is checked, though the documents are parsed one at a time; one that is a value but no
+/// A document or layout that is no JSON value (a number out of range, a lone surrogate) refuses the whole projection
+/// request, before anything else in it is checked, though each is parsed only when it is used; a value that is no
 /// document is skipped.
 #[test]
-fn a_document_that_is_no_json_value_refuses_the_request() {
+fn a_document_or_layout_that_is_no_json_value_refuses_the_request() {
     let request = |library: &str, documents: &str| {
         format!(
             r#"{{"op":"assistant_projection","library":"{library}","head":1,"random":"{}","now":{NOW},"documents":{documents}}}"#,
@@ -1735,6 +1735,8 @@ fn a_document_that_is_no_json_value_refuses_the_request() {
         r#"[{"n":1e400}]"#.to_owned(),
         r#"["\ud800"]"#.to_owned(),
         format!(r#"[{title},"n":"\udc00x"}}]"#),
+        // A layout, which is read when its series is, the same.
+        r#"[],"layouts":{"1399":{"seasons":[],"n":1e400}}"#.to_owned(),
     ] {
         for library in [LIBRARY, "not a library"] {
             let input = request(library, &documents);

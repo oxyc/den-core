@@ -640,15 +640,15 @@ enum AssistantRequest {
 
 /// Assistant v1 §15: the library's documents → the projection for every live read grant, sealed, and the read grants
 /// whose projection den-edge should drop. Read apart from `AssistantRequest`: an internally tagged enum buffers its
-/// fields, so it cannot leave the documents as slices of the request. Each is parsed only when it is read
+/// fields, so it cannot leave the documents and layouts as slices of the request. Each is parsed only when it is used
 /// (`projection::lists`), so the whole library is never held as `Value`s at once.
 #[derive(Deserialize)]
 struct ProjectionRequest<'a> {
     library: String,
     #[serde(default, borrow)]
     documents: Vec<&'a serde_json::value::RawValue>,
-    #[serde(default)]
-    layouts: serde_json::Map<String, Value>,
+    #[serde(default, borrow)]
+    layouts: std::collections::BTreeMap<String, &'a serde_json::value::RawValue>,
     head: u64,
     #[serde(default)]
     read: Option<Value>,
@@ -680,12 +680,13 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
     Some(
         serde_json::from_str::<ProjectionRequest>(input)
             .ok()
-            // Refused as a whole when a document is no JSON value (a number out of range, a lone surrogate), as when
-            // the documents were parsed with the request: each is parsed and dropped, so only one is held at a time.
+            // Refused as a whole when a document or layout is no JSON value (a number out of range, a lone surrogate),
+            // as when they were parsed with the request: each is parsed and dropped, so only one is held at a time.
             .filter(|request| {
                 request
                     .documents
                     .iter()
+                    .chain(request.layouts.values())
                     .all(|d| serde_json::from_str::<Value>(d.get()).is_ok())
             })
             .ok_or_else(|| "invalid_request".to_string())

@@ -1067,8 +1067,39 @@ pub fn seal_projection(
         .as_str()
         .ok_or(Error::InvalidRequest)?;
     let grant = projection["grant"].as_str().ok_or(Error::InvalidRequest)?;
-    let plain = projection_plaintext(projection)?;
-    let deflated = miniz_oxide::deflate::compress_to_vec(&plain, 9);
+    seal_plaintext(
+        key,
+        library,
+        grant,
+        &projection_plaintext(projection)?,
+        random,
+    )
+}
+
+/// [`seal_projection`] of the projection for `grant` made of `rows`, without the expanded object: what a client with
+/// a large library calls, since the expanded lists are many times the size of their rows.
+pub fn seal_projection_rows(
+    key: &[u8; 32],
+    library: &str,
+    grant: &str,
+    at: u64,
+    head: u64,
+    rows: &ProjectionRows,
+    random: &[u8; 32],
+) -> Result<SealedProjection, Error> {
+    let meta = [json!(library), json!(grant), json!(at), json!(head)];
+    let plain = write_compact(&meta, rows)?;
+    seal_plaintext(key, library, grant, &plain, random)
+}
+
+fn seal_plaintext(
+    key: &[u8; 32],
+    library: &str,
+    grant: &str,
+    plain: &[u8],
+    random: &[u8; 32],
+) -> Result<SealedProjection, Error> {
+    let deflated = miniz_oxide::deflate::compress_to_vec(plain, 9);
     let count = deflated.len().div_ceil(PART_BYTES);
     if count > MAX_PARTS {
         return Err(Error::InvalidRequest);
@@ -1236,94 +1267,232 @@ pub fn open_projection_compact(
 /// §15: the plaintext a projection compresses: the JCS of its compact form. `InvalidRequest` for a projection that is
 /// not one, or past [`MAX_PROJECTION_PLAINTEXT`].
 pub fn projection_plaintext(projection: &Value) -> Result<Vec<u8>, Error> {
-    let plain = serde_json::to_vec(&compact(projection).ok_or(Error::InvalidRequest)?)
-        .map_err(|_| Error::InvalidRequest)?;
-    if plain.len() > MAX_PROJECTION_PLAINTEXT {
-        return Err(Error::InvalidRequest);
-    }
-    Ok(plain)
+    let rows = rows_of(projection).ok_or(Error::InvalidRequest)?;
+    let meta = ["library", "grant", "at", "head"].map(|k| projection[k].clone());
+    write_compact(&meta, &rows)
 }
 
-fn title_of(value: &Value) -> Option<(String, u64)> {
-    let media = value["type"]
-        .as_str()
-        .filter(|t| matches!(*t, "movie" | "tv"))?;
-    Some((media.to_owned(), value["id"].as_u64()?))
+/// A title in a projection (§15).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Media {
+    Movie,
+    Tv,
 }
 
-/// The compact form (§15): titles once, in a table sorted by type and id; each list's entries as arrays that index it.
-fn compact(view: &Value) -> Option<Value> {
-    let mut titles: Vec<(String, u64)> = Vec::new();
-    for list in ["watchlist", "continue", "seen"] {
-        for entry in view[list].as_array()? {
-            titles.push(title_of(&entry["title"])?);
+impl Media {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Media::Movie => "movie",
+            Media::Tv => "tv",
         }
     }
-    // `rated` and `hide` came after the first projections: carried only when the view has them.
-    let rated_entries = match view.get("rated") {
-        None => None,
-        Some(list) => Some(list.as_array()?),
+}
+
+pub type ProjectionTitle = (Media, u64);
+
+/// A projection's lists as rows (§15): each entry's members, `None` where the expanded entry has no such member.
+#[derive(Debug, Default)]
+pub struct ProjectionRows {
+    pub watchlist: Vec<WatchlistRow>,
+    pub continuing: Vec<ContinueRow>,
+    pub seen: Vec<SeenRow>,
+    /// `rated` and `hide` came after the first projections: carried only when the projection has them.
+    pub rated: Option<Vec<RatedRow>>,
+    pub hide: Option<Map<String, Value>>,
+}
+
+#[derive(Debug)]
+pub struct WatchlistRow {
+    pub title: ProjectionTitle,
+    pub added_at: Value,
+}
+
+#[derive(Debug)]
+pub struct ContinueRow {
+    pub title: ProjectionTitle,
+    pub action: Value,
+    pub season: Option<Value>,
+    pub episode: Option<Value>,
+    pub fraction: Value,
+    pub at: Value,
+}
+
+#[derive(Debug)]
+pub struct SeenRow {
+    pub title: ProjectionTitle,
+    pub season: Option<Value>,
+    pub episode: Option<Value>,
+    pub at: Value,
+}
+
+#[derive(Debug)]
+pub struct RatedRow {
+    pub title: ProjectionTitle,
+    pub value: Value,
+    pub at: Value,
+}
+
+fn title_of(value: &Value) -> Option<ProjectionTitle> {
+    let media = match value["type"].as_str()? {
+        "movie" => Media::Movie,
+        "tv" => Media::Tv,
+        _ => return None,
     };
-    for entry in rated_entries.into_iter().flatten() {
-        titles.push(title_of(&entry["title"])?);
-    }
+    Some((media, value["id"].as_u64()?))
+}
+
+/// The rows of an expanded projection; `None` when it is not one.
+fn rows_of(view: &Value) -> Option<ProjectionRows> {
+    let list = |name: &str| view[name].as_array();
+    let watchlist = list("watchlist")?
+        .iter()
+        .map(|e| {
+            Some(WatchlistRow {
+                title: title_of(&e["title"])?,
+                added_at: e["addedAt"].clone(),
+            })
+        })
+        .collect::<Option<_>>()?;
+    let continuing = list("continue")?
+        .iter()
+        .map(|e| {
+            Some(ContinueRow {
+                title: title_of(&e["title"])?,
+                action: e["action"].clone(),
+                season: e.get("season").cloned(),
+                episode: e.get("episode").cloned(),
+                fraction: e["fraction"].clone(),
+                at: e["at"].clone(),
+            })
+        })
+        .collect::<Option<_>>()?;
+    let seen = list("seen")?
+        .iter()
+        .map(|e| {
+            Some(SeenRow {
+                title: title_of(&e["title"])?,
+                season: e.get("season").cloned(),
+                episode: e.get("episode").cloned(),
+                at: e["at"].clone(),
+            })
+        })
+        .collect::<Option<_>>()?;
+    let rated = match view.get("rated") {
+        None => None,
+        Some(list) => Some(
+            list.as_array()?
+                .iter()
+                .map(|e| {
+                    Some(RatedRow {
+                        title: title_of(&e["title"])?,
+                        value: e["value"].clone(),
+                        at: e["at"].clone(),
+                    })
+                })
+                .collect::<Option<_>>()?,
+        ),
+    };
     let hide = match view.get("hide") {
         None => None,
         Some(hide) => Some(hide.as_object()?.clone()),
     };
+    Some(ProjectionRows {
+        watchlist,
+        continuing,
+        seen,
+        rated,
+        hide,
+    })
+}
+
+fn put(out: &mut Vec<u8>, value: &impl serde::Serialize) {
+    serde_json::to_writer(&mut *out, value).expect("JSON value always serializes");
+}
+
+/// Writes `rows` as each item of a JSON array, after `name`.
+fn put_list<T>(out: &mut Vec<u8>, name: &str, rows: &[T], mut row: impl FnMut(&mut Vec<u8>, &T)) {
+    out.extend_from_slice(name.as_bytes());
+    out.push(b'[');
+    for (i, item) in rows.iter().enumerate() {
+        if i > 0 {
+            out.push(b',');
+        }
+        row(out, item);
+    }
+    out.push(b']');
+}
+
+/// The compact form (§15) of `rows`, written as `serde_json` writes it (members sorted, nothing between tokens):
+/// titles once, in a table sorted by type and id; each list's entries as arrays that index it. `meta` is `library`,
+/// `grant`, `at`, `head`. Written straight from the rows, so no `Value` of the whole is built.
+fn write_compact(meta: &[Value; 4], rows: &ProjectionRows) -> Result<Vec<u8>, Error> {
+    let [library, grant, at, head] = meta;
+    let mut titles: Vec<ProjectionTitle> = rows
+        .watchlist
+        .iter()
+        .map(|r| r.title)
+        .chain(rows.continuing.iter().map(|r| r.title))
+        .chain(rows.seen.iter().map(|r| r.title))
+        .chain(rows.rated.iter().flatten().map(|r| r.title))
+        .collect();
     titles.sort();
     titles.dedup();
-    let index =
-        |entry: &Value| title_of(&entry["title"]).and_then(|t| titles.binary_search(&t).ok());
-    let coordinate = |entry: &Value, key: &str| entry.get(key).cloned().unwrap_or(Value::Null);
-    let watchlist = view["watchlist"]
-        .as_array()?
-        .iter()
-        .map(|e| Some(json!([index(e)?, e["addedAt"]])))
-        .collect::<Option<Vec<_>>>()?;
-    let continuing = view["continue"]
-        .as_array()?
-        .iter()
-        .map(|e| {
-            Some(json!([
-                index(e)?,
-                e["action"],
-                coordinate(e, "season"),
-                coordinate(e, "episode"),
-                e["fraction"],
-                e["at"]
-            ]))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let seen = view["seen"]
-        .as_array()?
-        .iter()
-        .map(|e| {
-            Some(json!([
-                index(e)?,
-                coordinate(e, "season"),
-                coordinate(e, "episode"),
-                e["at"]
-            ]))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let mut out = json!({
-        "v": 1, "library": view["library"], "grant": view["grant"], "at": view["at"], "head": view["head"],
-        "titles": titles.iter().map(|(t, id)| json!([t, id])).collect::<Vec<_>>(),
-        "watchlist": watchlist, "continue": continuing, "seen": seen,
-    });
-    if let Some(entries) = rated_entries {
-        out["rated"] = Value::Array(
-            entries
-                .iter()
-                .map(|e| Some(json!([index(e)?, e["value"], e["at"]])))
-                .collect::<Option<Vec<_>>>()?,
+    let index = |title: &ProjectionTitle| titles.binary_search(title).expect("a listed title");
+    let null = Value::Null;
+    let mut out = Vec::new();
+    out.extend_from_slice(b"{\"at\":");
+    put(&mut out, at);
+    // One entry: `[index, values...]`.
+    let entry = |out: &mut Vec<u8>, title: &ProjectionTitle, values: &[&Value]| {
+        out.push(b'[');
+        put(out, &index(title));
+        for value in values {
+            out.push(b',');
+            put(out, value);
+        }
+        out.push(b']');
+    };
+    put_list(&mut out, ",\"continue\":", &rows.continuing, |out, r| {
+        let season = r.season.as_ref().unwrap_or(&null);
+        let episode = r.episode.as_ref().unwrap_or(&null);
+        entry(
+            out,
+            &r.title,
+            &[&r.action, season, episode, &r.fraction, &r.at],
         );
+    });
+    out.extend_from_slice(b",\"grant\":");
+    put(&mut out, grant);
+    out.extend_from_slice(b",\"head\":");
+    put(&mut out, head);
+    if let Some(hide) = &rows.hide {
+        out.extend_from_slice(b",\"hide\":");
+        put(&mut out, hide);
     }
-    if let Some(hide) = hide {
-        out["hide"] = Value::Object(hide);
+    out.extend_from_slice(b",\"library\":");
+    put(&mut out, library);
+    if let Some(rated) = &rows.rated {
+        put_list(&mut out, ",\"rated\":", rated, |out, r| {
+            entry(out, &r.title, &[&r.value, &r.at]);
+        });
     }
-    Some(out)
+    put_list(&mut out, ",\"seen\":", &rows.seen, |out, r| {
+        let season = r.season.as_ref().unwrap_or(&null);
+        let episode = r.episode.as_ref().unwrap_or(&null);
+        entry(out, &r.title, &[season, episode, &r.at]);
+    });
+    put_list(&mut out, ",\"titles\":", &titles, |out, (media, id)| {
+        put(out, &(media.as_str(), id));
+    });
+    out.extend_from_slice(b",\"v\":1");
+    put_list(&mut out, ",\"watchlist\":", &rows.watchlist, |out, r| {
+        entry(out, &r.title, &[&r.added_at]);
+    });
+    out.push(b'}');
+    if out.len() > MAX_PROJECTION_PLAINTEXT {
+        return Err(Error::InvalidRequest);
+    }
+    Ok(out)
 }
 
 /// The expanded form den-mcp reads, from the compact one.
