@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::{canonical_combining_class, compose, decompose_canonical};
 
 const ROOT_MEMBERS: &[&str] = &["format", "kind", "schema", "owner", "migration", "profiles"];
 const ENTRY_MEMBERS: &[&str] = &["id", "role", "display", "library", "policy", "deleted"];
@@ -84,7 +84,7 @@ fn display(value: &Value) -> Result<(), String> {
     if name.is_empty() || name.chars().count() > 64 {
         return Err("invalid_display".into());
     }
-    if name.nfc().ne(name.chars()) {
+    if !is_nfc(name) {
         return Err("display_not_nfc".into());
     }
     if let Some(avatar) = value.get("avatar") {
@@ -99,6 +99,44 @@ fn display(value: &Value) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Whether `text` is in Normalization Form C: `text.nfc().eq(text.chars())`, by the same algorithm (UAX #15 canonical
+/// decomposition, canonical ordering, then composition) over unicode-normalization's canonical-only functions.
+/// Its `nfc()` chooses canonical or compatibility decomposition at run time, so it also links the compatibility
+/// tables NFC never reads: about 65 KB of the web module.
+fn is_nfc(text: &str) -> bool {
+    let mut chars = Vec::new();
+    for c in text.chars() {
+        decompose_canonical(c, |d| chars.push((canonical_combining_class(d), d)));
+    }
+    // Every run of non-starters in canonical order; stable, so equal classes keep their order.
+    for run in chars.split_mut(|&(class, _)| class == 0) {
+        run.sort_by_key(|&(class, _)| class);
+    }
+    let mut out: Vec<char> = Vec::with_capacity(chars.len());
+    // The starter a character may compose with, and the class of the last character kept after it.
+    let mut starter = None;
+    let mut last = None;
+    for (class, c) in chars {
+        if let Some(s) = starter {
+            // Blocked when a character between them is a starter or has at least this class.
+            if last.is_none_or(|l| l < class) {
+                if let Some(composed) = compose(out[s], c) {
+                    out[s] = composed;
+                    continue;
+                }
+            }
+        }
+        if class == 0 {
+            starter = Some(out.len());
+            last = None;
+        } else {
+            last = Some(class);
+        }
+        out.push(c);
+    }
+    out.into_iter().eq(text.chars())
 }
 
 fn standard_base64(bytes: &[u8]) -> String {
@@ -2589,5 +2627,60 @@ mod tests {
         let key = standard_base64(&bytes);
         assert_eq!(key, "ERERERERERERERERERERERERERERERERERERERERERE=");
         assert_eq!(codec::unbase64(&key).unwrap(), bytes);
+    }
+
+    #[test]
+    fn is_nfc_answers_as_unicode_normalization() {
+        use unicode_normalization::UnicodeNormalization;
+        let oracle = |text: &str| text.nfc().eq(text.chars());
+        assert!(is_nfc("é") && !is_nfc("e\u{301}"));
+        assert!(!is_nfc("\u{1100}\u{1161}") && !is_nfc("가\u{11a8}"));
+        // A mark composes past one of a lower class; marks sort by class.
+        assert!(is_nfc("á\u{316}") && !is_nfc("a\u{316}\u{301}") && !is_nfc("a\u{301}\u{316}"));
+        let scalars = || (0..=0x10ffff).filter_map(char::from_u32);
+        for c in scalars() {
+            let text = c.to_string();
+            assert_eq!(is_nfc(&text), oracle(&text), "{:04x}", c as u32);
+        }
+        // Every pair that composes, with two marks of every combining class before or after its second character:
+        // reordering, and composition blocked or not by a mark between them.
+        let mut pairs = Vec::new();
+        let mut marks: BTreeMap<u8, Vec<char>> = BTreeMap::new();
+        for c in scalars() {
+            let class = canonical_combining_class(c);
+            if class != 0 && marks.entry(class).or_default().len() < 2 {
+                marks.entry(class).or_default().push(c);
+            }
+            let mut parts = Vec::new();
+            decompose_canonical(c, |d| parts.push(d));
+            if let [b, y] = parts[..] {
+                pairs.push((b, y));
+            }
+        }
+        let marks: Vec<char> = marks.into_values().flatten().collect();
+        for &(b, y) in &pairs {
+            for &x in &marks {
+                for text in [[b, x, y], [b, y, x]] {
+                    let text = String::from_iter(text);
+                    assert_eq!(is_nfc(&text), oracle(&text), "{text:?}");
+                }
+            }
+        }
+        // Hangul: leading and vowel jamo compose to a syllable, which a trailing jamo extends.
+        for l in '\u{1100}'..='\u{1112}' {
+            for v in '\u{1161}'..='\u{1175}' {
+                for t in ['\u{11a7}'].into_iter().chain('\u{11a8}'..='\u{11c2}') {
+                    for text in [
+                        vec![l, v],
+                        vec![l, v, t],
+                        vec![l, '\u{301}', v],
+                        compose(l, v).into_iter().chain([t]).collect(),
+                    ] {
+                        let text = String::from_iter(text);
+                        assert_eq!(is_nfc(&text), oracle(&text), "{text:?}");
+                    }
+                }
+            }
+        }
     }
 }

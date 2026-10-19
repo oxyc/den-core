@@ -57,8 +57,9 @@ pub use series::{
 pub use tilt::{boost, order, Era, Signals, Weights};
 pub use wire::{capture, merge, Stamp};
 
+/// Every op but the assistant's, read by `tagged`: the variant is the request's `op`, its fields the request's others.
 #[derive(Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 enum Request {
     Name {
         row: Value,
@@ -106,10 +107,8 @@ enum Request {
         last_aired: Option<Coord>,
         last_played: Option<LastPlayed>,
     },
-    ContinueEntry {
-        #[serde(flatten)]
-        input: ContinueInput,
-    },
+    /// The request's own fields are the input's (`tagged` reads it from the whole request, `op` ignored).
+    ContinueEntry(ContinueInput),
     Issue {
         last: Stamp,
         seen: Option<Stamp>,
@@ -545,7 +544,7 @@ enum Request {
 // The variant names are the wire op names (`assistant_keygen_dropbox`, ...), so the shared prefix stays.
 #[allow(clippy::enum_variant_names)]
 #[derive(Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 enum AssistantRequest {
     /// Assistant v1 §4: 32 random bytes (hex) → a drop-box key and the `set:assistant` setting holding it.
     AssistantKeygenDropbox { random: String },
@@ -721,9 +720,9 @@ pub fn evaluate(input: &str) -> String {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
-        match serde_json::from_str::<Request>(input) {
+        match tagged::<Request>(input) {
             Ok(request) => run(request),
-            Err(_) => match serde_json::from_str::<AssistantRequest>(input) {
+            Err(_) => match tagged::<AssistantRequest>(input) {
                 Ok(request) => run_assistant(request),
                 Err(_) => Err("invalid_request".into()),
             },
@@ -735,7 +734,7 @@ pub fn evaluate(input: &str) -> String {
 /// it to the wrong module says so rather than `invalid_request`.
 pub fn evaluate_core(input: &str) -> String {
     envelope(
-        bounded(input).and_then(|()| match serde_json::from_str::<Request>(input) {
+        bounded(input).and_then(|()| match tagged::<Request>(input) {
             Ok(request) => run(request),
             Err(_) => Err(if assistant_op(input) {
                 "assistant_module".into()
@@ -752,7 +751,7 @@ pub fn evaluate_assistant(input: &str) -> String {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
-        serde_json::from_str::<AssistantRequest>(input)
+        tagged::<AssistantRequest>(input)
             .map_err(|_| "invalid_request".to_string())
             .and_then(run_assistant)
     }))
@@ -779,6 +778,112 @@ fn assistant_op(input: &str) -> bool {
         op: String,
     }
     serde_json::from_str::<Op>(input).is_ok_and(|o| o.op.starts_with("assistant_"))
+}
+
+/// A request, `{"op": "<variant>", <its fields>...}`, as `T`'s variant: `op` is read first, skipping the rest, and the
+/// variant is then read straight from the request, where `op` is a field it ignores.
+///
+/// Serde's own internal tagging (`tag = "op"`) buffers the request into an intermediate tree before it reads the
+/// variant from that. It held every request twice, and the web module carried every field type's deserializer twice.
+fn tagged<'de, T: Deserialize<'de>>(input: &'de str) -> Result<T, serde_json::Error> {
+    #[derive(Deserialize)]
+    struct Op<'a> {
+        #[serde(borrow)]
+        op: std::borrow::Cow<'a, str>,
+    }
+    let op = serde_json::from_str::<Op>(input)?.op;
+    T::deserialize(Tagged { op: &op, input })
+}
+
+struct Tagged<'a, 'de> {
+    op: &'a str,
+    input: &'de str,
+}
+
+impl<'de> serde::Deserializer<'de> for Tagged<'_, 'de> {
+    type Error = serde_json::Error;
+
+    fn deserialize_any<V: serde::de::Visitor<'de>>(self, _: V) -> Result<V::Value, Self::Error> {
+        Err(serde::de::Error::custom("a request is read as an enum"))
+    }
+
+    fn deserialize_enum<V: serde::de::Visitor<'de>>(
+        self,
+        _: &'static str,
+        _: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        visitor.visit_enum(self)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf option unit
+        unit_struct newtype_struct seq tuple tuple_struct map struct identifier ignored_any
+    }
+}
+
+impl<'de> serde::de::EnumAccess<'de> for Tagged<'_, 'de> {
+    type Error = serde_json::Error;
+    type Variant = Self;
+
+    fn variant_seed<S: serde::de::DeserializeSeed<'de>>(
+        self,
+        seed: S,
+    ) -> Result<(S::Value, Self), Self::Error> {
+        let op = serde::de::value::StrDeserializer::<serde_json::Error>::new(self.op);
+        Ok((seed.deserialize(op)?, self))
+    }
+}
+
+impl<'de> serde::de::VariantAccess<'de> for Tagged<'_, 'de> {
+    type Error = serde_json::Error;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        Err(serde::de::Error::custom("every op has fields"))
+    }
+
+    fn newtype_variant_seed<S: serde::de::DeserializeSeed<'de>>(
+        self,
+        seed: S,
+    ) -> Result<S::Value, Self::Error> {
+        self.body(|request| seed.deserialize(request))
+    }
+
+    fn tuple_variant<V: serde::de::Visitor<'de>>(
+        self,
+        _: usize,
+        _: V,
+    ) -> Result<V::Value, Self::Error> {
+        Err(serde::de::Error::custom("every op has named fields"))
+    }
+
+    fn struct_variant<V: serde::de::Visitor<'de>>(
+        self,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        self.body(|request| serde::Deserializer::deserialize_struct(request, "", fields, visitor))
+    }
+}
+
+impl<'de> Tagged<'_, 'de> {
+    /// The variant's fields from the request itself. Only an object: an internally tagged enum also took
+    /// `["<op>", <fields in order>...]`, which no client sends.
+    fn body<T>(
+        self,
+        read: impl FnOnce(
+            &mut serde_json::Deserializer<serde_json::de::StrRead<'de>>,
+        ) -> Result<T, serde_json::Error>,
+    ) -> Result<T, serde_json::Error> {
+        let json = self.input.trim_start_matches([' ', '\t', '\n', '\r']);
+        if !json.starts_with('{') {
+            return Err(serde::de::Error::custom("a request is an object"));
+        }
+        let mut request = serde_json::Deserializer::from_str(self.input);
+        let value = read(&mut request)?;
+        request.end()?;
+        Ok(value)
+    }
 }
 
 fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
@@ -898,7 +1003,7 @@ fn run(request: Request) -> Result<Value, String> {
             last_aired,
             last_played,
         } => Ok(continue_target(&seasons, last_aired, last_played)),
-        Request::ContinueEntry { input } => Ok(continue_entry(&input)),
+        Request::ContinueEntry(input) => Ok(continue_entry(&input)),
         Request::Issue {
             last,
             seen,
@@ -1217,8 +1322,42 @@ fn run(request: Request) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::evaluate;
+    use super::{evaluate, evaluate_core};
     use serde_json::{json, Value};
+
+    #[test]
+    fn a_request_is_an_object_naming_its_op_anywhere() {
+        let answer = |request: &str| -> Value { serde_json::from_str(&evaluate(request)).unwrap() };
+        let guard = json!({"version": 1, "ok": {"compact": true}});
+        for request in [
+            r#"{"op":"compaction_guard","unreadable":1,"rows":2}"#,
+            r#"{"unreadable":1,"rows":2,"op":"compaction_guard"}"#,
+            " \n{\"rows\":2,\"op\":\"compaction_guard\",\"future\":[{}],\"unreadable\":1}\t",
+        ] {
+            assert_eq!(answer(request), guard, "{request}");
+        }
+        let refused = json!({"version": 1, "error": "invalid_request"});
+        for request in [
+            // Serde's internally tagged enums read an array as the op and then its fields in order.
+            r#"["compaction_guard",1,2]"#,
+            r#"{"op":"compaction_guard","op":"compaction_guard","unreadable":1,"rows":2}"#,
+            r#"{"op":"compaction_guard","unreadable":1,"rows":2,"rows":2}"#,
+            r#"{"op":"compaction_guard","unreadable":1,"rows":2} {}"#,
+            r#"{"op":1,"unreadable":1,"rows":2}"#,
+            r#"{"unreadable":1,"rows":2}"#,
+            r#"{"op":"compaction_guard","unreadable":1}"#,
+            r#"{"op":"no_such_op"}"#,
+            "{}",
+            "",
+        ] {
+            assert_eq!(answer(request), refused, "{request}");
+            assert_eq!(evaluate_core(request), evaluate(request), "{request}");
+        }
+        assert_eq!(
+            evaluate_core(r#"{"op":"assistant_prune","now":1}"#),
+            json!({"version": 1, "error": "assistant_module"}).to_string()
+        );
+    }
 
     #[test]
     fn whole_library_operations_are_not_limited_to_one_megabyte() {

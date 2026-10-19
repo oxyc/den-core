@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { evaluate, initialize } from '../web/index.js';
 import { evaluateAssistant, initializeAssistant } from '../web/assistant.js';
 assert.throws(() => evaluate('{}'), /not initialized/);
@@ -196,3 +196,12 @@ assert.deepEqual(JSON.parse(evaluate(deepWire)), {version: 1, error: 'invalid_re
 count++;
 assert.ok(assistantCount > 0);
 console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} in the assistant module)`);
+
+// Every Worker that loads a module compiles its own copy, and in WebKit the machine code is most of what a copy
+// costs (Den Web runs two library Workers). Budgets with some headroom over the built size, below the 1.71 MB and
+// 596 KB of the modules before they were built for size.
+for (const [module, budget] of [['den_core', 1_450_000], ['den_core_assistant', 560_000]]) {
+  const bytes = statSync(new URL(`../web/generated/${module}_bg.wasm`, import.meta.url)).size;
+  assert.ok(bytes <= budget, `${module}_bg.wasm is ${bytes} bytes, over its ${budget}-byte budget`);
+  console.log(`PASS: ${module}_bg.wasm ${bytes} bytes (budget ${budget})`);
+}
