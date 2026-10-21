@@ -1,15 +1,20 @@
 //! The recovery code (den-spec `wire/recovery-code.md`): making a code from random bytes (§2), reading a typed one
 //! (§2), and deriving its locator and wrap key (§3). Randomness arrives as input; sealing stays in the clients.
 
-use argon2::{Algorithm, Argon2, Block, Params, Version};
-use hkdf::Hkdf;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+
+#[cfg(feature = "recovery-kdf")]
+use argon2::{Algorithm, Argon2, Block, Params, Version};
+#[cfg(feature = "recovery-kdf")]
+use hkdf::Hkdf;
+#[cfg(feature = "recovery-kdf")]
 use zeroize::Zeroizing;
 
 const ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DATA_LEN: usize = 22;
 const CODE_LEN: usize = DATA_LEN + 2;
+#[cfg(feature = "recovery-kdf")]
 const DOMAIN: &[u8] = b"den/recovery/v1";
 const CHECK_DOMAIN: &[u8] = b"den/recovery/v1/check";
 
@@ -71,11 +76,13 @@ pub fn read(text: &str) -> Result<Value, String> {
 /// `A`, Argon2's 64 MiB of blocks and the raw wrap key are wiped here before returning (§8 step 6). The wrap key still
 /// leaves as hex in the JSON answer, an immutable string in the caller's runtime that nothing can wipe: a client that
 /// zeroes its own copy has not zeroed every copy.
+#[cfg(feature = "recovery-kdf")]
 pub fn derive(data: &str) -> Result<Value, String> {
     let (locator, wrap_key) = derive_bytes(data)?;
     Ok(json!({ "locator": hex(&locator), "wrapKey": hex(&*wrap_key) }))
 }
 
+#[cfg(feature = "recovery-kdf")]
 fn argon2id(data: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     if data.len() != DATA_LEN || !data.bytes().all(|b| ALPHABET.contains(&b)) {
         return Err("mistyped".into());
@@ -90,6 +97,7 @@ fn argon2id(data: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     Ok(a)
 }
 
+#[cfg(feature = "recovery-kdf")]
 fn derive_bytes(data: &str) -> Result<([u8; 16], Zeroizing<[u8; 32]>), String> {
     let a = argon2id(data)?;
     let hkdf = Hkdf::<Sha256>::new(Some(DOMAIN), &*a);
@@ -103,6 +111,7 @@ fn derive_bytes(data: &str) -> Result<([u8; 16], Zeroizing<[u8; 32]>), String> {
     Ok((locator, wrap_key))
 }
 
+#[cfg(feature = "recovery-kdf")]
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

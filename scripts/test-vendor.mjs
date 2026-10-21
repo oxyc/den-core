@@ -74,7 +74,8 @@ try {
   // would delete its populated crates directory after already deleting protectedNative.
   const isolatedSource = join(cleanRoom, 'isolated-source');
   for (const source of ['Cargo.toml', 'Cargo.lock', 'LICENSE', 'crates', 'bindings', 'scripts',
-    'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts']) {
+    'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
+    'web/recovery.js', 'web/recovery.d.ts']) {
     const destination = join(isolatedSource, source);
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(join(root, source), destination, { recursive: true });
@@ -82,7 +83,7 @@ try {
   mkdirSync(join(isolatedSource, 'Swift/Sources'), { recursive: true });
   mkdirSync(join(isolatedSource, 'Swift/Artifacts'), { recursive: true });
   mkdirSync(join(isolatedSource, 'web/generated'), { recursive: true });
-  for (const module of ['den_core', 'den_core_assistant']) {
+  for (const module of ['den_core', 'den_core_assistant', 'den_core_recovery']) {
     for (const suffix of ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts']) {
       writeFileSync(join(isolatedSource, 'web/generated', `${module}${suffix}`), 'isolated artifact');
     }

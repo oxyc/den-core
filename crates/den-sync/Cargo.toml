@@ -5,12 +5,16 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+default = ["recovery-kdf"]
+recovery-kdf = ["dep:argon2"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 unicode-normalization.workspace = true
 miniz_oxide.workspace = true
-argon2.workspace = true
+argon2 = { workspace = true, optional = true }
 hkdf.workspace = true
 # Only for its `zeroize` feature: HKDF keeps the PRK in HMAC state.
 hmac.workspace = true
