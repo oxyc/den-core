@@ -118,15 +118,19 @@ if want native; then
 fi
 
 if want wasm; then
-    # Two web modules: every op but the assistant's, and the assistant ops with their crypto, which a browser loads only
-    # when it needs them. The name section only names functions for stack traces; errors come back as JSON either way.
+    # Three web modules: ordinary policy, assistant crypto and recovery's memory-hard KDF. Optional policy loads only
+    # where it is used. The name section only names functions for stack traces; errors come back as JSON either way.
+    # Keep Cargo's package feature unification from adding the recovery feature back to the ordinary module.
     cargo build --locked --release -p den-core-web -p den-core-web-assistant --target wasm32-unknown-unknown
+    cargo build --locked --release -p den-core-web-recovery --target wasm32-unknown-unknown
     bindgen="$root/.tools/bin/wasm-bindgen"
     if [[ ! -x "$bindgen" ]]; then bindgen=wasm-bindgen; fi
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core \
         target/wasm32-unknown-unknown/release/den_core_web.wasm
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_assistant \
         target/wasm32-unknown-unknown/release/den_core_web_assistant.wasm
+    "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_recovery \
+        target/wasm32-unknown-unknown/release/den_core_web_recovery.wasm
     # Binaryen's size passes over what LLVM made: every browser Worker compiles its own copy of a module, and in WebKit
     # the machine code is most of what a copy costs. (opt-level "z" saves ~0.5 MB a copy more but runs 12–27% slower.)
     # The version is pinned (CI installs it, checksummed), since another makes other bytes. The features are the
@@ -137,7 +141,7 @@ if want wasm; then
         echo "wasm-opt version 132 (binaryen) is required; found: $("$wasm_opt" --version)" >&2
         exit 1
     fi
-    for module in den_core den_core_assistant; do
+    for module in den_core den_core_assistant den_core_recovery; do
         "$wasm_opt" -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
             --enable-mutable-globals --enable-reference-types --enable-multivalue \
             -o "web/generated/${module}_bg.wasm" "web/generated/${module}_bg.wasm"

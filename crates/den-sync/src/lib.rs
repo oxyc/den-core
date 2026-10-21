@@ -508,6 +508,7 @@ enum Request {
     },
     /// Recovery code §3: data characters → `{locator, wrapKey}` (hex). One Argon2id at 64 MiB: run it off the main
     /// thread.
+    #[cfg(feature = "recovery-kdf")]
     RecoveryDerive {
         data: String,
     },
@@ -834,6 +835,25 @@ pub fn evaluate_assistant(input: &str) -> String {
         tagged::<AssistantRequest>(input)
             .map_err(|_| "invalid_request".to_string())
             .and_then(run_assistant)
+    }))
+}
+
+/// Recovery code §3's memory-hard KDF alone: the web loads this module only while making or redeeming a code.
+#[cfg(feature = "recovery-kdf")]
+pub fn evaluate_recovery_kdf(input: &str) -> String {
+    #[derive(Deserialize)]
+    struct RecoveryKdfRequest {
+        op: String,
+        data: String,
+    }
+
+    envelope(bounded(input).and_then(|()| {
+        let request: RecoveryKdfRequest =
+            serde_json::from_str(input).map_err(|_| "invalid_request".to_string())?;
+        if request.op != "recovery_derive" {
+            return Err("invalid_request".into());
+        }
+        recovery::derive(&request.data)
     }))
 }
 
@@ -1364,6 +1384,7 @@ fn run(request: Request) -> Result<Value, String> {
         } => Ok(json!(Era::from_samples(&samples, current_year))),
         Request::RecoveryCode { random } => recovery::code(&random),
         Request::RecoveryRead { text } => recovery::read(&text),
+        #[cfg(feature = "recovery-kdf")]
         Request::RecoveryDerive { data } => recovery::derive(&data),
         Request::Retry {
             attempts,

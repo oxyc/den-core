@@ -12,7 +12,8 @@ function files(dir) {
 const inputs = ['Cargo.toml', 'Cargo.lock', ...files(join(root, 'crates')).map((f) => relative(root, f)),
   ...files(join(root, 'bindings')).map((f) => relative(root, f)),
   'scripts/build-bindings.sh', 'scripts/rustc-apple-deployment.sh', 'scripts/test-vendor.mjs', 'scripts/vendor.mjs',
-  'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts'];
+  'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
+  'web/recovery.js', 'web/recovery.d.ts'];
 inputs.push('LICENSE');
 const sources = Object.fromEntries(inputs.sort().map((file) => [file, sha(readFileSync(join(root, file)))]));
 const sourceDigest = sha(JSON.stringify(sources));
@@ -82,7 +83,8 @@ export function vendor({
 } = {}) {
   const required = ['Swift/Package.swift', 'Swift/Sources', 'Swift/Artifacts', 'LICENSE',
     'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
-    ...['den_core', 'den_core_assistant'].flatMap((module) =>
+    'web/recovery.js', 'web/recovery.d.ts',
+    ...['den_core', 'den_core_assistant', 'den_core_recovery'].flatMap((module) =>
       ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts'].map((suffix) => `web/generated/${module}${suffix}`)),
     ...['policy-v1.json', 'policy-v3.json', 'profiles-v1.json']
       .map((fixture) => `crates/den-sync/tests/fixtures/${fixture}`)];
@@ -100,9 +102,11 @@ export function vendor({
   manifest(native);
 
   rmSync(web, { recursive: true, force: true });
-  for (const name of ['index.js', 'index.d.ts', 'assistant.js', 'assistant.d.ts']) copy(`web/${name}`, join(web, name));
-  // Two modules: every op but the assistant's (`index.js`), and the assistant ops (`assistant.js`), loaded on demand.
-  for (const module of ['den_core', 'den_core_assistant']) {
+  for (const name of ['index.js', 'index.d.ts', 'assistant.js', 'assistant.d.ts', 'recovery.js', 'recovery.d.ts']) {
+    copy(`web/${name}`, join(web, name));
+  }
+  // Ordinary policy plus assistant crypto and recovery KDF modules, the latter two loaded on demand.
+  for (const module of ['den_core', 'den_core_assistant', 'den_core_recovery']) {
     for (const suffix of ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts']) {
       copy(`web/generated/${module}${suffix}`, join(web, 'generated', `${module}${suffix}`));
     }
