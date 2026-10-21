@@ -2,27 +2,42 @@ import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { evaluate, initialize } from '../web/index.js';
 import { evaluateAssistant, initializeAssistant } from '../web/assistant.js';
+import { evaluateRecovery, initializeRecovery } from '../web/recovery.js';
 assert.throws(() => evaluate('{}'), /not initialized/);
 assert.throws(() => evaluateAssistant('{}'), /not initialized/);
+assert.throws(() => evaluateRecovery('{}'), /not initialized/);
 await initialize(readFileSync(new URL('../web/generated/den_core_bg.wasm', import.meta.url)));
 await initializeAssistant(readFileSync(new URL('../web/generated/den_core_assistant_bg.wasm', import.meta.url)));
+await initializeRecovery(readFileSync(new URL('../web/generated/den_core_recovery_bg.wasm', import.meta.url)));
 const fixtures = ['policy-v1.json', 'policy-v3.json', 'policy-v4.json', 'profiles-v1.json'].map(name =>
   JSON.parse(readFileSync(new URL(`../crates/den-sync/tests/fixtures/${name}`, import.meta.url))));
-// The assistant ops run in their own module, and each module refuses the other's ops.
+// Optional operations run in their own modules, and every module refuses operations outside its capability.
 const assistant = (request) => typeof request.op === 'string' && request.op.startsWith('assistant_');
+const recovery = (request) => request.op === 'recovery_derive';
 let count = 0;
 let assistantCount = 0;
+let recoveryCount = 0;
 for (const fixture of fixtures) {
   for (const test of fixture.cases) {
-    const own = assistant(test.request) ? evaluateAssistant : evaluate;
+    const own = assistant(test.request)
+      ? evaluateAssistant
+      : recovery(test.request)
+        ? evaluateRecovery
+        : evaluate;
     const result = JSON.parse(own(JSON.stringify(test.request)));
     assert.deepEqual(result, 'error' in test ? {version:1,error:test.error} : {version:1,ok:test.ok}, test.name);
     if (assistant(test.request)) {
       assert.deepEqual(JSON.parse(evaluate(JSON.stringify(test.request))), {version: 1, error: 'assistant_module'},
         test.name);
+      assert.equal(JSON.parse(evaluateRecovery(JSON.stringify(test.request))).error, 'invalid_request', test.name);
       assistantCount++;
+    } else if (recovery(test.request)) {
+      assert.equal(JSON.parse(evaluate(JSON.stringify(test.request))).error, 'invalid_request', test.name);
+      assert.equal(JSON.parse(evaluateAssistant(JSON.stringify(test.request))).error, 'invalid_request', test.name);
+      recoveryCount++;
     } else {
       assert.equal(JSON.parse(evaluateAssistant(JSON.stringify(test.request))).error, 'invalid_request', test.name);
+      assert.equal(JSON.parse(evaluateRecovery(JSON.stringify(test.request))).error, 'invalid_request', test.name);
     }
     count++;
   }
@@ -195,12 +210,17 @@ const deepWire = '{"op":"profiles_materialize","document":{"migration":{},"futur
 assert.deepEqual(JSON.parse(evaluate(deepWire)), {version: 1, error: 'invalid_request'});
 count++;
 assert.ok(assistantCount > 0);
-console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} in the assistant module)`);
+assert.ok(recoveryCount > 0);
+console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} assistant, ${recoveryCount} recovery)`);
 
 // Every Worker that loads a module compiles its own copy, and in WebKit the machine code is most of what a copy
 // costs (Den Web runs two library Workers). Budgets with some headroom over the built size, below the 1.71 MB and
 // 596 KB of the modules before they were built for size.
-for (const [module, budget] of [['den_core', 1_450_000], ['den_core_assistant', 560_000]]) {
+for (const [module, budget] of [
+  ['den_core', 1_400_000],
+  ['den_core_assistant', 560_000],
+  ['den_core_recovery', 175_000],
+]) {
   const bytes = statSync(new URL(`../web/generated/${module}_bg.wasm`, import.meta.url)).size;
   assert.ok(bytes <= budget, `${module}_bg.wasm is ${bytes} bytes, over its ${budget}-byte budget`);
   console.log(`PASS: ${module}_bg.wasm ${bytes} bytes (budget ${budget})`);
