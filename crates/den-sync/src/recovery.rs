@@ -111,7 +111,7 @@ fn derive_bytes(data: &str) -> Result<([u8; 16], Zeroizing<[u8; 32]>), String> {
     Ok((locator, wrap_key))
 }
 
-#[cfg(feature = "recovery-kdf")]
+#[cfg(any(feature = "recovery-kdf", test))]
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -131,6 +131,7 @@ mod tests {
     use super::*;
 
     /// The Argon2id this crate links is RFC 9106's, checked against §5.3 as den-spec's vector tool checks Node's.
+    #[cfg(feature = "recovery-kdf")]
     #[test]
     fn argon2id_is_rfc_9106() {
         let params = argon2::ParamsBuilder::new()
@@ -154,6 +155,7 @@ mod tests {
     }
 
     /// `A` for den-spec's two vector codes: `derive` publishes only what HKDF makes of it.
+    #[cfg(feature = "recovery-kdf")]
     #[test]
     fn argon2id_is_the_vectors_a() {
         let cases = [
@@ -171,6 +173,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "recovery-kdf")]
     #[test]
     fn derive_refuses_anything_but_data_characters() {
         for data in [
