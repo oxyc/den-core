@@ -11,8 +11,8 @@ mod profiles;
 mod projection;
 mod recovery;
 mod series;
-mod wire;
 mod watch;
+mod wire;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -28,7 +28,6 @@ pub use downloads::{
 };
 pub use episodes::episode_mark;
 pub use events::commands;
-pub use watch::{lease, receipt_row_name, watch_row_name};
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
     create_next as profiles_create_next, household_audit as profile_household_audit,
@@ -50,6 +49,7 @@ pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
 };
+pub use watch::{lease, receipt_row_name, watch_row_name};
 pub use wire::{capture, merge, Stamp};
 
 /// Every op but the assistant's, read by `tagged`: the variant is the request's `op`, its fields the request's others.
@@ -1225,16 +1225,12 @@ fn run(request: Request) -> Result<Value, String> {
             id,
             season,
             episode,
-        } => Ok(json!(watch_row_name(
-            &media, id, season, episode
-        )?)),
+        } => Ok(json!(watch_row_name(&media, id, season, episode)?)),
         Request::ReceiptName {
             provider,
             account,
             target,
-        } => Ok(json!(receipt_row_name(
-            &provider, &account, &target
-        )?)),
+        } => Ok(json!(receipt_row_name(&provider, &account, &target)?)),
         Request::RecoveryCode { random } => recovery::code(&random),
         Request::RecoveryRead { text } => recovery::read(&text),
         #[cfg(feature = "recovery-kdf")]

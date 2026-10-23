@@ -2528,7 +2528,6 @@ fn a_pending_pass_refuses_as_a_whole_request_did() {
     }
 }
 
-
 // ---- den-spec vectors -------------------------------------------------------------------------------------------
 
 fn spec_dir() -> Option<PathBuf> {
