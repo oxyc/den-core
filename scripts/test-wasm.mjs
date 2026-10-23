@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { evaluate, initialize } from '../web/index.js';
 import { evaluateAssistant, initializeAssistant } from '../web/assistant.js';
 import { evaluateRecovery, initializeRecovery } from '../web/recovery.js';
@@ -214,10 +215,10 @@ assert.ok(recoveryCount > 0);
 console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} assistant, ${recoveryCount} recovery)`);
 
 // Every Worker that loads a module compiles its own copy, and in WebKit the machine code is most of what a copy
-// costs (Den Web runs two library Workers). Budgets with some headroom over the built size, below the 1.71 MB and
-// 596 KB of the modules before they were built for size.
+// costs (Den Web runs two library Workers). Keep enough headroom for toolchain noise without giving the compact
+// request boundary's savings back.
 for (const [module, budget] of [
-  ['den_core', 1_400_000],
+  ['den_core', 1_050_000],
   ['den_core_assistant', 560_000],
   ['den_core_recovery', 175_000],
 ]) {
@@ -225,3 +226,9 @@ for (const [module, budget] of [
   assert.ok(bytes <= budget, `${module}_bg.wasm is ${bytes} bytes, over its ${budget}-byte budget`);
   console.log(`PASS: ${module}_bg.wasm ${bytes} bytes (budget ${budget})`);
 }
+
+const tizen3 = readFileSync(new URL('../web-tizen3/generated/den_core.js', import.meta.url));
+const tizen3Gzip = gzipSync(tizen3, {level: 9}).byteLength;
+assert.ok(tizen3.byteLength <= 2_150_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2150000-byte budget`);
+assert.ok(tizen3Gzip <= 610_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 610000-byte budget`);
+console.log(`PASS: Tizen 3 core ${tizen3.byteLength} bytes, ${tizen3Gzip} gzip`);
