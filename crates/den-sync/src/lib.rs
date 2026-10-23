@@ -12,7 +12,6 @@ mod profiles;
 mod projection;
 mod recovery;
 mod series;
-mod tilt;
 mod wire;
 
 use serde::Deserialize;
@@ -54,7 +53,6 @@ pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
 };
-pub use tilt::{boost, order, Era, Signals, Weights};
 pub use wire::{capture, merge, Stamp};
 
 /// Every op but the assistant's, read by `tagged`: the variant is the request's `op`, its fields the request's others.
@@ -481,23 +479,6 @@ enum Request {
         now: u64,
         retry_after: Option<u64>,
     },
-    /// The taste tilt's order for one page. `signals` are the cosines den-atlas measured plus each
-    /// candidate's year; `weights` and `era` are the levers, defaulted so a caller that does not tune
-    /// gets what ships.
-    Tilt {
-        signals: Vec<Signals>,
-        #[serde(default)]
-        weights: Option<Weights>,
-        era: Era,
-        #[serde(default = "yes")]
-        include_era: bool,
-    },
-    /// The household's era curve from (year, weight) samples — the other half of the tilt's inputs, and
-    /// the only part that is derived rather than measured.
-    TiltEra {
-        samples: Vec<(i32, f64)>,
-        current_year: i32,
-    },
     /// Recovery code §2: 22 random bytes (hex) from the platform's CSPRNG → `{code, data}`.
     RecoveryCode {
         random: String,
@@ -780,10 +761,6 @@ fn library_op(input: &str) -> Option<String> {
         ),
         _ => return None,
     })
-}
-
-fn yes() -> bool {
-    true
 }
 
 /// Versioned, non-throwing FFI boundary. An error is never an empty snapshot or an acknowledgement.
@@ -1367,21 +1344,6 @@ fn run(request: Request) -> Result<Value, String> {
         } => Ok(json!(library_v3::receipt_row_name(
             &provider, &account, &target
         )?)),
-        Request::Tilt {
-            signals,
-            weights,
-            era,
-            include_era,
-        } => Ok(json!(order(
-            &signals,
-            &weights.unwrap_or_default(),
-            &era,
-            include_era
-        ))),
-        Request::TiltEra {
-            samples,
-            current_year,
-        } => Ok(json!(Era::from_samples(&samples, current_year))),
         Request::RecoveryCode { random } => recovery::code(&random),
         Request::RecoveryRead { text } => recovery::read(&text),
         #[cfg(feature = "recovery-kdf")]
