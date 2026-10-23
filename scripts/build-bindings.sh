@@ -29,6 +29,14 @@ case "$only" in
     *) echo "--only takes checks, native or wasm, not '$only'" >&2; exit 2 ;;
 esac
 want() { [[ -z "$only" || "$only" == "$1" ]]; }
+ensure_rust_src() {
+    if command -v rustup >/dev/null 2>&1; then
+        rustup component add rust-src --toolchain 1.95.0
+    elif [[ ! -d "$(rustc --print sysroot)/lib/rustlib/src/rust/library" ]]; then
+        echo "rust-src for Rust 1.95.0 is required" >&2
+        exit 1
+    fi
+}
 
 if want checks; then
     if [[ " $* " == *" --format "* ]]; then cargo fmt --all; fi
@@ -41,7 +49,7 @@ fi
 if want native; then
     # `build-std` below must rebuild the standard-library objects with the same deployment target as Den's
     # objects. The toolchain is pinned above/in CI, and rustup makes this component install idempotent.
-    rustup component add rust-src --toolchain 1.95.0
+    ensure_rust_src
     # Rust 1.95 can race loading freshly linked proc-macro dylibs (E0463) in optimized native builds. Keep this
     # packaging path serial until the pinned toolchain no longer needs the workaround.
     cargo build --locked --release -j1 -p den-core-native --lib
@@ -120,9 +128,15 @@ fi
 if want wasm; then
     # Three web modules: ordinary policy, assistant crypto and recovery's memory-hard KDF. Optional policy loads only
     # where it is used. The name section only names functions for stack traces; errors come back as JSON either way.
-    # Keep Cargo's package feature unification from adding the recovery feature back to the ordinary module.
-    cargo build --locked --release -p den-core-web -p den-core-web-assistant --target wasm32-unknown-unknown
-    cargo build --locked --release -p den-core-web-recovery --target wasm32-unknown-unknown
+    # Keep Cargo's package feature unification from adding the recovery feature back to the ordinary module. Rebuild
+    # std with immediate-abort as well: browser policy reports expected failures in its JSON envelope, while Rust's
+    # panic formatting and payload machinery only makes an unexpected bug's trap substantially larger.
+    ensure_rust_src
+    wasm_cargo=(cargo -Z build-std=std build --locked --release --target wasm32-unknown-unknown)
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web -p den-core-web-assistant
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web-recovery
     bindgen="$root/.tools/bin/wasm-bindgen"
     if [[ ! -x "$bindgen" ]]; then bindgen=wasm-bindgen; fi
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core \

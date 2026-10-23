@@ -218,9 +218,9 @@ console.log(`PASS: ${count} shared contract cases through real WASM (${assistant
 // costs (Den Web runs two library Workers). Keep enough headroom for toolchain noise without giving the compact
 // request boundary's savings back.
 for (const [module, budget] of [
-  ['den_core', 1_050_000],
-  ['den_core_assistant', 560_000],
-  ['den_core_recovery', 175_000],
+  ['den_core', 920_000],
+  ['den_core_assistant', 520_000],
+  ['den_core_recovery', 140_000],
 ]) {
   const bytes = statSync(new URL(`../web/generated/${module}_bg.wasm`, import.meta.url)).size;
   assert.ok(bytes <= budget, `${module}_bg.wasm is ${bytes} bytes, over its ${budget}-byte budget`);
@@ -229,6 +229,6 @@ for (const [module, budget] of [
 
 const tizen3 = readFileSync(new URL('../web-tizen3/generated/den_core.js', import.meta.url));
 const tizen3Gzip = gzipSync(tizen3, {level: 9}).byteLength;
-assert.ok(tizen3.byteLength <= 2_150_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2150000-byte budget`);
-assert.ok(tizen3Gzip <= 610_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 610000-byte budget`);
+assert.ok(tizen3.byteLength <= 2_050_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2050000-byte budget`);
+assert.ok(tizen3Gzip <= 590_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 590000-byte budget`);
 console.log(`PASS: Tizen 3 core ${tizen3.byteLength} bytes, ${tizen3Gzip} gzip`);
