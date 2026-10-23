@@ -9,6 +9,7 @@ export const STARTUP_OPERATIONS = Object.freeze([
   'episode_mark',
   'continue_entry',
   'episode_state_v4',
+  'season_state_v4',
   'profiles_validate',
   'profiles_seed_preferences',
   'profile_policy_allows',

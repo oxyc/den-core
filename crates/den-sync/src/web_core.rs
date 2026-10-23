@@ -184,7 +184,7 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
                 take(&mut fields, "now")?,
             )
         }
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
         "season_state_v4" => {
             let title = optional::<Value>(&mut fields, "title")?
                 .as_ref()
