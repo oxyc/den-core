@@ -419,6 +419,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "den-core-web-tizen3"
+version = "0.1.0"
+dependencies = [
+ "den-sync",
+]
+
+[[package]]
 name = "den-store"
 version = "0.1.0"
 dependencies = [

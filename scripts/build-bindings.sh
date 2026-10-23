@@ -136,9 +136,8 @@ if want wasm; then
     # The version is pinned (CI installs it, checksummed), since another makes other bytes. The features are the
     # ones rustc 1.95 emits for wasm32-unknown-unknown; none is added.
     wasm_opt="$root/.tools/bin/wasm-opt"
-    if [[ ! -x "$wasm_opt" ]]; then wasm_opt=wasm-opt; fi
-    if [[ "$("$wasm_opt" --version)" != "wasm-opt version 132"* ]]; then
-        echo "wasm-opt version 132 (binaryen) is required; found: $("$wasm_opt" --version)" >&2
+    if [[ "$("$wasm_opt" --version)" != "wasm-opt version 133"* ]]; then
+        echo "wasm-opt version 133 (binaryen) is required; found: $("$wasm_opt" --version)" >&2
         exit 1
     fi
     for module in den_core den_core_assistant den_core_recovery; do
@@ -146,6 +145,7 @@ if want wasm; then
             --enable-mutable-globals --enable-reference-types --enable-multivalue \
             -o "web/generated/${module}_bg.wasm" "web/generated/${module}_bg.wasm"
     done
+    node scripts/build-tizen3-core.mjs
 fi
 if [[ " $* " == *" --vendor "* ]]; then
     node scripts/vendor.mjs

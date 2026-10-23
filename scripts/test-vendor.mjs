@@ -36,22 +36,37 @@ function checkManifest(dir) {
     sha(readFileSync(join(root, 'crates/den-sync/tests/fixtures/profiles-v1.json'))));
   return manifest;
 }
+function checkTizen3(dir, sourceManifest) {
+  const manifest = JSON.parse(readFileSync(join(dir, 'SOURCE.json')));
+  assert.equal(manifest.sourceDigest, sourceManifest.sourceDigest);
+  assert.equal(manifest.binaryen, 133);
+  assert.deepEqual(manifest.artifacts, hashes(dir, false));
+  return manifest;
+}
 
 const cleanRoom = mkdtempSync(join(tmpdir(), 'den-core-vendor-'));
 try {
-  const first = { native: join(cleanRoom, 'first/native'), web: join(cleanRoom, 'first/web') };
-  const second = { native: join(cleanRoom, 'second/native'), web: join(cleanRoom, 'second/web') };
+  const first = { native: join(cleanRoom, 'first/native'), web: join(cleanRoom, 'first/web'),
+    tizen3: join(cleanRoom, 'first/tizen3') };
+  const second = { native: join(cleanRoom, 'second/native'), web: join(cleanRoom, 'second/web'),
+    tizen3: join(cleanRoom, 'second/tizen3') };
   vendor(first);
   vendor(second);
   assert.deepEqual(checkManifest(first.native), checkManifest(second.native));
-  assert.deepEqual(checkManifest(first.web), checkManifest(second.web));
+  const firstWeb = checkManifest(first.web);
+  const secondWeb = checkManifest(second.web);
+  assert.deepEqual(firstWeb, secondWeb);
+  assert.deepEqual(checkTizen3(first.tizen3, firstWeb), checkTizen3(second.tizen3, secondWeb));
   assert.deepEqual(hashes(first.native), hashes(second.native));
   assert.deepEqual(hashes(first.web), hashes(second.web));
+  assert.deepEqual(hashes(first.tizen3), hashes(second.tizen3));
   writeFileSync(join(first.native, 'stale-artifact'), 'must not enter SOURCE.json');
   writeFileSync(join(first.web, 'stale-artifact'), 'must not enter SOURCE.json');
+  writeFileSync(join(first.tizen3, 'stale-artifact'), 'must not enter SOURCE.json');
   vendor(first);
   assert.deepEqual(hashes(first.native), hashes(second.native));
   assert.deepEqual(hashes(first.web), hashes(second.web));
+  assert.deepEqual(hashes(first.tizen3), hashes(second.tizen3));
 
   const sourceSentinel = join(root, 'Cargo.toml');
   const sourceSentinelHash = sha(readFileSync(sourceSentinel));
@@ -73,9 +88,9 @@ try {
   // Exercise the destructive case against an isolated source tree: without source/destination preflight this
   // would delete its populated crates directory after already deleting protectedNative.
   const isolatedSource = join(cleanRoom, 'isolated-source');
-  for (const source of ['Cargo.toml', 'Cargo.lock', 'LICENSE', 'crates', 'bindings', 'scripts',
+  for (const source of ['Cargo.toml', 'Cargo.lock', 'package.json', 'package-lock.json', 'LICENSE', 'crates', 'bindings', 'scripts',
     'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
-    'web/recovery.js', 'web/recovery.d.ts']) {
+    'web/recovery.js', 'web/recovery.d.ts', 'web-tizen3/index.js', 'web-tizen3/index.d.ts']) {
     const destination = join(isolatedSource, source);
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(join(root, source), destination, { recursive: true });
@@ -83,6 +98,8 @@ try {
   mkdirSync(join(isolatedSource, 'Swift/Sources'), { recursive: true });
   mkdirSync(join(isolatedSource, 'Swift/Artifacts'), { recursive: true });
   mkdirSync(join(isolatedSource, 'web/generated'), { recursive: true });
+  mkdirSync(join(isolatedSource, 'web-tizen3/generated'), { recursive: true });
+  writeFileSync(join(isolatedSource, 'web-tizen3/generated/den_core.js'), 'isolated artifact');
   for (const module of ['den_core', 'den_core_assistant', 'den_core_recovery']) {
     for (const suffix of ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts']) {
       writeFileSync(join(isolatedSource, 'web/generated', `${module}${suffix}`), 'isolated artifact');
@@ -126,7 +143,7 @@ try {
   symlinkSync(shared, webAlias, 'dir');
   assert.throws(() => vendor({ native: nativeAlias, web: webAlias }), /must not overlap/);
   assertSourceUntouched();
-  console.log('PASS: clean-room native and web vendor packages are deterministic');
+  console.log('PASS: clean-room native, web and Tizen 3 vendor packages are deterministic');
 } finally {
   rmSync(cleanRoom, { recursive: true, force: true });
 }
