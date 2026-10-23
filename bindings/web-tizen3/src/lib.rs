@@ -23,7 +23,9 @@ pub unsafe fn den_free(pointer: *mut u8, len: usize) {
 #[no_mangle]
 pub unsafe fn den_evaluate(input_pointer: *const u8, input_len: usize, output: *mut usize) {
     let input = str::from_utf8_unchecked(slice::from_raw_parts(input_pointer, input_len));
-    let mut answer = den_sync::evaluate_core(input).into_bytes().into_boxed_slice();
+    let mut answer = den_sync::evaluate_core(input)
+        .into_bytes()
+        .into_boxed_slice();
     *output = answer.as_mut_ptr() as usize;
     *output.add(1) = answer.len();
     mem::forget(answer);
