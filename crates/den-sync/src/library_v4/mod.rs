@@ -1,5 +1,5 @@
 //! Library-v4 policy (den-spec `wire/library-v4.md`): documents, their encoding and merge, derived state, writes,
-//! tracker delivery and the switch from v3. Pure: every clock and provider fact is an input, and sealing and the
+//! tracker delivery. Pure: every clock and provider fact is an input, and sealing and the
 //! HMAC check stay with the clients (§14).
 
 pub mod codec;
@@ -8,7 +8,6 @@ pub mod doc;
 pub mod jcs;
 pub mod merge;
 pub mod state;
-pub mod switch;
 pub mod write;
 
 use doc::{identity, sanitize, Identity, Kind, FORMAT};

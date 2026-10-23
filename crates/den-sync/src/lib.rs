@@ -6,19 +6,19 @@ mod delivery;
 mod downloads;
 mod episodes;
 mod events;
-mod library_v3;
 mod library_v4;
 mod profiles;
 mod projection;
 mod recovery;
 mod series;
 mod wire;
+mod watch;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-// `v3_form`, `v3_compact`, `write_back`, `v4_form` and `v4_dry_run` receive a whole library. Keep the boundary bounded, but
-// large enough for den-edge's 32 MiB stored-library limit plus JSON field names and request framing.
+// Whole-library operations keep the boundary bounded, but large enough for den-edge's 32 MiB stored-library limit
+// plus JSON field names and request framing.
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
@@ -28,10 +28,7 @@ pub use downloads::{
 };
 pub use episodes::episode_mark;
 pub use events::commands;
-pub use library_v3::{
-    episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
-    switch_ready, v2_reading, v3_compact, v3_form, v3_form_with_context, write_back,
-};
+pub use watch::{lease, receipt_row_name, watch_row_name};
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
     create_next as profiles_create_next, household_audit as profile_household_audit,
@@ -119,15 +116,6 @@ enum Request {
         command: Command,
         remote: Remote,
     },
-    // The ops v3 and v4 both define take a name per version: the v3 name keeps exactly v3's shape, and the v4 shape
-    // is `<name>_v4`. A shape chosen by which fields are present would turn a v4 request whose optional field a
-    // client's encoder omitted into a v3 one.
-    EpisodeState {
-        register: Value,
-        #[serde(default)]
-        resets: Vec<Stamp>,
-        now: i64,
-    },
     /// Library v4 §7: an episode's state from its series title and season documents.
     EpisodeStateV4 {
         #[serde(default)]
@@ -137,42 +125,10 @@ enum Request {
         episode: Value,
         now: i64,
     },
-    FilmState {
-        rec: Value,
-        register: Value,
-        #[serde(default)]
-        resets: Vec<Stamp>,
-        now: i64,
-    },
     /// Library v4 §7: a film's state from its title document.
     FilmStateV4 {
         title: Value,
         now: i64,
-    },
-    RegisterWrite {
-        action: Value,
-        current: Option<Value>,
-        #[serde(default)]
-        resets: Vec<Stamp>,
-        now: i64,
-    },
-    ImportWrite {
-        register: Option<Value>,
-        item: Value,
-        #[serde(default)]
-        resets: Vec<Stamp>,
-        now: i64,
-    },
-    PendingTargets {
-        targets: Vec<Value>,
-        receipts: Value,
-        since: Stamp,
-        now: i64,
-    },
-    Settle {
-        outcome: Value,
-        built_from: Value,
-        order: Value,
     },
     /// Library v4 §9: also the entry it replaces (absent or null for none), whose lasting elements it keeps.
     #[cfg(feature = "tracker-delivery")]
@@ -185,26 +141,6 @@ enum Request {
     },
     Lease {
         input: Value,
-    },
-    V2Reading {
-        rows: Vec<Value>,
-        now: i64,
-    },
-    V3Form {
-        rows: Vec<Value>,
-        now: i64,
-        #[serde(default)]
-        context: Option<Value>,
-    },
-    /// Library v3 §9's compaction of a v3 log: stray `ep` and v1 tracker-event rows folded and dropped.
-    V3Compact {
-        rows: Vec<Value>,
-        now: i64,
-    },
-    WriteBack {
-        held: Vec<Value>,
-        log: Vec<Value>,
-        now: i64,
     },
     /// Library v4 §11: held documents and kept ops on the new log.
     WriteBackV4 {
@@ -395,9 +331,6 @@ enum Request {
         #[serde(default)]
         identity: Value,
         commands: Vec<Value>,
-    },
-    SwitchReady {
-        input: Value,
     },
     /// Library v4 §17: two versions of one `set:download:<content>` row.
     DownloadMerge {
@@ -690,28 +623,6 @@ struct PendingTargetsRequest<'a> {
     now: i64,
 }
 
-/// Library v4 §10: every row through `base` → the switch's rows.
-#[derive(Deserialize)]
-struct V4FormRequest<'a> {
-    #[serde(borrow)]
-    rows: Vec<library_v4::switch::Entry<'a>>,
-    base: u64,
-    performer: String,
-    now: i64,
-    #[serde(default)]
-    stored_cap: Option<u64>,
-}
-
-/// Library v4 §10 step 2: the log through `base` + `v4_form`'s output → pass or abort.
-#[derive(Deserialize)]
-struct V4DryRunRequest<'a> {
-    #[serde(borrow)]
-    rows: Vec<library_v4::switch::Entry<'a>>,
-    #[serde(borrow)]
-    form: &'a serde_json::value::RawValue,
-    now: i64,
-}
-
 /// Profiles v1: account every authenticated legacy row into household/Owner migration material.
 #[cfg(feature = "profile-admin")]
 #[derive(Deserialize)]
@@ -744,12 +655,7 @@ fn library_op(input: &str) -> Option<String> {
     fn read<'a, T: Deserialize<'a>>(input: &'a str) -> Result<T, String> {
         serde_json::from_str(input).map_err(|_| "invalid_request".to_string())
     }
-    const OPS: [&str; 4] = [
-        "pending_targets_v4",
-        "v4_form",
-        "v4_dry_run",
-        "profiles_migration_partition_rows",
-    ];
+    const OPS: [&str; 2] = ["pending_targets_v4", "profiles_migration_partition_rows"];
     if bounded(input).is_err() || !OPS.iter().any(|op| input.contains(op)) {
         return None;
     }
@@ -765,14 +671,6 @@ fn library_op(input: &str) -> Option<String> {
                 r.now,
             )
         })),
-        "v4_form" => answer(read(input).and_then(|r: V4FormRequest| {
-            library_v4::switch::v4_form(&r.rows, r.base, &r.performer, r.now, r.stored_cap)
-        })),
-        "v4_dry_run" => {
-            answer(read(input).and_then(|r: V4DryRunRequest| {
-                library_v4::switch::v4_dry_run(&r.rows, r.form, r.now)
-            }))
-        }
         #[cfg(feature = "profile-admin")]
         "profiles_migration_partition_rows" => answer(
             read(input).and_then(|r: PartitionRequest| profiles::migration_partition(r.input)),
@@ -1111,11 +1009,6 @@ fn run(request: Request) -> Result<Value, String> {
         }
         #[cfg(feature = "tracker-delivery")]
         Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
-        Request::EpisodeState {
-            register,
-            resets,
-            now,
-        } => library_v3::episode_state(&register, &resets, now),
         Request::EpisodeStateV4 {
             title,
             season,
@@ -1130,38 +1023,9 @@ fn run(request: Request) -> Result<Value, String> {
             };
             library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, now)
         }
-        Request::FilmState {
-            rec,
-            register,
-            resets,
-            now,
-        } => library_v3::film_state(&rec, &register, &resets, now),
         Request::FilmStateV4 { title, now } => {
             library_v4::state::film_state(&library_v4::readable(&title)?, now)
         }
-        Request::RegisterWrite {
-            action,
-            current,
-            resets,
-            now,
-        } => library_v3::register_write(&action, current.as_ref(), &resets, now),
-        Request::ImportWrite {
-            register,
-            item,
-            resets,
-            now,
-        } => library_v3::import_write(register.as_ref(), &item, &resets, now),
-        Request::PendingTargets {
-            targets,
-            receipts,
-            since,
-            now,
-        } => library_v3::pending_targets(&targets, &receipts, &since, now),
-        Request::Settle {
-            outcome,
-            built_from,
-            order,
-        } => library_v3::settle(&outcome, &built_from, &order),
         #[cfg(feature = "tracker-delivery")]
         Request::SettleV4 {
             outcome,
@@ -1174,13 +1038,7 @@ fn run(request: Request) -> Result<Value, String> {
             &order,
             entry.as_ref().filter(|e| !e.is_null()),
         ),
-        Request::Lease { input } => library_v3::lease(&input),
-        Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
-        Request::V3Form { rows, now, context } => {
-            library_v3::v3_form_with_context(&rows, now, context.as_ref())
-        }
-        Request::V3Compact { rows, now } => library_v3::v3_compact(&rows, now),
-        Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
+        Request::Lease { input } => lease(&input),
         Request::WriteBackV4 {
             documents,
             kept,
@@ -1301,7 +1159,6 @@ fn run(request: Request) -> Result<Value, String> {
             identity,
             commands,
         } => library_v4::delivery::delivery_write(document.as_ref(), &identity, &commands),
-        Request::SwitchReady { input } => library_v3::switch_ready(&input),
         Request::DownloadMerge { a, b } => download_merge(&a, &b),
         Request::DownloadStatus {
             row,
@@ -1368,14 +1225,14 @@ fn run(request: Request) -> Result<Value, String> {
             id,
             season,
             episode,
-        } => Ok(json!(library_v3::watch_row_name(
+        } => Ok(json!(watch_row_name(
             &media, id, season, episode
         )?)),
         Request::ReceiptName {
             provider,
             account,
             target,
-        } => Ok(json!(library_v3::receipt_row_name(
+        } => Ok(json!(receipt_row_name(
             &provider, &account, &target
         )?)),
         Request::RecoveryCode { random } => recovery::code(&random),
@@ -1445,9 +1302,9 @@ mod tests {
         // serde ignores the framing field, just as the boundary ignores future request fields. This
         // pins the transport limit without making the policy test construct thousands of real rows.
         let request = json!({
-            "op": "v3_form",
-            "rows": [],
-            "now": 0,
+            "op": "compaction_guard",
+            "unreadable": 0,
+            "rows": 1,
             "framing": "x".repeat(2 * 1024 * 1024),
         });
         let response: Value = serde_json::from_str(&evaluate(&request.to_string())).unwrap();

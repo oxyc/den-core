@@ -1,7 +1,6 @@
-//! §7 Deriving state: v3 §5 unchanged, reading registers and resets from documents. The reference is the shipped
-//! `library_v3` derivation, called on the register and resets a document holds.
+//! §7 Deriving state from the registers and resets held by documents.
 
-use crate::library_v3;
+use crate::watch;
 use crate::wire::{stamp, Stamp};
 use serde_json::{json, Map, Value};
 
@@ -46,7 +45,7 @@ pub fn episode_state(
     now: i64,
 ) -> Result<Value, String> {
     let empty = empty_register();
-    library_v3::episode_state(
+    watch::episode_state(
         register(season, episode).unwrap_or(&empty),
         &resets(title, season),
         now,
@@ -63,7 +62,7 @@ pub fn film_rec(title: &Map<String, Value>) -> Value {
 
 pub fn film_state(title: &Map<String, Value>, now: i64) -> Result<Value, String> {
     let empty = empty_register();
-    library_v3::film_state(
+    watch::film_state(
         &film_rec(title),
         title.get("watch").unwrap_or(&empty),
         &[],

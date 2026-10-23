@@ -2130,247 +2130,6 @@ fn check_merge(merge: &Merge) {
 }
 
 /// A v3 log through `base`: the switch's corpus (§15 *Switch*).
-fn v3_log() -> Vec<Value> {
-    let rec_movie = json!({"kind": "rec", "schema": 2, "title": movie(),
-        "status": {"value": "watched", "at": st(5000)}, "resume": {"value": 1, "viewing": 0, "at": st(5000)},
-        "reaction": {"value": "love", "at": st(5000)}, "deleted": {"value": false, "at": st(1000)},
-        "dismissed": {"value": false, "at": st(1000)}, "episodesReset": null, "addedAt": 1000, "watchedAt": 5000, "extra": 1});
-    let rec_tv = json!({"kind": "rec", "schema": 2, "title": tv(),
-        "status": {"value": "watchlist", "at": st(2000)}, "resume": {"value": 0, "viewing": 0, "at": st(2000)},
-        "reaction": {"value": null, "at": st(2000)}, "deleted": {"value": false, "at": st(2000)},
-        "dismissed": {"value": false, "at": st(2000)}, "episodesReset": null, "addedAt": 2000, "watchedAt": null});
-    let reg = |t: i64| json!({"progress": {"value": 1, "at": st(t), "viewing": 0}, "imported": false, "plays": {"0": t}, "cleared": null});
-    let wat_film = json!({"kind": "wat", "schema": 3, "title": movie(), "season": 0, "block": 0, "seasonReset": null, "entries": {"0": {"imported": false, "plays": {"0": 5000}, "cleared": null, "later": "x"}, "1": {"imported": false, "plays": {}, "cleared": null}}});
-    let wat0 = json!({"kind": "wat", "schema": 3, "title": tv(), "season": 1, "block": 0, "seasonReset": st(500), "entries": {"1": reg(3000), "2": reg(3100), "01": reg(1), "40": reg(1)}, "rowExtra": true});
-    let wat1 = json!({"kind": "wat", "schema": 3, "title": tv(), "season": 1, "block": 1, "seasonReset": st(9_000_000), "entries": {"32": reg(3200)}});
-    let wat_s2 = json!({"kind": "wat", "schema": 3, "title": tv(), "season": 2, "block": 0, "seasonReset": null, "entries": {"1": reg(6000)}});
-    let snt_ep = json!({"kind": "snt", "schema": 3, "provider": "simkl", "account": "4812736", "target": "wat:tv:1399:1:0", "entries": {"1": ["w", 0, 3000, st(3000), [1, 1, D]], "2": ["n", -1, null, [0, 0, ""], [1, 2, D]]}});
-    let snt_titles = json!({"kind": "snt", "schema": 3, "provider": "simkl", "account": "4812736", "shard": "3e0", "entries": {
-        "rec:movie:550#watch": ["w", 0, 5000, st(5000), [1, 3, D], [[0, null, 4000]]],
-        "rec:movie:550#list": ["b", "out", st(1000), [1, 4, D]],
-        "bogus": ["out", st(1), [1, 5, D]]
-    }});
-    let deliver = json!({"kind": "set", "schema": 2, "name": "deliver:simkl:4812736", "values": {
-        "since": {"value": {"string": serde_json::to_string(&st(1000)).unwrap()}, "at": st(1000)},
-        "lease": {"value": {"strings": ["", "1"]}, "at": st(1000)},
-        "seededThrough": {"value": {"int": 6}, "at": st(1000)},
-        "seedBound": {"value": {"int": 3150}, "at": st(1000)}
-    }});
-    let prefs = json!({"kind": "set", "schema": 2, "name": "prefs", "values": {}});
-    let ep = json!({"kind": "ep", "schema": 2, "title": tv(), "season": 1, "episode": 3, "progress": {"value": 1.0, "viewing": 0, "at": st(7000)}});
-    let event_after = json!({"kind": "ep", "schema": 2, "title": tv(), "season": 1, "episode": 4, "progress": {"value": 1.0, "viewing": 0, "at": st(7100)}});
-    let event_before = json!({"kind": "ep", "schema": 2, "title": tv(), "season": 1, "episode": 4, "progress": {"value": 0.0, "viewing": 0, "at": st(100)}});
-    let event = ok(
-        &json!({"op": "capture", "before": event_before, "after": event_after, "at": st(7100), "id": "e4"}),
-    );
-    let event_row = json!({"kind": "set", "schema": 2, "name": "tracker-event:e4", "values": {"event": {"value": {"string": event.to_string()}, "at": st(7100)}}});
-    let unknown = json!({"kind": "zzz", "schema": 9});
-    [
-        rec_movie, rec_tv, wat_film, wat0, wat1, snt_ep, snt_titles, deliver, prefs, ep, event_row,
-        unknown, wat_s2,
-    ]
-    .into_iter()
-    .collect()
-}
-
-/// A library already at v4 (its title and season documents, a settings row) into which a v1 event
-/// `set:tracker-event:e4` was written afterwards: episode 4 of season 1 marked watched. It holds no `wat`, `snt` or
-/// `set:deliver:*` row, so only its documents say it is not a pre-v3 backup.
-fn v4_log_with_stray_event() -> Vec<Value> {
-    let log = v3_log();
-    let watched = json!({"progress": {"value": 1, "at": st(3000), "viewing": 0}, "imported": false, "plays": {"0": 3000}, "cleared": null});
-    vec![
-        title(
-            "tv",
-            1399,
-            json!({"status": {"value": "watchlist", "at": st(2000)}, "addedAt": 2000}),
-        ),
-        season(1399, 1, json!({"episodes": {"1": watched}})),
-        log[8].clone(),
-        log[10].clone(),
-    ]
-}
-
-fn rec_row(media: &str, id: u64, status: &str, reaction: Value, t: i64, viewing: u64) -> Value {
-    json!({"kind": "rec", "schema": 2, "title": {"type": media, "id": id},
-        "status": {"value": status, "at": st(t)}, "resume": {"value": 0, "viewing": viewing, "at": st(t)},
-        "reaction": {"value": reaction, "at": st(t)}, "deleted": {"value": false, "at": st(1000)},
-        "dismissed": {"value": false, "at": st(1000)}, "episodesReset": null, "addedAt": 1000,
-        "watchedAt": if status == "watched" { json!(t) } else { Value::Null }})
-}
-
-/// A v3 log whose title receipts are in the form both shipped v3 clients write them: an `snt` row with `target`
-/// `rec:<type>:<id>` and entries keyed `watch` / `list` / `rating`. The account was seeded through seq 1, so every
-/// target here is above `seededThrough`: a receipt the switch lost would be replaced by a seeded default.
-fn title_receipt_log() -> Vec<Value> {
-    let deliver = json!({"kind": "set", "schema": 2, "name": "deliver:simkl:4812736", "values": {
-        "since": {"value": {"string": serde_json::to_string(&st(1000)).unwrap()}, "at": st(1000)},
-        "lease": {"value": {"strings": ["", "1"]}, "at": st(1000)},
-        "seededThrough": {"value": {"int": 1}, "at": st(1000)}
-    }});
-    let film_wat = |id: u64, register: Value| json!({"kind": "wat", "schema": 3, "title": {"type": "movie", "id": id}, "season": 0, "block": 0, "seasonReset": null, "entries": {"0": register}});
-    let receipt = |target: &str, entries: Value| json!({"kind": "snt", "schema": 3, "provider": "simkl", "account": "4812736", "target": target, "entries": entries});
-    vec![
-        deliver,
-        // Watched and rated, both delivered: nothing is pending. A lost receipt would send both again.
-        rec_row("movie", 550, "watched", json!("love"), 5000, 0),
-        film_wat(
-            550,
-            json!({"imported": false, "plays": {"0": 5000}, "cleared": null}),
-        ),
-        receipt(
-            "rec:movie:550",
-            json!({
-                "watch": ["w", 0, 5000, st(5000), [1, 1, D]],
-                "rating": ["love", st(5000), [1, 2, D]]
-            }),
-        ),
-        // Un-watched after its watch was delivered: the un-watch is pending. A lost receipt would hide it.
-        rec_row("movie", 551, "none", json!("like"), 6000, 1),
-        film_wat(
-            551,
-            json!({"imported": false, "plays": {"0": 4000}, "cleared": [0, st(6000)]}),
-        ),
-        receipt(
-            "rec:movie:551",
-            json!({
-                "watch": ["w", 0, 4000, st(4000), [1, 3, D]],
-                "rating": ["like", st(6000), [1, 4, D]]
-            }),
-        ),
-        // On the watchlist (delivered) and unrated since its rating was delivered: the rating removal is pending.
-        // A lost receipt would hide the removal and send the list add again.
-        rec_row("tv", 1399, "watchlist", Value::Null, 6000, 0),
-        receipt(
-            "rec:tv:1399",
-            json!({
-                "list": ["in", st(6000), [1, 5, D]],
-                "rating": ["like", st(2000), [1, 6, D]],
-                "watch": ["w", 0, 2000, st(2000), [1, 7, D]]
-            }),
-        ),
-    ]
-}
-
-fn rows(log: &[Value]) -> Value {
-    Value::Array(
-        log.iter()
-            .enumerate()
-            .map(
-                |(i, row)| json!({"k": format!("k{i:02}"), "seq": i + 1, "bytes": 200, "row": row}),
-            )
-            .collect(),
-    )
-}
-
-struct Switch {
-    name: &'static str,
-    rows: Value,
-    tamper: Option<(String, Value)>,
-    form: Expect,
-    dry_run: Option<Value>,
-}
-
-fn v4_form(rows: &Value) -> Value {
-    call(&expand(
-        &json!({"op": "v4_form", "rows": rows, "base": 20, "performer": D, "now": 10_000}),
-    ))
-}
-
-fn switches() -> Vec<Switch> {
-    let log = v3_log();
-    let mut with_doc = log.clone();
-    with_doc.push(title(
-        "movie",
-        550,
-        json!({"reaction": {"value": "like", "at": st(8000)}}),
-    ));
-    let pre_v3 = vec![log[9].clone(), log[10].clone(), log[0].clone()];
-    let snt_only = vec![log[0].clone(), log[7].clone()];
-    let stray_event = v4_log_with_stray_event();
-    let mut newer = log.clone();
-    newer[3]["schema"] = json!(4);
-    // Three registers of block 1 carrying ~100 KB of register-level unknowns each: one season document over 224 KiB.
-    let mut too_large = log.clone();
-    for (i, key) in ["33", "34", "35"].iter().enumerate() {
-        too_large[4]["entries"][*key] = json!({"imported": false, "plays": {}, "cleared": null, "u": pad(100_000, i as u64 + 40)});
-    }
-    // The series' rec row written after seededThrough: its rating target is seeded as `null`, which shipped v3
-    // (reading no seededThrough) instead sends as a removal. A pending-command difference, counted, not an abort.
-    let mut late_rec = log.clone();
-    let rec_tv = late_rec.remove(1);
-    late_rec.push(rec_tv);
-    let seeded_null = json!({"pass": true});
-    // A register v3 cannot derive (a malformed play key), which v4_form reads with that `plays` dropped.
-    let mut malformed = log.clone();
-    malformed[3]["entries"]["2"]["plays"] = json!({"0": 3100, "x": 5});
-    let title_receipts = title_receipt_log();
-    let mut unplaceable = title_receipts.clone();
-    unplaceable.push(json!({"kind": "snt", "schema": 3, "provider": "simkl", "account": "4812736", "target": "rec:person:5", "entries": {"list": ["in", st(2000), [1, 9, D]]}}));
-    vec![
-        Switch { name: "title receipts with a rec: target convert into the title's delivery document and the dry run passes", rows: rows(&title_receipts), tamper: None, form: Expect::Subset(json!({"counts": {"invalid_keys": 1}})), dry_run: Some(json!({"pass": true, "pending_differences": []})) },
-        Switch { name: "a receipt row the switch cannot place aborts the dry run", rows: rows(&unplaceable), tamper: None, form: Expect::Subset(json!({"counts": {"receipt_dropped": 1}})), dry_run: Some(json!({"pass": false, "abort": [{"reason": "receipt_dropped", "row": "snt:simkl:4812736:rec:person:5"}]})) },
-        Switch { name: "a delivered receipt the form lost aborts the dry run", rows: rows(&title_receipts), tamper: Some(("dlv:simkl:4812736:movie:551".into(), json!({"entries": {"watch": ["n", 0, null, [0, 0, ""], [0, 1, D]], "rating": ["like", st(6000), [1, 4, D]], "list": ["out", [0, 0, ""], [0, 2, D]]}}))), form: Expect::Subset(json!({})), dry_run: Some(json!({"pass": false, "abort": [{"reason": "receipt_dropped", "name": "dlv:simkl:4812736:movie:551", "key": "watch"}]})) },
-        Switch { name: "a register v3 cannot derive is compared with its malformed member dropped on both sides", rows: rows(&malformed), tamper: None, form: Expect::Subset(json!({"rows": 10})), dry_run: Some(json!({"pass": true, "counts": {"malformed_reference": 1}})) },
-        Switch { name: "a v3 corpus converts and passes the dry run", rows: rows(&log), tamper: None, form: Expect::Subset(json!({
-            "keep": ["k07", "k08", "k11"],
-            "counts": {"events_folded": 1, "film_wat_keys": 1, "invalid_keys": 3, "row_unknown_fields": 2},
-            "rows": 10
-        })), dry_run: Some(seeded_null) },
-        Switch { name: "a no-receipt null rating above seededThrough is a counted pending difference and the switch passes", rows: rows(&late_rec), tamper: None, form: Expect::Subset(json!({"rows": 11})), dry_run: Some(json!({"pass": true, "counts": {"pending_differences": 1}, "pending_differences": [{"account": "simkl:4812736", "key": "tv:1399#rating", "v4": null}]})) },
-        Switch { name: "a derived-state difference aborts", rows: rows(&log), tamper: Some(("season:tv:1399:1".into(), json!({"episodes": {"1": {"progress": {"value": 0.5, "at": st(3000), "viewing": 0}, "imported": false, "plays": {}, "cleared": null}}}))), form: Expect::Subset(json!({"rows": 10})), dry_run: Some(json!({"pass": false})) },
-        Switch { name: "a log holding documents and v3 rows is merged", rows: rows(&with_doc), tamper: None, form: Expect::Subset(json!({"rows": 10})), dry_run: Some(json!({"pass": true})) },
-        Switch { name: "a pre-v3 log is refused", rows: rows(&pre_v3), tamper: None, form: Expect::Error("pre_v3"), dry_run: None },
-        Switch { name: "a v3 log with no wat row but a set:deliver row converts", rows: rows(&snt_only), tamper: None, form: Expect::Subset(json!({"keep": ["k01"]})), dry_run: Some(json!({"pass": true})) },
-        Switch { name: "a v4 log holding a stray v1 event switches again and folds it", rows: rows(&stray_event), tamper: None, form: Expect::Subset(json!({"keep": ["k02"], "counts": {"events_folded": 1}})), dry_run: Some(json!({"pass": true})) },
-        Switch { name: "a v3 row above its schema fails", rows: rows(&newer), tamper: None, form: Expect::Error("newer_v3_row"), dry_run: None },
-        Switch { name: "a season over 224 KiB fails", rows: rows(&too_large), tamper: None, form: Expect::Error("too_large:season:tv:1399:1"), dry_run: None },
-    ]
-}
-
-fn run_switch(switch: &Switch) -> (Value, Option<Value>) {
-    let response = v4_form(&switch.rows);
-    match &switch.form {
-        Expect::Error(error) => {
-            assert_eq!(
-                response["error"],
-                *error,
-                "{}: {}",
-                switch.name,
-                short(&response)
-            );
-            return (response, None);
-        }
-        Expect::Subset(subset) => assert!(
-            contains(&response["ok"], subset),
-            "{}: expected ⊇ {subset}\n got {}",
-            switch.name,
-            short(&response)
-        ),
-        Expect::Ok(value) => assert!(same(&response["ok"], value), "{}", switch.name),
-    }
-    let mut form = response["ok"].clone();
-    if let Some((name, fields)) = &switch.tamper {
-        for doc in form["documents"].as_array_mut().unwrap() {
-            if doc["name"] == *name {
-                let changed = with(doc["document"].clone(), fields.clone());
-                let encoded = ok(&json!({"op": "doc_encode", "document": changed, "write": true}));
-                doc["document"] = changed;
-                doc["plaintext"] = encoded["plaintext"].clone();
-            }
-        }
-    }
-    let dry =
-        ok(&json!({"op": "v4_dry_run", "rows": expand(&switch.rows), "form": form, "now": 10_000}));
-    if let Some(expect) = &switch.dry_run {
-        assert!(
-            contains(&dry, expect),
-            "{}: expected ⊇ {expect}\n got {dry}",
-            switch.name
-        );
-    }
-    (form, Some(dry))
-}
 
 #[test]
 fn library_v4_cases() {
@@ -2390,14 +2149,23 @@ fn review_cases_hold() {
     assert!(failed.is_empty(), "failing: {failed:#?}");
 }
 
-/// The v3 names keep exactly v3's shape: a v4 request sent to one is refused, never read as the other version.
+/// Every retired Library-v3 operation is absent from the shared binding.
 #[test]
-fn v3_op_names_keep_the_v3_shape() {
+fn retired_library_v3_ops_are_invalid_requests() {
     let refused = [
+        json!({"op": "v2_reading", "rows": [], "now": 1}),
+        json!({"op": "v3_form", "rows": [], "now": 1}),
+        json!({"op": "v3_compact", "rows": [], "now": 1}),
+        json!({"op": "register_write", "action": {}, "now": 1}),
+        json!({"op": "import_write", "item": {}, "now": 1}),
         json!({"op": "episode_state", "season": season(1399, 1, json!({})), "episode": "1", "now": 1}),
         json!({"op": "film_state", "title": film(), "now": 1}),
         json!({"op": "pending_targets", "documents": [], "deliver": simkl(1), "now": 1}),
+        json!({"op": "settle", "outcome": {}, "built_from": {}, "order": []}),
+        json!({"op": "switch_ready", "input": {}}),
         json!({"op": "write_back", "documents": [], "kept": [], "log": [], "now": 1}),
+        json!({"op": "v4_form", "rows": [], "base": 0, "performer": D, "now": 1}),
+        json!({"op": "v4_dry_run", "rows": [], "form": {}, "now": 1}),
     ];
     for request in refused {
         assert_eq!(call(&request)["error"], "invalid_request", "{request}");
@@ -2668,262 +2436,6 @@ fn library_v4_merges() {
     }
 }
 
-#[test]
-fn library_v4_round_trips_every_switch_form() {
-    for switch in switches() {
-        let (form, _) = run_switch(&switch);
-        for doc in form["documents"].as_array().into_iter().flatten() {
-            let back = ok(
-                &json!({"op": "doc_decode", "plaintext": doc["plaintext"], "name": doc["name"]}),
-            );
-            assert_eq!(back["status"], "document", "{}", doc["name"]);
-            assert!(same(&back["document"], &doc["document"]), "{}", doc["name"]);
-        }
-    }
-}
-
-#[test]
-fn library_v4_switches() {
-    for switch in switches() {
-        run_switch(&switch);
-    }
-}
-
-/// The event folded into a v4 log's own season document: episode 1 as it was, episode 4 watched as the event says,
-/// and no row kept for the event.
-#[test]
-fn a_stray_event_folds_into_the_v4_documents() {
-    let form = ok(
-        &json!({"op": "v4_form", "rows": rows(&v4_log_with_stray_event()), "base": 20, "performer": D, "now": 10_000}),
-    );
-    let season = form["documents"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|doc| doc["name"] == "season:tv:1399:1")
-        .expect("season document")["document"]
-        .clone();
-    assert_eq!(season["episodes"]["1"]["plays"], json!({"0": 3000}));
-    assert_eq!(season["episodes"]["4"]["progress"]["value"], json!(1.0));
-    assert_eq!(season["episodes"]["4"]["progress"]["at"], st(7100));
-    assert_eq!(form["keep"], json!(["k02"]));
-}
-
-#[test]
-fn switch_details() {
-    let form = ok(
-        &json!({"op": "v4_form", "rows": rows(&v3_log()), "base": 20, "performer": D, "now": 10_000}),
-    );
-    let docs: Map<String, Value> = form["documents"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|d| {
-            (
-                d["name"].as_str().unwrap().to_owned(),
-                d["document"].clone(),
-            )
-        })
-        .collect();
-    // Blocks merged into one season document; seasonReset from block 0 only; the stray ep row and the v1 event
-    // folded; invalid keys and the block-condition failure dropped.
-    let s1 = &docs["season:tv:1399:1"];
-    assert_eq!(s1["seasonReset"], st(500));
-    let keys: Vec<&String> = s1["episodes"].as_object().unwrap().keys().collect();
-    assert_eq!(keys, ["1", "2", "3", "32", "4"]);
-    // The film's watch register keeps its register-level unknown; the rec's row-level unknown is dropped.
-    let film = &docs["title:movie:550"];
-    assert_eq!(film["watch"]["later"], "x");
-    assert!(film.get("extra").is_none());
-    // Receipts carried as stored; the `n` at −1 above seededThrough (6) is stored at 0; the shard's bogus key dropped.
-    let receipts = &docs["dlv:simkl:4812736:tv:1399:1"]["entries"];
-    assert_eq!(receipts["1"], json!(["w", 0, 3000, st(3000), [1, 1, D]]));
-    assert_eq!(receipts["2"], json!(["n", 0, null, [0, 0, ""], [1, 2, D]]));
-    // Block 0 takes the greater seq of its parts (the stray ep row at 10, the event at 11), so its targets with
-    // no receipt are seeded: default entries, settle orders counted from 1 per account. Block 1 (seq 5) is not.
-    assert_eq!(receipts["3"], json!(["n", 0, null, [0, 0, ""], [0, 1, D]]));
-    assert_eq!(receipts["4"], json!(["n", 0, null, [0, 0, ""], [0, 2, D]]));
-    assert!(receipts.get("32").is_none());
-    let season2 = &docs["dlv:simkl:4812736:tv:1399:2"]["entries"];
-    assert_eq!(season2["1"], json!(["n", 0, null, [0, 0, ""], [0, 3, D]]));
-    // The film's targets were last written at seq 1 (rec) and 3 (wat), below seededThrough: nothing seeded.
-    let film_receipts = &docs["dlv:simkl:4812736:movie:550"]["entries"];
-    assert!(film_receipts.get("rating").is_none());
-    assert_eq!(film_receipts["list"][0], "b");
-    // The series' list and rating targets (rec at seq 2) are not above seededThrough either.
-    assert!(docs.get("dlv:simkl:4812736:tv:1399").is_none());
-    // No v2 or v3 row survives; settings and unknown kinds are kept by k.
-    assert!(docs
-        .keys()
-        .all(|n| !n.starts_with("rec:") && !n.starts_with("wat:")));
-
-    let dry =
-        ok(&json!({"op": "v4_dry_run", "rows": rows(&v3_log()), "form": form, "now": 10_000}));
-    assert_eq!(dry["pass"], true, "{dry}");
-    assert_eq!(dry["pending_differences"], json!([]), "{dry}");
-    // §9 known limit: one entry carries a `[p, null, T]` element.
-    assert!(
-        dry["counts"]["window_known_limit"].as_u64().unwrap() >= 1,
-        "{dry}"
-    );
-}
-
-/// Title receipts written as both shipped v3 clients write them (`target` `rec:<type>:<id>`) reach the title's
-/// delivery document as stored, and v4's pending commands after the switch are the ones v3 had: built here the way
-/// the clients build them (their targets from each `rec` row, receipts keyed `<target>#<key>`), not by the switch.
-#[test]
-fn switch_keeps_title_receipts() {
-    let log = title_receipt_log();
-    let form = ok(
-        &json!({"op": "v4_form", "rows": rows(&log), "base": 20, "performer": D, "now": 10_000}),
-    );
-    let docs: Map<String, Value> = form["documents"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|d| {
-            (
-                d["name"].as_str().unwrap().to_owned(),
-                d["document"].clone(),
-            )
-        })
-        .collect();
-    let receipts = |name: &str| docs[&format!("dlv:simkl:4812736:{name}")]["entries"].clone();
-    // Carried as stored. The films' list targets had no receipt, so seeding (above seededThrough) adds `out`.
-    let seeded_out = |n: u64| json!(["out", [0, 0, ""], [0, n, D]]);
-    assert_eq!(
-        receipts("movie:550"),
-        json!({"watch": ["w", 0, 5000, st(5000), [1, 1, D]], "rating": ["love", st(5000), [1, 2, D]], "list": seeded_out(1)})
-    );
-    assert_eq!(
-        receipts("movie:551"),
-        json!({"watch": ["w", 0, 4000, st(4000), [1, 3, D]], "rating": ["like", st(6000), [1, 4, D]], "list": seeded_out(2)})
-    );
-    // A series has no title watch target, so v3 never read that key: dropped and counted.
-    assert_eq!(
-        receipts("tv:1399"),
-        json!({"list": ["in", st(6000), [1, 5, D]], "rating": ["like", st(2000), [1, 6, D]]})
-    );
-    assert_eq!(form["counts"]["invalid_keys"], 1, "{}", form["counts"]);
-    assert!(form["counts"].get("receipt_dropped").is_none());
-
-    let mut targets = Vec::new();
-    let mut v3_receipts = Map::new();
-    for row in &log {
-        match row["kind"].as_str() {
-            Some("rec") => {
-                let (media, id) = (row["title"]["type"].as_str().unwrap(), &row["title"]["id"]);
-                let target = format!("rec:{media}:{id}");
-                let common = json!({"media": media, "id": id});
-                if media == "movie" {
-                    let watched = if row["status"]["value"] == "watched" {
-                        "watched"
-                    } else {
-                        "unwatched"
-                    };
-                    targets.push(with(common.clone(), json!({"key": format!("{target}#watch"), "kind": "film",
-                        "value": watched, "stamp": row["status"]["at"], "p": row["resume"]["viewing"],
-                        "watched_at": row["watchedAt"]})));
-                }
-                let listed = if row["status"]["value"] == "watchlist" {
-                    "in"
-                } else {
-                    "gone"
-                };
-                targets.push(with(
-                    common.clone(),
-                    json!({"key": format!("{target}#list"), "kind": "list",
-                    "value": listed, "stamp": row["status"]["at"]}),
-                ));
-                let reaction = row["reaction"]["value"].as_str().unwrap_or("none");
-                targets.push(with(
-                    common,
-                    json!({"key": format!("{target}#rating"), "kind": "rating",
-                    "value": reaction, "stamp": row["reaction"]["at"]}),
-                ));
-            }
-            Some("snt") => {
-                for (key, entry) in row["entries"].as_object().unwrap() {
-                    v3_receipts.insert(
-                        format!("{}#{key}", row["target"].as_str().unwrap()),
-                        entry.clone(),
-                    );
-                }
-            }
-            _ => {}
-        }
-    }
-    let v3 = ok(
-        &json!({"op": "pending_targets", "targets": targets, "receipts": v3_receipts, "since": st(1000), "now": 10_000}),
-    );
-    let documents: Vec<Value> = docs.values().cloned().collect();
-    let v4 = ok(&pending(json!(documents), simkl(1000), 10_000));
-    let key = |cmd: &Value, target: String| {
-        json!([
-            target,
-            cmd["kind"],
-            cmd["added"],
-            cmd["rating"],
-            cmd.get("p").cloned().unwrap_or(Value::Null)
-        ])
-    };
-    let mut v3_set: Vec<Value> = v3
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| {
-            key(
-                c,
-                c["key"]
-                    .as_str()
-                    .unwrap()
-                    .trim_start_matches("rec:")
-                    .to_owned(),
-            )
-        })
-        .collect();
-    let mut v4_set: Vec<Value> = v4["commands"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| {
-            let doc = c["document"]
-                .as_str()
-                .unwrap()
-                .trim_start_matches("dlv:simkl:4812736:");
-            key(c, format!("{doc}#{}", c["key"].as_str().unwrap()))
-        })
-        .collect();
-    v3_set.sort_by_key(|v| v.to_string());
-    v4_set.sort_by_key(|v| v.to_string());
-    assert_eq!(v4_set, v3_set, "v4 {v4}\nv3 {v3}");
-    // The pending set this library has: the film's un-watch and the series' rating removal, nothing re-sent.
-    let pending: Vec<&str> = v3_set.iter().map(|k| k[0].as_str().unwrap()).collect();
-    assert_eq!(pending, ["movie:551#watch", "tv:1399#rating"], "{v3}");
-}
-
-#[test]
-fn switch_fails_on_rows_and_bytes() {
-    let mut log = v3_log();
-    log.truncate(8);
-    let mut many: Vec<Value> = (0..50_000)
-        .map(|i| json!({"k": format!("u{i}"), "seq": i + 100, "bytes": 1, "row": {"kind": "zzz"}}))
-        .collect();
-    many.extend(rows(&log).as_array().unwrap().clone());
-    assert_eq!(
-        call(
-            &json!({"op": "v4_form", "rows": many, "base": 60_000, "performer": D, "now": 10_000})
-        )["error"],
-        "too_many_rows"
-    );
-    assert_eq!(
-        call(
-            &json!({"op": "v4_form", "rows": rows(&log), "base": 20, "performer": D, "now": 10_000, "stored_cap": 1000})
-        )["error"],
-        "too_many_bytes"
-    );
-}
-
 /// The boundary never panics (a WASM panic would take the page with it): every v4 op answers malformed input with
 /// a JSON envelope.
 #[test]
@@ -3016,46 +2528,6 @@ fn a_pending_pass_refuses_as_a_whole_request_did() {
     }
 }
 
-/// The switch reads each row, and each document of the form, only when it uses it, and answers as when it parsed the
-/// request whole: a row or form document that is no JSON value refuses the request before anything else is checked,
-/// and a form that is no object, or holds no list of documents, is `invalid_form`.
-#[test]
-fn a_switch_refuses_as_a_whole_request_did() {
-    let ep = r#"{"k":"a","seq":1,"bytes":1,"row":{"kind":"ep","schema":2,"title":{"type":"tv","id":1},"season":1,"episode":1,"progress":{"value":1,"viewing":0,"at":[1,0,"a1b2c3d4e5f60718"]}}}"#;
-    let form = |rows: &str| {
-        format!(r#"{{"op":"v4_form","rows":{rows},"base":1,"performer":"{D}","now":1}}"#)
-    };
-    let dry = |rows: &str, form: &str| {
-        format!(r#"{{"op":"v4_dry_run","rows":{rows},"form":{form},"now":1}}"#)
-    };
-    for (input, error) in [
-        (form(r#"[{"row":{"n":1e400}}]"#), "invalid_request"),
-        (form(&format!(r#"[{ep},"\ud800"]"#)), "invalid_request"),
-        (form(&format!(r#"[{ep}]"#)), "pre_v3"),
-        (form(r#"{"a":1}"#), "invalid_request"),
-        (dry(r#"[{"row":{"n":1e400}}]"#, "1"), "invalid_request"),
-        (dry("[]", "1"), "invalid_form"),
-        (dry("[]", "[1e400]"), "invalid_request"),
-        (dry("[]", r#"{"documents":5}"#), "invalid_form"),
-        (dry("[]", r#"{"documents":[{"name":1}]}"#), "invalid_form"),
-        (
-            dry("[]", r#"{"documents":[{"name":1},{"n":1e400}]}"#),
-            "invalid_request",
-        ),
-        (
-            dry("[]", r#"{"documents":[],"rows":1e400}"#),
-            "invalid_request",
-        ),
-    ] {
-        for answer in [den_sync::evaluate(&input), den_sync::evaluate_core(&input)] {
-            assert_eq!(
-                serde_json::from_str::<Value>(&answer).unwrap(),
-                json!({"version": 1, "error": error}),
-                "{input}"
-            );
-        }
-    }
-}
 
 // ---- den-spec vectors -------------------------------------------------------------------------------------------
 
@@ -3104,20 +2576,6 @@ fn write_library_v4_vectors() {
             json!({"name": m.name, "a": m.a, "b": m.b, "c": m.c, "merged": m.merged})
         })
         .collect();
-    let switches: Vec<Value> = switches()
-        .into_iter()
-        .map(|s| {
-            run_switch(&s);
-            let form = match &s.form {
-                Expect::Error(error) => json!({"error": error}),
-                Expect::Subset(subset) => json!({"ok_subset": subset}),
-                Expect::Ok(value) => json!({"ok": value}),
-            };
-            json!({"name": s.name, "rows": s.rows, "base": 20, "performer": D, "now": 10_000,
-                "form": form, "tamper": s.tamper.as_ref().map(|(n, f)| json!({"name": n, "fields": f})),
-                "dry_run": s.dry_run})
-        })
-        .collect();
     let file = json!({
         "version": 1,
         "spec": "wire/library-v4.md",
@@ -3125,13 +2583,11 @@ fn write_library_v4_vectors() {
             "Generated by den-core's crates/den-sync/tests/library_v4.rs, where every case is also asserted.",
             "cases: one `evaluate` request each; `ok` and `error` are exact (compared as JCS), `ok_subset` lists the members the result must hold (sizes and compressed bytes, which depend on the compressor version, are not pinned).",
             "merge: every ordering and grouping of a, b and c (or both orders of a and b) merges to `merged`, and `merged` is a fixed point.",
-            "switch: v4_form on `rows` (with base, performer, now), checked by `form`; then v4_dry_run on its output, after `tamper` re-encodes the named document with `fields` overlaid, must hold `dry_run`. Round trip: every document v4_form makes decodes back to itself.",
             "{\"$pad\": {\"length\": n, \"seed\": s}} stands for a string of n characters: SplitMix64 seeded with s (state += 0x9e3779b97f4a7c15; z = state; z = (z ^ z>>30) * 0xbf58476d1ce4e5b9; z = (z ^ z>>27) * 0x94d049bb133111eb; z ^= z>>31), each output's top six bits indexing the alphabet A–Z a–z 0–9 - _. {\"$pad\": {\"length\": n, \"char\": c}} repeats c.",
             "Plaintexts are base64url, unpadded. A plaintext starting 0x00 is raw DEFLATE; any compressor's output decodes the same."
         ],
         "cases": plain,
         "merge": merges,
-        "switch": switches,
     });
     let text = serde_json::to_string_pretty(&file).unwrap() + "\n";
     std::fs::write(dir.join("library-v4.json"), text).unwrap();
@@ -3198,26 +2654,6 @@ fn den_spec_library_v4_vectors() {
             b: merge["b"].clone(),
             c: Some(merge["c"].clone()).filter(|c| !c.is_null()),
             merged: merge["merged"].clone(),
-        });
-        count += 1;
-    }
-    for switch in file["switch"].as_array().unwrap() {
-        let form = &switch["form"];
-        let expect = if let Some(error) = form.get("error") {
-            Expect::Error(Box::leak(
-                error.as_str().unwrap().to_owned().into_boxed_str(),
-            ))
-        } else {
-            Expect::Subset(form["ok_subset"].clone())
-        };
-        run_switch(&Switch {
-            name: "vector",
-            rows: switch["rows"].clone(),
-            tamper: switch["tamper"]
-                .as_object()
-                .map(|t| (t["name"].as_str().unwrap().to_owned(), t["fields"].clone())),
-            form: expect,
-            dry_run: Some(switch["dry_run"].clone()).filter(|d| !d.is_null()),
         });
         count += 1;
     }
