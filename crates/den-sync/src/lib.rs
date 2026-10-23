@@ -12,6 +12,7 @@ mod projection;
 mod recovery;
 mod series;
 mod watch;
+mod web_core;
 mod wire;
 
 use serde::Deserialize;
@@ -52,7 +53,8 @@ pub use series::{
 pub use watch::{lease, receipt_row_name, watch_row_name};
 pub use wire::{capture, merge, Stamp};
 
-/// Every op but the assistant's, read by `tagged`: the variant is the request's `op`, its fields the request's others.
+/// The former typed core boundary, kept in tests as a parity oracle for the compact boundary.
+#[cfg(test)]
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Request {
@@ -691,6 +693,25 @@ pub fn evaluate(input: &str) -> String {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
+        match web_core::run(input) {
+            Err(error) if error == "assistant_module" => match tagged::<AssistantRequest>(input) {
+                Ok(request) => run_assistant(request),
+                Err(_) => Err("invalid_request".into()),
+            },
+            answer => answer,
+        }
+    }))
+}
+
+#[cfg(test)]
+fn evaluate_legacy(input: &str) -> String {
+    if let Some(answer) = library_op(input) {
+        return answer;
+    }
+    envelope(bounded(input).and_then(|()| {
+        if let Some(answer) = projection_op(input) {
+            return answer;
+        }
         match tagged::<Request>(input) {
             Ok(request) => run(request),
             Err(_) => match tagged::<AssistantRequest>(input) {
@@ -707,16 +728,7 @@ pub fn evaluate_core(input: &str) -> String {
     if let Some(answer) = library_op(input) {
         return answer;
     }
-    envelope(
-        bounded(input).and_then(|()| match tagged::<Request>(input) {
-            Ok(request) => run(request),
-            Err(_) => Err(if assistant_op(input) {
-                "assistant_module".into()
-            } else {
-                "invalid_request".into()
-            }),
-        }),
-    )
+    envelope(bounded(input).and_then(|()| web_core::run(input)))
 }
 
 /// The assistant ops alone (den-spec `wire/assistant-v1.md`): the web's assistant module.
@@ -762,15 +774,6 @@ fn envelope(result: Result<Value, String>) -> String {
         Ok(value) => json!({ "version": 1, "ok": value }).to_string(),
         Err(error) => json!({ "version": 1, "error": error }).to_string(),
     }
-}
-
-/// Whether a request that did not parse names an assistant op. Read only on that error path.
-fn assistant_op(input: &str) -> bool {
-    #[derive(Deserialize)]
-    struct Op {
-        op: String,
-    }
-    serde_json::from_str::<Op>(input).is_ok_and(|o| o.op.starts_with("assistant_"))
 }
 
 /// A request, `{"op": "<variant>", <its fields>...}`, as `T`'s variant: `op` is read first, skipping the rest, and the
@@ -960,6 +963,7 @@ fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
     }
 }
 
+#[cfg(test)]
 fn run(request: Request) -> Result<Value, String> {
     match request {
         Request::Name { row } => Ok(json!(wire::name(&row)?)),
@@ -1256,7 +1260,7 @@ fn run(request: Request) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate, evaluate_core};
+    use super::{evaluate, evaluate_core, evaluate_legacy};
     use serde_json::{json, Value};
 
     #[test]
@@ -1269,6 +1273,7 @@ mod tests {
             " \n{\"rows\":2,\"op\":\"compaction_guard\",\"future\":[{}],\"unreadable\":1}\t",
         ] {
             assert_eq!(answer(request), guard, "{request}");
+            assert_eq!(evaluate(request), evaluate_legacy(request), "{request}");
         }
         let refused = json!({"version": 1, "error": "invalid_request"});
         for request in [
@@ -1285,12 +1290,32 @@ mod tests {
             "",
         ] {
             assert_eq!(answer(request), refused, "{request}");
-            assert_eq!(evaluate_core(request), evaluate(request), "{request}");
+            assert_eq!(evaluate(request), evaluate_legacy(request), "{request}");
         }
         assert_eq!(
             evaluate_core(r#"{"op":"assistant_prune","now":1}"#),
             json!({"version": 1, "error": "assistant_module"}).to_string()
         );
+    }
+
+    #[test]
+    fn compact_boundary_matches_the_typed_boundary() {
+        for fixture in [
+            include_str!("../tests/fixtures/policy-v1.json"),
+            include_str!("../tests/fixtures/policy-v4.json"),
+            include_str!("../tests/fixtures/profiles-v1.json"),
+        ] {
+            let fixture: Value = serde_json::from_str(fixture).unwrap();
+            for case in fixture["cases"].as_array().unwrap() {
+                let request = case["request"].to_string();
+                assert_eq!(
+                    evaluate(&request),
+                    evaluate_legacy(&request),
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
     }
 
     #[test]
