@@ -13,7 +13,8 @@ const inputs = ['Cargo.toml', 'Cargo.lock', ...files(join(root, 'crates')).map((
   ...files(join(root, 'bindings')).map((f) => relative(root, f)),
   'package.json', 'package-lock.json', 'scripts/build-bindings.sh', 'scripts/build-tizen3-core.mjs',
   'scripts/rustc-apple-deployment.sh', 'scripts/test-vendor.mjs', 'scripts/vendor.mjs',
-  'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
+  'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/lifecycle.js', 'web/lifecycle.d.ts',
+  'web/startup.js', 'web/startup.d.ts', 'web/deferred.js', 'web/deferred.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
   'web/recovery.js', 'web/recovery.d.ts', 'web-tizen3/index.js', 'web-tizen3/index.d.ts'];
 inputs.push('LICENSE');
 const sources = Object.fromEntries(inputs.sort().map((file) => [file, sha(readFileSync(join(root, file)))]));
@@ -89,9 +90,10 @@ export function vendor({
 } = {}) {
   tizen3 ??= join(dirname(web), 'den-core-tizen3');
   const required = ['Swift/Package.swift', 'Swift/Sources', 'Swift/Artifacts', 'LICENSE',
-    'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
+    'web/index.js', 'web/index.d.ts', 'web/lifecycle.js', 'web/lifecycle.d.ts', 'web/startup.js', 'web/startup.d.ts',
+    'web/deferred.js', 'web/deferred.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
     'web/recovery.js', 'web/recovery.d.ts',
-    ...['den_core', 'den_core_assistant', 'den_core_recovery'].flatMap((module) =>
+    ...['den_core', 'den_core_startup', 'den_core_deferred', 'den_core_assistant', 'den_core_recovery'].flatMap((module) =>
       ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts'].map((suffix) => `web/generated/${module}${suffix}`)),
     ...['policy-v1.json', 'profiles-v1.json']
       .map((fixture) => `crates/den-sync/tests/fixtures/${fixture}`)];
@@ -110,11 +112,12 @@ export function vendor({
   manifest(native);
 
   rmSync(web, { recursive: true, force: true });
-  for (const name of ['index.js', 'index.d.ts', 'assistant.js', 'assistant.d.ts', 'recovery.js', 'recovery.d.ts']) {
+  for (const name of ['index.js', 'index.d.ts', 'lifecycle.js', 'lifecycle.d.ts', 'startup.js', 'startup.d.ts',
+    'deferred.js', 'deferred.d.ts', 'assistant.js', 'assistant.d.ts', 'recovery.js', 'recovery.d.ts']) {
     copy(`web/${name}`, join(web, name));
   }
-  // Ordinary policy plus assistant crypto and recovery KDF modules, the latter two loaded on demand.
-  for (const module of ['den_core', 'den_core_assistant', 'den_core_recovery']) {
+  // Compatibility and lifecycle policy plus the independently lazy assistant crypto and recovery KDF modules.
+  for (const module of ['den_core', 'den_core_startup', 'den_core_deferred', 'den_core_assistant', 'den_core_recovery']) {
     for (const suffix of ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts']) {
       copy(`web/generated/${module}${suffix}`, join(web, 'generated', `${module}${suffix}`));
     }

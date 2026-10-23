@@ -52,6 +52,11 @@ try {
     tizen3: join(cleanRoom, 'second/tizen3') };
   vendor(first);
   vendor(second);
+  const lifecycle = await import(pathToFileURL(join(first.web, 'lifecycle.js')));
+  assert.equal(Object.isFrozen(lifecycle.STARTUP_OPERATIONS), true);
+  assert.equal(lifecycle.isStartupOperation('doc_decode'), true);
+  assert.equal(lifecycle.isStartupOperation('capture'), true);
+  assert.equal(lifecycle.isStartupOperation('apply_write'), false);
   assert.deepEqual(checkManifest(first.native), checkManifest(second.native));
   const firstWeb = checkManifest(first.web);
   const secondWeb = checkManifest(second.web);
@@ -89,7 +94,9 @@ try {
   // would delete its populated crates directory after already deleting protectedNative.
   const isolatedSource = join(cleanRoom, 'isolated-source');
   for (const source of ['Cargo.toml', 'Cargo.lock', 'package.json', 'package-lock.json', 'LICENSE', 'crates', 'bindings', 'scripts',
-    'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
+    'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/lifecycle.js', 'web/lifecycle.d.ts',
+    'web/startup.js', 'web/startup.d.ts',
+    'web/deferred.js', 'web/deferred.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
     'web/recovery.js', 'web/recovery.d.ts', 'web-tizen3/index.js', 'web-tizen3/index.d.ts']) {
     const destination = join(isolatedSource, source);
     mkdirSync(dirname(destination), { recursive: true });
@@ -100,7 +107,7 @@ try {
   mkdirSync(join(isolatedSource, 'web/generated'), { recursive: true });
   mkdirSync(join(isolatedSource, 'web-tizen3/generated'), { recursive: true });
   writeFileSync(join(isolatedSource, 'web-tizen3/generated/den_core.js'), 'isolated artifact');
-  for (const module of ['den_core', 'den_core_assistant', 'den_core_recovery']) {
+  for (const module of ['den_core', 'den_core_startup', 'den_core_deferred', 'den_core_assistant', 'den_core_recovery']) {
     for (const suffix of ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts']) {
       writeFileSync(join(isolatedSource, 'web/generated', `${module}${suffix}`), 'isolated artifact');
     }

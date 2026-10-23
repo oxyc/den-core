@@ -126,8 +126,9 @@ if want native; then
 fi
 
 if want wasm; then
-    # Three web modules: ordinary policy, assistant crypto and recovery's memory-hard KDF. Optional policy loads only
-    # where it is used. The name section only names functions for stack traces; errors come back as JSON either way.
+    # Five web modules: the compatibility core, startup and deferred lifecycle policy, assistant crypto and recovery's
+    # memory-hard KDF. Optional policy loads only where it is used. The name section only names functions for stack
+    # traces; errors come back as JSON either way.
     # Keep Cargo's package feature unification from adding the recovery feature back to the ordinary module. Rebuild
     # std with immediate-abort as well: browser policy reports expected failures in its JSON envelope, while Rust's
     # panic formatting and payload machinery only makes an unexpected bug's trap substantially larger.
@@ -135,12 +136,22 @@ if want wasm; then
     wasm_cargo=(cargo -Z build-std=std build --locked --release --target wasm32-unknown-unknown)
     RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
         "${wasm_cargo[@]}" -p den-core-web -p den-core-web-assistant
+    # Cargo unifies features across packages in one invocation. Build the two lifecycle halves separately so
+    # `browser-startup` and `browser-deferred` can remove opposite sides of the dispatcher.
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web-startup
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web-deferred
     RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
         "${wasm_cargo[@]}" -p den-core-web-recovery
     bindgen="$root/.tools/bin/wasm-bindgen"
     if [[ ! -x "$bindgen" ]]; then bindgen=wasm-bindgen; fi
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core \
         target/wasm32-unknown-unknown/release/den_core_web.wasm
+    "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_startup \
+        target/wasm32-unknown-unknown/release/den_core_web_startup.wasm
+    "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_deferred \
+        target/wasm32-unknown-unknown/release/den_core_web_deferred.wasm
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_assistant \
         target/wasm32-unknown-unknown/release/den_core_web_assistant.wasm
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_recovery \
@@ -154,7 +165,7 @@ if want wasm; then
         echo "wasm-opt version 133 (binaryen) is required; found: $("$wasm_opt" --version)" >&2
         exit 1
     fi
-    for module in den_core den_core_assistant den_core_recovery; do
+    for module in den_core den_core_startup den_core_deferred den_core_assistant den_core_recovery; do
         "$wasm_opt" -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
             --enable-mutable-globals --enable-reference-types --enable-multivalue \
             -o "web/generated/${module}_bg.wasm" "web/generated/${module}_bg.wasm"
