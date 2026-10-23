@@ -11,3 +11,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 den-sync = { path = "../../crates/den-sync", default-features = false }
 wasm-bindgen = "=0.2.129"
+
+[features]
+default = ["tracker-delivery", "profile-admin"]
+tracker-delivery = ["den-sync/tracker-delivery"]
+profile-admin = ["den-sync/profile-admin"]

@@ -1,4 +1,5 @@
 /target/
+/node_modules/
 /dist/
 .DS_Store
 .tools/
@@ -8,3 +9,4 @@ Swift/Artifacts/
 Swift/Headers/
 Swift/Sources/
 web/generated/
+web-tizen3/generated/

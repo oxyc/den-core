@@ -11,9 +11,11 @@ function files(dir) {
 }
 const inputs = ['Cargo.toml', 'Cargo.lock', ...files(join(root, 'crates')).map((f) => relative(root, f)),
   ...files(join(root, 'bindings')).map((f) => relative(root, f)),
-  'scripts/build-bindings.sh', 'scripts/rustc-apple-deployment.sh', 'scripts/test-vendor.mjs', 'scripts/vendor.mjs',
-  'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
-  'web/recovery.js', 'web/recovery.d.ts'];
+  'package.json', 'package-lock.json', 'scripts/build-bindings.sh', 'scripts/build-tizen3-core.mjs',
+  'scripts/rustc-apple-deployment.sh', 'scripts/test-vendor.mjs', 'scripts/vendor.mjs',
+  'Swift/Package.swift', 'web/index.js', 'web/index.d.ts', 'web/lifecycle.js', 'web/lifecycle.d.ts',
+  'web/startup.js', 'web/startup.d.ts', 'web/deferred.js', 'web/deferred.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
+  'web/recovery.js', 'web/recovery.d.ts', 'web-tizen3/index.js', 'web-tizen3/index.d.ts'];
 inputs.push('LICENSE');
 const sources = Object.fromEntries(inputs.sort().map((file) => [file, sha(readFileSync(join(root, file)))]));
 const sourceDigest = sha(JSON.stringify(sources));
@@ -59,63 +61,88 @@ function overlaps(first, second) {
   };
   return contains(first, second) || contains(second, first);
 }
-function preflightDestinations(native, web) {
+function preflightDestinations(native, web, tizen3) {
   const source = { lexical: resolve(root), canonical: canonicalPath(root) };
   const destinations = [
     { name: 'native', lexical: resolve(native) },
     { name: 'web', lexical: resolve(web) },
+    { name: 'tizen3', lexical: resolve(tizen3) },
   ].map((destination) => ({ ...destination, canonical: canonicalPath(destination.lexical) }));
   for (const destination of destinations) {
     if (overlaps(destination.lexical, source.lexical) || overlaps(destination.canonical, source.canonical)) {
       throw new Error(`refusing unsafe ${destination.name} vendor destination: ${destination.lexical}`);
     }
   }
-  const [nativeDestination, webDestination] = destinations;
-  if (overlaps(nativeDestination.lexical, webDestination.lexical)
-      || overlaps(nativeDestination.canonical, webDestination.canonical)) {
-    throw new Error('native and web vendor destinations must not overlap');
+  for (let first = 0; first < destinations.length; first++) {
+    for (let second = first + 1; second < destinations.length; second++) {
+      if (overlaps(destinations[first].lexical, destinations[second].lexical)
+          || overlaps(destinations[first].canonical, destinations[second].canonical)) {
+        throw new Error('vendor destinations must not overlap');
+      }
+    }
   }
-  return { native: nativeDestination.lexical, web: webDestination.lexical };
+  return Object.fromEntries(destinations.map(({ name, lexical }) => [name, lexical]));
 }
 export function vendor({
   native = process.env.DEN_NATIVE_VENDOR ?? join(root, '../den/Vendor/DenCore'),
   web = process.env.DEN_WEB_VENDOR ?? join(root, '../den-edge/web/src/vendor/den-core'),
+  tizen3 = process.env.DEN_TIZEN3_VENDOR,
 } = {}) {
+  tizen3 ??= join(dirname(web), 'den-core-tizen3');
   const required = ['Swift/Package.swift', 'Swift/Sources', 'Swift/Artifacts', 'LICENSE',
-    'web/index.js', 'web/index.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
+    'web/index.js', 'web/index.d.ts', 'web/lifecycle.js', 'web/lifecycle.d.ts', 'web/startup.js', 'web/startup.d.ts',
+    'web/deferred.js', 'web/deferred.d.ts', 'web/assistant.js', 'web/assistant.d.ts',
     'web/recovery.js', 'web/recovery.d.ts',
-    ...['den_core', 'den_core_assistant', 'den_core_recovery'].flatMap((module) =>
+    ...['den_core', 'den_core_startup', 'den_core_deferred', 'den_core_assistant', 'den_core_recovery'].flatMap((module) =>
       ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts'].map((suffix) => `web/generated/${module}${suffix}`)),
-    ...['policy-v1.json', 'policy-v3.json', 'profiles-v1.json']
+    ...['policy-v1.json', 'profiles-v1.json']
       .map((fixture) => `crates/den-sync/tests/fixtures/${fixture}`)];
+  required.push('web-tizen3/index.js', 'web-tizen3/index.d.ts', 'web-tizen3/generated/den_core.js');
   for (const source of required) accessSync(join(root, source));
 
-  ({ native, web } = preflightDestinations(native, web));
+  ({ native, web, tizen3 } = preflightDestinations(native, web, tizen3));
   rmSync(native, { recursive: true, force: true });
   for (const name of ['Package.swift', 'Sources', 'Artifacts']) copy(`Swift/${name}`, join(native, name));
   copy('LICENSE', join(native, 'LICENSE'));
   // The golden cases travel with the binary, as they already do for the web. Kept beside it rather than copied
   // into the client's own tests, so the manifest covers them and the two cannot drift apart unnoticed.
-  for (const fixture of ['policy-v1.json', 'policy-v3.json', 'profiles-v1.json']) {
+  for (const fixture of ['policy-v1.json', 'profiles-v1.json']) {
     copy(`crates/den-sync/tests/fixtures/${fixture}`, join(native, fixture));
   }
   manifest(native);
 
   rmSync(web, { recursive: true, force: true });
-  for (const name of ['index.js', 'index.d.ts', 'assistant.js', 'assistant.d.ts', 'recovery.js', 'recovery.d.ts']) {
+  for (const name of ['index.js', 'index.d.ts', 'lifecycle.js', 'lifecycle.d.ts', 'startup.js', 'startup.d.ts',
+    'deferred.js', 'deferred.d.ts', 'assistant.js', 'assistant.d.ts', 'recovery.js', 'recovery.d.ts']) {
     copy(`web/${name}`, join(web, name));
   }
-  // Ordinary policy plus assistant crypto and recovery KDF modules, the latter two loaded on demand.
-  for (const module of ['den_core', 'den_core_assistant', 'den_core_recovery']) {
+  // Compatibility and lifecycle policy plus the independently lazy assistant crypto and recovery KDF modules.
+  for (const module of ['den_core', 'den_core_startup', 'den_core_deferred', 'den_core_assistant', 'den_core_recovery']) {
     for (const suffix of ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts']) {
       copy(`web/generated/${module}${suffix}`, join(web, 'generated', `${module}${suffix}`));
     }
   }
   copy('LICENSE', join(web, 'LICENSE'));
-  for (const fixture of ['policy-v1.json', 'policy-v3.json', 'profiles-v1.json']) {
+  for (const fixture of ['policy-v1.json', 'profiles-v1.json']) {
     copy(`crates/den-sync/tests/fixtures/${fixture}`, join(web, fixture));
   }
   manifest(web);
+
+  rmSync(tizen3, { recursive: true, force: true });
+  for (const name of ['index.js', 'index.d.ts']) copy(`web-tizen3/${name}`, join(tizen3, name));
+  copy('web-tizen3/generated/den_core.js', join(tizen3, 'generated/den_core.js'));
+  const artifacts = Object.fromEntries(files(tizen3)
+    .map((file) => [relative(tizen3, file), sha(readFileSync(file))]));
+  writeFileSync(join(tizen3, 'SOURCE.json'), JSON.stringify({
+    schema: 1,
+    sourceManifest: '../den-core/SOURCE.json',
+    sourceDigest,
+    rust: '1.95.0',
+    binaryen: 133,
+    rustflags: '-Zunstable-options -Cpanic=immediate-abort -C target-feature=-reference-types,-multivalue',
+    excludes: ['assistant'],
+    artifacts,
+  }, null, 2) + '\n');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) vendor();

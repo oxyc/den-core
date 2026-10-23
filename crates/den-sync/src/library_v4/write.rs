@@ -5,7 +5,7 @@ use super::doc::{play_key, safe_u64, Identity, Kind};
 use super::jcs;
 use super::merge::{later, select};
 use super::state;
-use crate::library_v3;
+use crate::watch;
 use crate::wire::{stamp, Stamp};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
@@ -152,7 +152,7 @@ fn episode_progress(
         .as_ref()
         .and_then(|p| safe_u64(&p["viewing"]))
         .unwrap_or(0);
-    let state = library_v3::episode_state(&Value::Object(register.clone()), resets, now)?;
+    let state = watch::episode_state(&Value::Object(register.clone()), resets, now)?;
     let value = write["value"].as_f64().ok_or("invalid_progress")?;
     // A finished viewing ends when playback goes back below 0.95, not on its next finishing tick: the player keeps
     // writing through the credits, and each of those ticks would otherwise be another play.
@@ -189,7 +189,7 @@ fn episode_mark_watched(
     resets: &[Stamp],
     now: i64,
 ) -> Result<(), String> {
-    let state = library_v3::episode_state(&Value::Object(register.clone()), resets, now)?;
+    let state = watch::episode_state(&Value::Object(register.clone()), resets, now)?;
     if state["watched"] == json!(true) {
         return Ok(());
     }
@@ -222,7 +222,7 @@ fn episode_unwatch(
     resets: &[Stamp],
     now: i64,
 ) -> Result<(), String> {
-    let state = library_v3::episode_state(&Value::Object(register.clone()), resets, now)?;
+    let state = watch::episode_state(&Value::Object(register.clone()), resets, now)?;
     // v3 §7 un-watches a watched or an in-progress episode (clearing its resume point); one with neither has
     // nothing to clear. A replay is caught by the stamp check before this.
     if state["watched"] != json!(true) && state["resume"].is_null() {

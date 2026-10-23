@@ -49,30 +49,39 @@ jobs:
         with:
           toolchain: 1.95.0
           targets: wasm32-unknown-unknown
+          components: rust-src
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: wasm
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
       # The prebuilt, checksum-verified release rather than `cargo install`, which compiled it from source on
       # every run (over two minutes). The version must match the `wasm-bindgen` crate in Cargo.lock.
       - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: wasm-bindgen@0.2.129
-      # wasm-opt at the version build-bindings.sh requires, from binaryen's own release, checksummed.
+      # wasm-opt and wasm2js at the version build-bindings.sh requires, from Binaryen's own release, checksummed.
       - run: |
           curl -fsSL -o "$RUNNER_TEMP/binaryen.tar.gz" \
-            https://github.com/WebAssembly/binaryen/releases/download/version_132/binaryen-version_132-x86_64-linux.tar.gz
-          echo "195ddc94f9bc89f45abdabb0b9eea86023d727ba90eac8b35b80f2544fc30572  $RUNNER_TEMP/binaryen.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/binaryen.tar.gz" -C "$RUNNER_TEMP" binaryen-version_132/bin/wasm-opt
-          echo "$RUNNER_TEMP/binaryen-version_132/bin" >> "$GITHUB_PATH"
+            https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz
+          echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  $RUNNER_TEMP/binaryen.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/binaryen.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p .tools/bin .tools/lib
+          cp "$RUNNER_TEMP/binaryen-version_133/bin/wasm-opt" \
+            "$RUNNER_TEMP/binaryen-version_133/bin/wasm2js" .tools/bin/
+          cp "$RUNNER_TEMP"/binaryen-version_133/lib/libbinaryen.* .tools/lib/
       - run: bash scripts/build-bindings.sh --only wasm
       - run: node scripts/test-wasm.mjs
+      - run: node scripts/test-wasm-lifecycle.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wasm-bindings
-          path: web/generated
+          path: |
+            web/generated
+            web-tizen3/generated
 
   native:
     runs-on: macos-26
@@ -105,6 +114,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: native-bindings
@@ -112,5 +123,5 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: wasm-bindings
-          path: web/generated
+          path: .
       - run: node scripts/test-vendor.mjs

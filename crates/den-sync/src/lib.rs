@@ -6,20 +6,20 @@ mod delivery;
 mod downloads;
 mod episodes;
 mod events;
-mod library_v3;
 mod library_v4;
 mod profiles;
 mod projection;
 mod recovery;
 mod series;
-mod tilt;
+mod watch;
+mod web_core;
 mod wire;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-// `v3_form`, `v3_compact`, `write_back`, `v4_form` and `v4_dry_run` receive a whole library. Keep the boundary bounded, but
-// large enough for den-edge's 32 MiB stored-library limit plus JSON field names and request framing.
+// Whole-library operations keep the boundary bounded, but large enough for den-edge's 32 MiB stored-library limit
+// plus JSON field names and request framing.
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
@@ -29,10 +29,6 @@ pub use downloads::{
 };
 pub use episodes::episode_mark;
 pub use events::commands;
-pub use library_v3::{
-    episode_state, film_state, import_write, lease, pending_targets, register_write, settle,
-    switch_ready, v2_reading, v3_compact, v3_form, v3_form_with_context, write_back,
-};
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
     create_next as profiles_create_next, household_audit as profile_household_audit,
@@ -54,10 +50,11 @@ pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
     ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
 };
-pub use tilt::{boost, order, Era, Signals, Weights};
+pub use watch::{lease, receipt_row_name, watch_row_name};
 pub use wire::{capture, merge, Stamp};
 
-/// Every op but the assistant's, read by `tagged`: the variant is the request's `op`, its fields the request's others.
+/// The former typed core boundary, kept in tests as a parity oracle for the compact boundary.
+#[cfg(test)]
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Request {
@@ -77,6 +74,7 @@ enum Request {
         at: Stamp,
         id: String,
     },
+    #[cfg(feature = "tracker-delivery")]
     Commands {
         event: Value,
         current: Value,
@@ -115,18 +113,10 @@ enum Request {
         now: i64,
         device: String,
     },
+    #[cfg(feature = "tracker-delivery")]
     Decide {
         command: Command,
         remote: Remote,
-    },
-    // The ops v3 and v4 both define take a name per version: the v3 name keeps exactly v3's shape, and the v4 shape
-    // is `<name>_v4`. A shape chosen by which fields are present would turn a v4 request whose optional field a
-    // client's encoder omitted into a v3 one.
-    EpisodeState {
-        register: Value,
-        #[serde(default)]
-        resets: Vec<Stamp>,
-        now: i64,
     },
     /// Library v4 §7: an episode's state from its series title and season documents.
     EpisodeStateV4 {
@@ -137,11 +127,12 @@ enum Request {
         episode: Value,
         now: i64,
     },
-    FilmState {
-        rec: Value,
-        register: Value,
+    /// Library v4 §7: every canonical episode register in one season, with one fixed `now` and reset context.
+    SeasonStateV4 {
         #[serde(default)]
-        resets: Vec<Stamp>,
+        title: Option<Value>,
+        #[serde(default)]
+        season: Option<Value>,
         now: i64,
     },
     /// Library v4 §7: a film's state from its title document.
@@ -149,32 +140,8 @@ enum Request {
         title: Value,
         now: i64,
     },
-    RegisterWrite {
-        action: Value,
-        current: Option<Value>,
-        #[serde(default)]
-        resets: Vec<Stamp>,
-        now: i64,
-    },
-    ImportWrite {
-        register: Option<Value>,
-        item: Value,
-        #[serde(default)]
-        resets: Vec<Stamp>,
-        now: i64,
-    },
-    PendingTargets {
-        targets: Vec<Value>,
-        receipts: Value,
-        since: Stamp,
-        now: i64,
-    },
-    Settle {
-        outcome: Value,
-        built_from: Value,
-        order: Value,
-    },
     /// Library v4 §9: also the entry it replaces (absent or null for none), whose lasting elements it keeps.
+    #[cfg(feature = "tracker-delivery")]
     SettleV4 {
         outcome: Value,
         built_from: Value,
@@ -184,26 +151,6 @@ enum Request {
     },
     Lease {
         input: Value,
-    },
-    V2Reading {
-        rows: Vec<Value>,
-        now: i64,
-    },
-    V3Form {
-        rows: Vec<Value>,
-        now: i64,
-        #[serde(default)]
-        context: Option<Value>,
-    },
-    /// Library v3 §9's compaction of a v3 log: stray `ep` and v1 tracker-event rows folded and dropped.
-    V3Compact {
-        rows: Vec<Value>,
-        now: i64,
-    },
-    WriteBack {
-        held: Vec<Value>,
-        log: Vec<Value>,
-        now: i64,
     },
     /// Library v4 §11: held documents and kept ops on the new log.
     WriteBackV4 {
@@ -245,6 +192,7 @@ enum Request {
         stored: bool,
     },
     /// Profiles v1: converge two valid versions of one profile-directory document.
+    #[cfg(feature = "profile-admin")]
     ProfilesMerge {
         a: Value,
         b: Value,
@@ -262,27 +210,33 @@ enum Request {
         at: Option<Value>,
     },
     /// Profiles v1: turn one stored-valid directory into canonical library-v4 document bytes.
+    #[cfg(feature = "profile-admin")]
     ProfilesMaterialize {
         document: Value,
     },
     /// Profiles v1: choose the next crash-safe persistent Kid creation effect.
+    #[cfg(feature = "profile-admin")]
     ProfilesCreateNext {
         input: Value,
     },
     /// Profiles v1: choose the next initial-split effect from validated durable observations.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationNext {
         input: Value,
     },
     /// Profiles v1: construct one exact-attempt split authorization or bind it to verified commit evidence.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationAuthorization {
         input: Value,
     },
     /// Profiles v1: calculate one canonical migration evidence digest without storage or network effects.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationDigest {
         kind: String,
         input: Value,
     },
     /// Profiles v1: construct and stored-validate the first Owner-only directory.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationConstructDirectory {
         input: Value,
     },
@@ -297,10 +251,12 @@ enum Request {
         input: Value,
     },
     /// Profiles v1: validate a materialized projection and return its canonical seal-ready bytes.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationMaterializePlaintext {
         input: Value,
     },
     /// Profiles v1: reproduce the provider's non-secret backup authorization representation.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationAuthorizationFingerprint {
         input: Value,
     },
@@ -309,6 +265,7 @@ enum Request {
         input: Value,
     },
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
+    #[cfg(feature = "profile-admin")]
     ProfilesResetNext {
         input: Value,
     },
@@ -377,15 +334,13 @@ enum Request {
         now: i64,
     },
     /// Library v4 §9 *Fit before sending*.
+    #[cfg(feature = "tracker-delivery")]
     DeliveryWrite {
         #[serde(default)]
         document: Option<Value>,
         #[serde(default)]
         identity: Value,
         commands: Vec<Value>,
-    },
-    SwitchReady {
-        input: Value,
     },
     /// Library v4 §17: two versions of one `set:download:<content>` row.
     DownloadMerge {
@@ -480,23 +435,6 @@ enum Request {
         attempts: u32,
         now: u64,
         retry_after: Option<u64>,
-    },
-    /// The taste tilt's order for one page. `signals` are the cosines den-atlas measured plus each
-    /// candidate's year; `weights` and `era` are the levers, defaulted so a caller that does not tune
-    /// gets what ships.
-    Tilt {
-        signals: Vec<Signals>,
-        #[serde(default)]
-        weights: Option<Weights>,
-        era: Era,
-        #[serde(default = "yes")]
-        include_era: bool,
-    },
-    /// The household's era curve from (year, weight) samples — the other half of the tilt's inputs, and
-    /// the only part that is derived rather than measured.
-    TiltEra {
-        samples: Vec<(i32, f64)>,
-        current_year: i32,
     },
     /// Recovery code §2: 22 random bytes (hex) from the platform's CSPRNG → `{code, data}`.
     RecoveryCode {
@@ -686,6 +624,7 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
 
 /// Library v4 §9 `pending_targets_v4`: the documents, delivery documents included, and the account's `set:deliver`
 /// facts.
+#[cfg(feature = "tracker-delivery")]
 #[derive(Deserialize)]
 struct PendingTargetsRequest<'a> {
     #[serde(borrow)]
@@ -694,29 +633,8 @@ struct PendingTargetsRequest<'a> {
     now: i64,
 }
 
-/// Library v4 §10: every row through `base` → the switch's rows.
-#[derive(Deserialize)]
-struct V4FormRequest<'a> {
-    #[serde(borrow)]
-    rows: Vec<library_v4::switch::Entry<'a>>,
-    base: u64,
-    performer: String,
-    now: i64,
-    #[serde(default)]
-    stored_cap: Option<u64>,
-}
-
-/// Library v4 §10 step 2: the log through `base` + `v4_form`'s output → pass or abort.
-#[derive(Deserialize)]
-struct V4DryRunRequest<'a> {
-    #[serde(borrow)]
-    rows: Vec<library_v4::switch::Entry<'a>>,
-    #[serde(borrow)]
-    form: &'a serde_json::value::RawValue,
-    now: i64,
-}
-
 /// Profiles v1: account every authenticated legacy row into household/Owner migration material.
+#[cfg(feature = "profile-admin")]
 #[derive(Deserialize)]
 struct PartitionRequest<'a> {
     #[serde(borrow)]
@@ -747,17 +665,13 @@ fn library_op(input: &str) -> Option<String> {
     fn read<'a, T: Deserialize<'a>>(input: &'a str) -> Result<T, String> {
         serde_json::from_str(input).map_err(|_| "invalid_request".to_string())
     }
-    const OPS: [&str; 4] = [
-        "pending_targets_v4",
-        "v4_form",
-        "v4_dry_run",
-        "profiles_migration_partition_rows",
-    ];
+    const OPS: [&str; 2] = ["pending_targets_v4", "profiles_migration_partition_rows"];
     if bounded(input).is_err() || !OPS.iter().any(|op| input.contains(op)) {
         return None;
     }
     let op = serde_json::from_str::<Op>(input).ok()?.op;
     Some(match &*op {
+        #[cfg(feature = "tracker-delivery")]
         "pending_targets_v4" => answer(read(input).and_then(|r: PendingTargetsRequest| {
             library_v4::delivery::pending(
                 r.documents
@@ -767,14 +681,7 @@ fn library_op(input: &str) -> Option<String> {
                 r.now,
             )
         })),
-        "v4_form" => answer(read(input).and_then(|r: V4FormRequest| {
-            library_v4::switch::v4_form(&r.rows, r.base, &r.performer, r.now, r.stored_cap)
-        })),
-        "v4_dry_run" => {
-            answer(read(input).and_then(|r: V4DryRunRequest| {
-                library_v4::switch::v4_dry_run(&r.rows, r.form, r.now)
-            }))
-        }
+        #[cfg(feature = "profile-admin")]
         "profiles_migration_partition_rows" => answer(
             read(input).and_then(|r: PartitionRequest| profiles::migration_partition(r.input)),
         ),
@@ -782,15 +689,30 @@ fn library_op(input: &str) -> Option<String> {
     })
 }
 
-fn yes() -> bool {
-    true
-}
-
 /// Versioned, non-throwing FFI boundary. An error is never an empty snapshot or an acknowledgement.
 ///
 /// Every op, the assistant's included: the native binding's one entry. The web splits it in two, `evaluate_core` and
 /// `evaluate_assistant`, so the assistant crypto loads only where it is used.
 pub fn evaluate(input: &str) -> String {
+    if let Some(answer) = library_op(input) {
+        return answer;
+    }
+    envelope(bounded(input).and_then(|()| {
+        if let Some(answer) = projection_op(input) {
+            return answer;
+        }
+        match web_core::run(input) {
+            Err(error) if error == "assistant_module" => match tagged::<AssistantRequest>(input) {
+                Ok(request) => run_assistant(request),
+                Err(_) => Err("invalid_request".into()),
+            },
+            answer => answer,
+        }
+    }))
+}
+
+#[cfg(test)]
+fn evaluate_legacy(input: &str) -> String {
     if let Some(answer) = library_op(input) {
         return answer;
     }
@@ -814,16 +736,23 @@ pub fn evaluate_core(input: &str) -> String {
     if let Some(answer) = library_op(input) {
         return answer;
     }
-    envelope(
-        bounded(input).and_then(|()| match tagged::<Request>(input) {
-            Ok(request) => run(request),
-            Err(_) => Err(if assistant_op(input) {
-                "assistant_module".into()
-            } else {
-                "invalid_request".into()
-            }),
-        }),
-    )
+    envelope(bounded(input).and_then(|()| web_core::run(input)))
+}
+
+/// Cold-open policy: import and merge stored facts, validate controls, render Home, and serve its immediate read
+/// subscriptions. The `browser-startup` feature removes later browsing, actions, outbound work, maintenance, and
+/// administrative operations from this build.
+pub fn evaluate_startup(input: &str) -> String {
+    envelope(bounded(input).and_then(|()| web_core::run(input)))
+}
+
+/// Deferred actions, outbound delivery, maintenance, and administrative policy. The `browser-deferred` feature removes
+/// the cold-open import and projection arms.
+pub fn evaluate_deferred(input: &str) -> String {
+    if let Some(answer) = library_op(input) {
+        return answer;
+    }
+    envelope(bounded(input).and_then(|()| web_core::run(input)))
 }
 
 /// The assistant ops alone (den-spec `wire/assistant-v1.md`): the web's assistant module.
@@ -869,15 +798,6 @@ fn envelope(result: Result<Value, String>) -> String {
         Ok(value) => json!({ "version": 1, "ok": value }).to_string(),
         Err(error) => json!({ "version": 1, "error": error }).to_string(),
     }
-}
-
-/// Whether a request that did not parse names an assistant op. Read only on that error path.
-fn assistant_op(input: &str) -> bool {
-    #[derive(Deserialize)]
-    struct Op {
-        op: String,
-    }
-    serde_json::from_str::<Op>(input).is_ok_and(|o| o.op.starts_with("assistant_"))
 }
 
 /// A request, `{"op": "<variant>", <its fields>...}`, as `T`'s variant: `op` is read first, skipping the rest, and the
@@ -1067,6 +987,7 @@ fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
     }
 }
 
+#[cfg(test)]
 fn run(request: Request) -> Result<Value, String> {
     match request {
         Request::Name { row } => Ok(json!(wire::name(&row)?)),
@@ -1078,6 +999,7 @@ fn run(request: Request) -> Result<Value, String> {
             at,
             id,
         } => capture(&before, &after, &at, &id),
+        #[cfg(feature = "tracker-delivery")]
         Request::Commands { event, current } => commands(&event, &current),
         Request::EpisodeMark {
             row,
@@ -1113,12 +1035,8 @@ fn run(request: Request) -> Result<Value, String> {
             let last = seen.map(|seen| last.clone().max(seen)).unwrap_or(last);
             Ok(json!(last.issue(now, device)?))
         }
+        #[cfg(feature = "tracker-delivery")]
         Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
-        Request::EpisodeState {
-            register,
-            resets,
-            now,
-        } => library_v3::episode_state(&register, &resets, now),
         Request::EpisodeStateV4 {
             title,
             season,
@@ -1133,38 +1051,15 @@ fn run(request: Request) -> Result<Value, String> {
             };
             library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, now)
         }
-        Request::FilmState {
-            rec,
-            register,
-            resets,
-            now,
-        } => library_v3::film_state(&rec, &register, &resets, now),
+        Request::SeasonStateV4 { title, season, now } => {
+            let title = title.as_ref().map(library_v4::readable).transpose()?;
+            let season = season.as_ref().map(library_v4::readable).transpose()?;
+            library_v4::state::season_state(title.as_ref(), season.as_ref(), now)
+        }
         Request::FilmStateV4 { title, now } => {
             library_v4::state::film_state(&library_v4::readable(&title)?, now)
         }
-        Request::RegisterWrite {
-            action,
-            current,
-            resets,
-            now,
-        } => library_v3::register_write(&action, current.as_ref(), &resets, now),
-        Request::ImportWrite {
-            register,
-            item,
-            resets,
-            now,
-        } => library_v3::import_write(register.as_ref(), &item, &resets, now),
-        Request::PendingTargets {
-            targets,
-            receipts,
-            since,
-            now,
-        } => library_v3::pending_targets(&targets, &receipts, &since, now),
-        Request::Settle {
-            outcome,
-            built_from,
-            order,
-        } => library_v3::settle(&outcome, &built_from, &order),
+        #[cfg(feature = "tracker-delivery")]
         Request::SettleV4 {
             outcome,
             built_from,
@@ -1176,13 +1071,7 @@ fn run(request: Request) -> Result<Value, String> {
             &order,
             entry.as_ref().filter(|e| !e.is_null()),
         ),
-        Request::Lease { input } => library_v3::lease(&input),
-        Request::V2Reading { rows, now } => library_v3::v2_reading(&rows, now),
-        Request::V3Form { rows, now, context } => {
-            library_v3::v3_form_with_context(&rows, now, context.as_ref())
-        }
-        Request::V3Compact { rows, now } => library_v3::v3_compact(&rows, now),
-        Request::WriteBack { held, log, now } => library_v3::write_back(&held, &log, now),
+        Request::Lease { input } => lease(&input),
         Request::WriteBackV4 {
             documents,
             kept,
@@ -1202,6 +1091,7 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesValidate { document, stored } => {
             profiles::validate_input(&document, stored)
         }
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMerge { a, b } => profiles::merge(&a, &b),
         Request::ProfilesApply {
             document,
@@ -1218,27 +1108,38 @@ fn run(request: Request) -> Result<Value, String> {
             value.as_ref(),
             at.as_ref(),
         ),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMaterialize { document } => profiles::materialize(&document),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesCreateNext { input } => profiles::create_next(&input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationAuthorization { input } => {
             profiles::migration_authorization(&input)
         }
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationDigest { kind, input } => {
             profiles::migration_digest(&kind, &input)
         }
-        Request::ProfilesMigrationConstructDirectory { input }
-        | Request::ProfilesConstructDirectory { input } => {
+        #[cfg(feature = "profile-admin")]
+        Request::ProfilesMigrationConstructDirectory { input } => {
+            profiles::migration_construct_directory(&input)
+        }
+        Request::ProfilesConstructDirectory { input } => {
             profiles::migration_construct_directory(&input)
         }
         Request::ProfilesSnapshotDigest { kind, input } => profiles::snapshot_digest(&kind, &input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationMaterializePlaintext { input } => {
             profiles::migration_materialize_plaintext(&input)
         }
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationAuthorizationFingerprint { input } => {
             profiles::migration_authorization_fingerprint(&input)
         }
         Request::ProfilesCapability { input } => profiles::profile_capability(&input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilesPartitionPreferences { values } => {
             profiles::partition_preferences(&values)
@@ -1285,12 +1186,12 @@ fn run(request: Request) -> Result<Value, String> {
             &receipts,
             now,
         ),
+        #[cfg(feature = "tracker-delivery")]
         Request::DeliveryWrite {
             document,
             identity,
             commands,
         } => library_v4::delivery::delivery_write(document.as_ref(), &identity, &commands),
-        Request::SwitchReady { input } => library_v3::switch_ready(&input),
         Request::DownloadMerge { a, b } => download_merge(&a, &b),
         Request::DownloadStatus {
             row,
@@ -1357,31 +1258,12 @@ fn run(request: Request) -> Result<Value, String> {
             id,
             season,
             episode,
-        } => Ok(json!(library_v3::watch_row_name(
-            &media, id, season, episode
-        )?)),
+        } => Ok(json!(watch_row_name(&media, id, season, episode)?)),
         Request::ReceiptName {
             provider,
             account,
             target,
-        } => Ok(json!(library_v3::receipt_row_name(
-            &provider, &account, &target
-        )?)),
-        Request::Tilt {
-            signals,
-            weights,
-            era,
-            include_era,
-        } => Ok(json!(order(
-            &signals,
-            &weights.unwrap_or_default(),
-            &era,
-            include_era
-        ))),
-        Request::TiltEra {
-            samples,
-            current_year,
-        } => Ok(json!(Era::from_samples(&samples, current_year))),
+        } => Ok(json!(receipt_row_name(&provider, &account, &target)?)),
         Request::RecoveryCode { random } => recovery::code(&random),
         Request::RecoveryRead { text } => recovery::read(&text),
         #[cfg(feature = "recovery-kdf")]
@@ -1407,7 +1289,7 @@ fn run(request: Request) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate, evaluate_core};
+    use super::{evaluate, evaluate_core, evaluate_legacy};
     use serde_json::{json, Value};
 
     #[test]
@@ -1420,6 +1302,7 @@ mod tests {
             " \n{\"rows\":2,\"op\":\"compaction_guard\",\"future\":[{}],\"unreadable\":1}\t",
         ] {
             assert_eq!(answer(request), guard, "{request}");
+            assert_eq!(evaluate(request), evaluate_legacy(request), "{request}");
         }
         let refused = json!({"version": 1, "error": "invalid_request"});
         for request in [
@@ -1436,7 +1319,7 @@ mod tests {
             "",
         ] {
             assert_eq!(answer(request), refused, "{request}");
-            assert_eq!(evaluate_core(request), evaluate(request), "{request}");
+            assert_eq!(evaluate(request), evaluate_legacy(request), "{request}");
         }
         assert_eq!(
             evaluate_core(r#"{"op":"assistant_prune","now":1}"#),
@@ -1445,16 +1328,75 @@ mod tests {
     }
 
     #[test]
+    fn compact_boundary_matches_the_typed_boundary() {
+        for fixture in [
+            include_str!("../tests/fixtures/policy-v1.json"),
+            include_str!("../tests/fixtures/policy-v4.json"),
+            include_str!("../tests/fixtures/profiles-v1.json"),
+        ] {
+            let fixture: Value = serde_json::from_str(fixture).unwrap();
+            for case in fixture["cases"].as_array().unwrap() {
+                let request = case["request"].to_string();
+                assert_eq!(
+                    evaluate(&request),
+                    evaluate_legacy(&request),
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn whole_library_operations_are_not_limited_to_one_megabyte() {
         // serde ignores the framing field, just as the boundary ignores future request fields. This
         // pins the transport limit without making the policy test construct thousands of real rows.
         let request = json!({
-            "op": "v3_form",
-            "rows": [],
-            "now": 0,
+            "op": "compaction_guard",
+            "unreadable": 0,
+            "rows": 1,
             "framing": "x".repeat(2 * 1024 * 1024),
         });
         let response: Value = serde_json::from_str(&evaluate(&request.to_string())).unwrap();
         assert!(response.get("ok").is_some(), "{response}");
+    }
+
+    #[cfg(not(feature = "tracker-delivery"))]
+    #[test]
+    fn tracker_delivery_ops_compile_out() {
+        let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
+        for request in [
+            r#"{"op":"commands","event":{},"current":{}}"#,
+            r#"{"op":"decide","command":{},"remote":{}}"#,
+            r#"{"op":"delivery_write","commands":[],"identity":{}}"#,
+            r#"{"op":"pending_targets_v4","documents":[],"deliver":{},"now":0}"#,
+            r#"{"op":"settle_v4","outcome":{},"built_from":{},"order":{}}"#,
+        ] {
+            assert_eq!(evaluate_core(request), invalid, "{request}");
+        }
+        assert_ne!(
+            evaluate_core(r#"{"op":"rank_releases","releases":[],"tried":[]}"#),
+            invalid
+        );
+    }
+
+    #[cfg(not(feature = "profile-admin"))]
+    #[test]
+    fn profile_admin_ops_compile_out_but_viewer_policy_stays() {
+        let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
+        for request in [
+            r#"{"op":"profiles_merge","a":{},"b":{}}"#,
+            r#"{"op":"profiles_materialize","document":{}}"#,
+            r#"{"op":"profiles_create_next","input":{}}"#,
+            r#"{"op":"profiles_reset_next","input":{}}"#,
+            r#"{"op":"profiles_migration_next","input":{}}"#,
+            r#"{"op":"profiles_migration_partition_rows","input":{}}"#,
+        ] {
+            assert_eq!(evaluate_core(request), invalid, "{request}");
+        }
+        assert_ne!(
+            evaluate_core(r#"{"op":"profile_policy_allows","policy":{"unrestricted":true}}"#),
+            invalid
+        );
     }
 }

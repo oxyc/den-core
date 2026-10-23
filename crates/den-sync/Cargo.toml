@@ -6,8 +6,14 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["recovery-kdf"]
+default = ["recovery-kdf", "tracker-delivery", "profile-admin"]
 recovery-kdf = ["dep:argon2"]
+tracker-delivery = []
+profile-admin = []
+# Build-time partitions for the lifecycle browser modules. With neither (ordinary builds) or both (Cargo's
+# workspace-wide feature unification) enabled, the core retains every operation.
+browser-startup = []
+browser-deferred = []
 
 [dependencies]
 serde.workspace = true

@@ -13,16 +13,21 @@ receipts. Provider APIs have no atomic compare-and-set: the final read/write rac
 
 ## Packages and builds
 
-Rust 1.95.0, UniFFI 0.32.2, wasm-bindgen/CLI 0.2.129, binaryen's wasm-opt version 132; dependency resolution is
+Rust 1.95.0, UniFFI 0.32.2, wasm-bindgen/CLI 0.2.129, Binaryen version 133, and Node 24; dependency resolution is
 pinned in Cargo.lock. On macOS with Xcode, install Rust targets `aarch64-apple-darwin`, `aarch64-apple-tvos`,
 `aarch64-apple-tvos-sim`, `aarch64-apple-ios`, `aarch64-apple-ios-sim`, and `wasm32-unknown-unknown`.
-Install `wasm-bindgen-cli --version 0.2.129 --locked` and wasm-opt (binaryen `version_132`, on `PATH` or in
-`.tools/bin`), then run:
+Install `wasm-bindgen-cli --version 0.2.129 --locked`, run `npm ci`, and put Binaryen `version_133`'s `wasm-opt`
+and `wasm2js` in `.tools/bin` (with its shared library in `.tools/lib` where required), then run:
 
 ```sh
 cargo test --locked -p den-sync
 bash scripts/build-bindings.sh
 ```
+
+After a WASM build, `node bench/season-projection.mjs` compares repeated `episode_state_v4` calls with the bounded
+`season_state_v4` operation on identical 24- and 100-episode fixtures. It reports first-journey and warmed CPU,
+calls, and serialized bytes. `cargo test --locked -p den-sync --test season_projection_memory -- --nocapture`
+records native allocated-byte and peak-heap evidence for the same boundary change.
 
 The Swift package contains a generated UniFFI wrapper and an XCFramework for ARM64 macOS, Apple TV and
 iOS (device and simulators). Intel hosts/simulators are not packaged. The web module loads its separate WASM
@@ -35,7 +40,8 @@ Production CSP must allow `'wasm-unsafe-eval'`, not general JS eval. Offline use
 available in the browser cache or already initialized; there is no embedded fallback.
 
 With `den`, `den-edge`, and `den-core` sibling workspaces, `bash scripts/build-bindings.sh --vendor`
-mechanically copies packages into `den/Vendor/DenCore` and `den-edge/web/src/vendor/den-core`.
+mechanically copies packages into `den/Vendor/DenCore`, `den-edge/web/src/vendor/den-core`, and
+`den-edge/web/src/vendor/den-core-tizen3`.
 **Client builds use those checked-in artifacts, not a sibling checkout, Rust installation, or CDN.**
 Each package's `SOURCE.json` pins source/dependency hashes, tool versions, and every artifact hash.
 Regenerate both packages together; do not hand-edit generated policy or bindings. Native binary debug

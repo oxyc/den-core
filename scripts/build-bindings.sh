@@ -29,6 +29,14 @@ case "$only" in
     *) echo "--only takes checks, native or wasm, not '$only'" >&2; exit 2 ;;
 esac
 want() { [[ -z "$only" || "$only" == "$1" ]]; }
+ensure_rust_src() {
+    if command -v rustup >/dev/null 2>&1; then
+        rustup component add rust-src --toolchain 1.95.0
+    elif [[ ! -d "$(rustc --print sysroot)/lib/rustlib/src/rust/library" ]]; then
+        echo "rust-src for Rust 1.95.0 is required" >&2
+        exit 1
+    fi
+}
 
 if want checks; then
     if [[ " $* " == *" --format "* ]]; then cargo fmt --all; fi
@@ -41,7 +49,7 @@ fi
 if want native; then
     # `build-std` below must rebuild the standard-library objects with the same deployment target as Den's
     # objects. The toolchain is pinned above/in CI, and rustup makes this component install idempotent.
-    rustup component add rust-src --toolchain 1.95.0
+    ensure_rust_src
     # Rust 1.95 can race loading freshly linked proc-macro dylibs (E0463) in optimized native builds. Keep this
     # packaging path serial until the pinned toolchain no longer needs the workaround.
     cargo build --locked --release -j1 -p den-core-native --lib
@@ -118,15 +126,32 @@ if want native; then
 fi
 
 if want wasm; then
-    # Three web modules: ordinary policy, assistant crypto and recovery's memory-hard KDF. Optional policy loads only
-    # where it is used. The name section only names functions for stack traces; errors come back as JSON either way.
-    # Keep Cargo's package feature unification from adding the recovery feature back to the ordinary module.
-    cargo build --locked --release -p den-core-web -p den-core-web-assistant --target wasm32-unknown-unknown
-    cargo build --locked --release -p den-core-web-recovery --target wasm32-unknown-unknown
+    # Five web modules: the compatibility core, startup and deferred lifecycle policy, assistant crypto and recovery's
+    # memory-hard KDF. Optional policy loads only where it is used. The name section only names functions for stack
+    # traces; errors come back as JSON either way.
+    # Keep Cargo's package feature unification from adding the recovery feature back to the ordinary module. Rebuild
+    # std with immediate-abort as well: browser policy reports expected failures in its JSON envelope, while Rust's
+    # panic formatting and payload machinery only makes an unexpected bug's trap substantially larger.
+    ensure_rust_src
+    wasm_cargo=(cargo -Z build-std=std build --locked --release --target wasm32-unknown-unknown)
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web -p den-core-web-assistant
+    # Cargo unifies features across packages in one invocation. Build the two lifecycle halves separately so
+    # `browser-startup` and `browser-deferred` can remove opposite sides of the dispatcher.
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web-startup
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web-deferred
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+        "${wasm_cargo[@]}" -p den-core-web-recovery
     bindgen="$root/.tools/bin/wasm-bindgen"
     if [[ ! -x "$bindgen" ]]; then bindgen=wasm-bindgen; fi
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core \
         target/wasm32-unknown-unknown/release/den_core_web.wasm
+    "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_startup \
+        target/wasm32-unknown-unknown/release/den_core_web_startup.wasm
+    "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_deferred \
+        target/wasm32-unknown-unknown/release/den_core_web_deferred.wasm
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_assistant \
         target/wasm32-unknown-unknown/release/den_core_web_assistant.wasm
     "$bindgen" --target web --remove-name-section --out-dir web/generated --out-name den_core_recovery \
@@ -136,16 +161,16 @@ if want wasm; then
     # The version is pinned (CI installs it, checksummed), since another makes other bytes. The features are the
     # ones rustc 1.95 emits for wasm32-unknown-unknown; none is added.
     wasm_opt="$root/.tools/bin/wasm-opt"
-    if [[ ! -x "$wasm_opt" ]]; then wasm_opt=wasm-opt; fi
-    if [[ "$("$wasm_opt" --version)" != "wasm-opt version 132"* ]]; then
-        echo "wasm-opt version 132 (binaryen) is required; found: $("$wasm_opt" --version)" >&2
+    if [[ "$("$wasm_opt" --version)" != "wasm-opt version 133"* ]]; then
+        echo "wasm-opt version 133 (binaryen) is required; found: $("$wasm_opt" --version)" >&2
         exit 1
     fi
-    for module in den_core den_core_assistant den_core_recovery; do
+    for module in den_core den_core_startup den_core_deferred den_core_assistant den_core_recovery; do
         "$wasm_opt" -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
             --enable-mutable-globals --enable-reference-types --enable-multivalue \
             -o "web/generated/${module}_bg.wasm" "web/generated/${module}_bg.wasm"
     done
+    node scripts/build-tizen3-core.mjs
 fi
 if [[ " $* " == *" --vendor "* ]]; then
     node scripts/vendor.mjs
