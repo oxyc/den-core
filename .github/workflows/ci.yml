@@ -75,6 +75,7 @@ jobs:
           cp "$RUNNER_TEMP"/binaryen-version_133/lib/libbinaryen.* .tools/lib/
       - run: bash scripts/build-bindings.sh --only wasm
       - run: node scripts/test-wasm.mjs
+      - run: node scripts/test-wasm-lifecycle.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wasm-bindings

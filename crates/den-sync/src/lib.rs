@@ -739,6 +739,22 @@ pub fn evaluate_core(input: &str) -> String {
     envelope(bounded(input).and_then(|()| web_core::run(input)))
 }
 
+/// Cold-open policy: import and merge stored facts, validate controls, render Home, and serve its immediate read
+/// subscriptions. The `browser-startup` feature removes later browsing, actions, outbound work, maintenance, and
+/// administrative operations from this build.
+pub fn evaluate_startup(input: &str) -> String {
+    envelope(bounded(input).and_then(|()| web_core::run(input)))
+}
+
+/// Deferred actions, outbound delivery, maintenance, and administrative policy. The `browser-deferred` feature removes
+/// the cold-open import and projection arms.
+pub fn evaluate_deferred(input: &str) -> String {
+    if let Some(answer) = library_op(input) {
+        return answer;
+    }
+    envelope(bounded(input).and_then(|()| web_core::run(input)))
+}
+
 /// The assistant ops alone (den-spec `wire/assistant-v1.md`): the web's assistant module.
 pub fn evaluate_assistant(input: &str) -> String {
     envelope(bounded(input).and_then(|()| {

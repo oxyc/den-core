@@ -1,0 +1,13 @@
+[package]
+name = "den-core-web-startup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+den-sync = { path = "../../crates/den-sync", default-features = false, features = ["browser-startup", "profile-admin"] }
+wasm-bindgen = "=0.2.129"

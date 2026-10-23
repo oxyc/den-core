@@ -5,6 +5,8 @@ members = [
     "crates/den-assistant",
     "bindings/native",
     "bindings/web",
+    "bindings/web-startup",
+    "bindings/web-deferred",
     "bindings/web-tizen3",
     "bindings/web-assistant",
     "bindings/web-recovery",
