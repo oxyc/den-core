@@ -25,6 +25,10 @@ const sysroot = execFileSync('rustc', ['--print', 'sysroot'], { encoding: 'utf8'
 const host = /^host: (.+)$/m.exec(execFileSync('rustc', ['-vV'], { encoding: 'utf8' }))?.[1];
 const rustLld = process.env.RUST_LLD ?? (host && join(sysroot, 'lib/rustlib', host, 'bin/rust-lld'));
 const encodedFlags = [
+  '-Z',
+  'unstable-options',
+  '-C',
+  'panic=immediate-abort',
   '-C',
   'target-feature=-reference-types,-multivalue',
   `--remap-path-prefix=${root}=/den-core`,
@@ -36,6 +40,8 @@ const features = (process.env.DEN_TIZEN3_FEATURES ?? '')
   .map((feature) => feature.trim())
   .filter(Boolean);
 const cargoArgs = [
+  '-Z',
+  'build-std=std',
   'build',
   '--locked',
   '--release',
@@ -54,7 +60,8 @@ execFileSync(
     env: {
       ...process.env,
       RUSTC_BOOTSTRAP: '1',
-      RUSTFLAGS: '-C target-feature=-reference-types,-multivalue',
+      RUSTFLAGS:
+        '-Zunstable-options -Cpanic=immediate-abort -C target-feature=-reference-types,-multivalue',
       CARGO_ENCODED_RUSTFLAGS: encodedFlags,
       CARGO_TARGET_DIR: target,
       ...(rustLld && existsSync(rustLld)
