@@ -232,3 +232,33 @@ const tizen3Gzip = gzipSync(tizen3, {level: 9}).byteLength;
 assert.ok(tizen3.byteLength <= 2_050_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2050000-byte budget`);
 assert.ok(tizen3Gzip <= 590_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 590000-byte budget`);
 console.log(`PASS: Tizen 3 core ${tizen3.byteLength} bytes, ${tizen3Gzip} gzip`);
+
+// Exercise the pointer-only wasm2js transport too: the generic browser and native contracts use the same den-sync
+// implementation, but a Tizen 3 packaging regression must not silently omit the new season operation.
+await import('../web-tizen3/generated/den_core.js');
+const tizenEvaluate = request => {
+  const core = globalThis.DenTizen3Core;
+  const input = new TextEncoder().encode(request);
+  const inputPointer = core.den_alloc(input.byteLength);
+  const outputSlot = core.den_alloc(8);
+  try {
+    new Uint8Array(core.memory.buffer, inputPointer, input.byteLength).set(input);
+    core.den_evaluate(inputPointer, input.byteLength, outputSlot);
+    const [outputPointer, outputLength] = new Uint32Array(core.memory.buffer, outputSlot, 2);
+    try {
+      return new TextDecoder('utf-8', {fatal: true})
+        .decode(new Uint8Array(core.memory.buffer, outputPointer, outputLength));
+    } finally {
+      core.den_free(outputPointer, outputLength);
+    }
+  } finally {
+    core.den_free(inputPointer, input.byteLength);
+    core.den_free(outputSlot, 8);
+  }
+};
+const seasonProjection = fixtures[1].cases.find(test =>
+  test.name === 'one season projection preserves every single-episode state');
+assert.ok(seasonProjection);
+const seasonWire = JSON.stringify(seasonProjection.request);
+assert.deepEqual(JSON.parse(tizenEvaluate(seasonWire)), JSON.parse(evaluate(seasonWire)));
+console.log('PASS: season_state_v4 parity through the Tizen 3 core');

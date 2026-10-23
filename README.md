@@ -24,6 +24,11 @@ cargo test --locked -p den-sync
 bash scripts/build-bindings.sh
 ```
 
+After a WASM build, `node bench/season-projection.mjs` compares repeated `episode_state_v4` calls with the bounded
+`season_state_v4` operation on identical 24- and 100-episode fixtures. It reports first-journey and warmed CPU,
+calls, and serialized bytes. `cargo test --locked -p den-sync --test season_projection_memory -- --nocapture`
+records native allocated-byte and peak-heap evidence for the same boundary change.
+
 The Swift package contains a generated UniFFI wrapper and an XCFramework for ARM64 macOS, Apple TV and
 iOS (device and simulators). Intel hosts/simulators are not packaged. The web module loads its separate WASM
 asynchronously with `initialize()`, which concurrent callers share and can retry after failure. Call it before

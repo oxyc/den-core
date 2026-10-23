@@ -127,6 +127,14 @@ enum Request {
         episode: Value,
         now: i64,
     },
+    /// Library v4 §7: every canonical episode register in one season, with one fixed `now` and reset context.
+    SeasonStateV4 {
+        #[serde(default)]
+        title: Option<Value>,
+        #[serde(default)]
+        season: Option<Value>,
+        now: i64,
+    },
     /// Library v4 §7: a film's state from its title document.
     FilmStateV4 {
         title: Value,
@@ -1042,6 +1050,11 @@ fn run(request: Request) -> Result<Value, String> {
                 other => other.to_string(),
             };
             library_v4::state::episode_state(title.as_ref(), season.as_ref(), &episode, now)
+        }
+        Request::SeasonStateV4 { title, season, now } => {
+            let title = title.as_ref().map(library_v4::readable).transpose()?;
+            let season = season.as_ref().map(library_v4::readable).transpose()?;
+            library_v4::state::season_state(title.as_ref(), season.as_ref(), now)
         }
         Request::FilmStateV4 { title, now } => {
             library_v4::state::film_state(&library_v4::readable(&title)?, now)

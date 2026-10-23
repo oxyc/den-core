@@ -570,6 +570,32 @@ fn state_cases() -> Vec<Case> {
     let imported =
         json!({"imported": true, "plays": {(3000 - IMPORT).to_string(): 3000}, "cleared": null});
     let hidden = json!({"watched": false, "resume": null, "viewing": 0, "plays": [], "first_play": null, "watched_at": null});
+    let batch_season = season(
+        1399,
+        1,
+        json!({
+            "seasonReset": st(1500),
+            "episodes": {
+                "1": watched,
+                "2": imported,
+                "3": {
+                    "progress": {"value": 0.4, "at": st(3000), "viewing": 1},
+                    "imported": false,
+                    "plays": {"0": 1000, "1": 3000},
+                    "cleared": [0, st(2500)]
+                },
+                "4": {
+                    "progress": {"value": 1, "at": st(10 * 86_400_000), "viewing": 4},
+                    "imported": false,
+                    "plays": {},
+                    "cleared": null
+                },
+                "5": {},
+                "01": {"futureExtension": true},
+                "100000": {"futureExtension": true}
+            }
+        }),
+    );
     vec![
         case(
             "a series reset in the title document hides a season's registers",
@@ -602,6 +628,24 @@ fn state_cases() -> Vec<Case> {
             "§7",
             json!({"op": "episode_state_v4", "season": null, "episode": "7", "now": 1000}),
             Expect::Subset(json!({"watched": false, "plays": []})),
+        ),
+        case(
+            "one season projection preserves every single-episode state",
+            "§7",
+            json!({"op": "season_state_v4", "title": reset_title, "season": batch_season, "now": 4000}),
+            Expect::Ok(json!({
+                "1": {"watched": false, "resume": null, "viewing": 0, "plays": [], "first_play": null, "watched_at": null},
+                "2": {"watched": true, "resume": null, "viewing": 0, "plays": [[3000 - IMPORT, 3000]], "first_play": 3000, "watched_at": 3000},
+                "3": {"watched": false, "resume": {"value": 0.4, "at": st(3000), "viewing": 1}, "viewing": 1, "plays": [[1, 3000]], "first_play": 3000, "watched_at": 3000},
+                "4": {"watched": false, "resume": null, "viewing": 4, "plays": [], "first_play": null, "watched_at": null},
+                "5": {"watched": false, "resume": null, "viewing": 0, "plays": [], "first_play": null, "watched_at": null}
+            })),
+        ),
+        case(
+            "an absent season projects no episode registers",
+            "§7",
+            json!({"op": "season_state_v4", "title": null, "season": null, "now": 4000}),
+            Expect::Ok(json!({})),
         ),
         case(
             "a film's watched-at before its play lands",
@@ -2436,6 +2480,52 @@ fn library_v4_merges() {
     }
 }
 
+#[test]
+fn season_state_v4_is_the_single_episode_operation_for_each_canonical_register() {
+    let title = title("tv", 1399, json!({"episodesReset": st(2000)}));
+    let season = season(
+        1399,
+        1,
+        json!({
+            "seasonReset": st(1500),
+            "episodes": {
+                "0": {},
+                "1": {"progress": {"value": 0.4, "at": st(3000), "viewing": 1}, "plays": {"1": 3000}, "cleared": null},
+                "99999": {"imported": true, "plays": {(3000 - IMPORT).to_string(): 3000}, "cleared": null},
+                "01": {"progress": {"value": 1, "at": st(3000), "viewing": 0}},
+                "100000": {"progress": {"value": 1, "at": st(3000), "viewing": 0}}
+            }
+        }),
+    );
+    let now = 4000;
+    let batch = ok(&json!({
+        "op": "season_state_v4",
+        "title": title,
+        "season": season,
+        "now": now
+    }));
+    let keys: Vec<&str> = batch
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, ["0", "1", "99999"]);
+    for episode in keys {
+        assert_eq!(
+            batch[episode],
+            ok(&json!({
+                "op": "episode_state_v4",
+                "title": title,
+                "season": season,
+                "episode": episode,
+                "now": now
+            })),
+            "episode {episode}"
+        );
+    }
+}
+
 /// The boundary never panics (a WASM panic would take the page with it): every v4 op answers malformed input with
 /// a JSON envelope.
 #[test]
@@ -2457,6 +2547,7 @@ fn malformed_input_is_an_error_not_a_panic() {
         json!({"op": "doc_merge", "a": "J", "b": "J"}),
         json!({"op": "title_state", "title": "J", "now": 1}),
         json!({"op": "episode_state_v4", "title": "J", "season": "J", "episode": "1", "now": 1}),
+        json!({"op": "season_state_v4", "title": "J", "season": "J", "now": 1}),
         json!({"op": "film_state_v4", "title": "J", "now": 1}),
         json!({"op": "apply_write", "write": "J", "target": "J", "title": "J", "seasons": ["J"], "now": 1}),
         json!({"op": "apply_write", "write": {"kind": "mark_watched", "episodes": [[1, 1]], "at": st(5)}, "target": tv(), "seasons": ["J"], "now": 1}),

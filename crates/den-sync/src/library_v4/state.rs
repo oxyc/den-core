@@ -44,12 +44,42 @@ pub fn episode_state(
     episode: &str,
     now: i64,
 ) -> Result<Value, String> {
+    episode_state_with_resets(season, episode, &resets(title, season), now)
+}
+
+fn episode_state_with_resets(
+    season: Option<&Map<String, Value>>,
+    episode: &str,
+    resets: &[Stamp],
+    now: i64,
+) -> Result<Value, String> {
     let empty = empty_register();
-    watch::episode_state(
-        register(season, episode).unwrap_or(&empty),
-        &resets(title, season),
-        now,
-    )
+    watch::episode_state(register(season, episode).unwrap_or(&empty), resets, now)
+}
+
+/// Every canonical episode register in one season, derived with one fixed time and one set of covering resets.
+/// Unknown extension keys in `episodes` remain part of the document but are not episode registers (§3).
+pub fn season_state(
+    title: Option<&Map<String, Value>>,
+    season: Option<&Map<String, Value>>,
+    now: i64,
+) -> Result<Value, String> {
+    let Some(episodes) = season
+        .and_then(|season| season.get("episodes"))
+        .and_then(Value::as_object)
+    else {
+        return Ok(json!({}));
+    };
+    let resets = resets(title, season);
+    let states = episodes
+        .keys()
+        .filter(|episode| super::doc::valid_episode_key(episode))
+        .map(|episode| {
+            episode_state_with_resets(season, episode, &resets, now)
+                .map(|state| (episode.clone(), state))
+        })
+        .collect::<Result<Map<_, _>, _>>()?;
+    Ok(Value::Object(states))
 }
 
 /// The `rec` fields a film derives from, with v3 §7's defaults for absent ones.
