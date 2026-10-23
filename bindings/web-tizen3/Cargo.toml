@@ -10,3 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 den-sync = { path = "../../crates/den-sync", default-features = false }
+
+[features]
+tracker-delivery = ["den-sync/tracker-delivery"]
+profile-admin = ["den-sync/profile-admin"]

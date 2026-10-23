@@ -6,8 +6,10 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["recovery-kdf"]
+default = ["recovery-kdf", "tracker-delivery", "profile-admin"]
 recovery-kdf = ["dep:argon2"]
+tracker-delivery = []
+profile-admin = []
 
 [dependencies]
 serde.workspace = true
