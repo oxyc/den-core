@@ -4,7 +4,7 @@
 use super::doc::{entry_order, identity, safe_u64, sanitize, Identity, Kind, FORMAT};
 use super::jcs;
 use super::state;
-use crate::library_v3;
+use crate::watch;
 use crate::wire::{stamp, Stamp};
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -45,10 +45,6 @@ pub struct Target {
 }
 
 impl Target {
-    pub fn built_from(&self) -> Value {
-        json!(self.row())
-    }
-
     fn row(&self) -> BuiltFrom {
         BuiltFrom {
             key: self.key.clone(),
@@ -158,7 +154,7 @@ fn episode_value(
     now: i64,
     receipt: Option<&Receipt>,
 ) -> Result<WatchValue, String> {
-    let state = library_v3::episode_state(register, resets, now)?;
+    let state = watch::episode_state(register, resets, now)?;
     let p = state["viewing"].as_i64().unwrap_or(0);
     let reset_floor = resets
         .iter()
@@ -334,7 +330,6 @@ pub struct Account {
 /// holds one document read at a time: read, a library's documents are many times the size of their text.
 #[derive(Clone, Copy)]
 pub enum Source<'a> {
-    Value(&'a Value),
     Raw(&'a RawValue),
 }
 
@@ -345,7 +340,6 @@ const UNPARSED: &str = "invalid_request";
 impl<'a> Source<'a> {
     fn value(self) -> Result<Cow<'a, Value>, ()> {
         match self {
-            Source::Value(value) => Ok(Cow::Borrowed(value)),
             Source::Raw(raw) => serde_json::from_str(raw.get())
                 .map(Cow::Owned)
                 .map_err(|_| ()),
@@ -847,12 +841,6 @@ pub struct Pending {
     unverified: BTreeSet<u64>,
 }
 
-impl Pending {
-    pub fn commands(&self) -> &[PendingCommand] {
-        &self.commands
-    }
-}
-
 #[derive(Serialize)]
 struct Removals {
     held: Stamp,
@@ -1069,7 +1057,7 @@ pub fn settle(
             }
         }
     }
-    let mut out = library_v3::settle(&json!({"action": action}), &built, order)?;
+    let mut out = watch::settle(&json!({"action": action}), &built, order)?;
     if out.is_null() {
         return Ok(out);
     }

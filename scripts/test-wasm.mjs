@@ -9,7 +9,7 @@ assert.throws(() => evaluateRecovery('{}'), /not initialized/);
 await initialize(readFileSync(new URL('../web/generated/den_core_bg.wasm', import.meta.url)));
 await initializeAssistant(readFileSync(new URL('../web/generated/den_core_assistant_bg.wasm', import.meta.url)));
 await initializeRecovery(readFileSync(new URL('../web/generated/den_core_recovery_bg.wasm', import.meta.url)));
-const fixtures = ['policy-v1.json', 'policy-v3.json', 'policy-v4.json', 'profiles-v1.json'].map(name =>
+const fixtures = ['policy-v1.json', 'policy-v4.json', 'profiles-v1.json'].map(name =>
   JSON.parse(readFileSync(new URL(`../crates/den-sync/tests/fixtures/${name}`, import.meta.url))));
 // Optional operations run in their own modules, and every module refuses operations outside its capability.
 const assistant = (request) => typeof request.op === 'string' && request.op.startsWith('assistant_');
