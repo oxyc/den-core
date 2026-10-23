@@ -136,7 +136,7 @@ export function vendor({
     sourceDigest,
     rust: '1.95.0',
     binaryen: 133,
-    rustflags: '-C target-feature=-reference-types,-multivalue',
+    rustflags: '-Zunstable-options -Cpanic=immediate-abort -C target-feature=-reference-types,-multivalue',
     excludes: ['assistant'],
     artifacts,
   }, null, 2) + '\n');
