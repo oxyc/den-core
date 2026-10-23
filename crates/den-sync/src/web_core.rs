@@ -171,6 +171,21 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
                 take(&mut fields, "now")?,
             )
         }
+        "season_state_v4" => {
+            let title = optional::<Value>(&mut fields, "title")?
+                .as_ref()
+                .map(library_v4::readable)
+                .transpose()?;
+            let season = optional::<Value>(&mut fields, "season")?
+                .as_ref()
+                .map(library_v4::readable)
+                .transpose()?;
+            library_v4::state::season_state(
+                title.as_ref(),
+                season.as_ref(),
+                take(&mut fields, "now")?,
+            )
+        }
         "film_state_v4" => library_v4::state::film_state(
             &library_v4::readable(&value(&mut fields, "title")?)?,
             take(&mut fields, "now")?,
