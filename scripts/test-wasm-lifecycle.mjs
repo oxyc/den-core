@@ -8,6 +8,9 @@ import { STARTUP_OPERATIONS, isStartupOperation } from '../web/lifecycle.js';
 // Everything traced through a true uncached Home render and its immediate subscriptions: decode/merge incoming rows,
 // validate controls, project Home, restore events, and answer download state without loading later policy.
 const STARTUP_OPS = new Set(STARTUP_OPERATIONS);
+// Stamp issuance is synchronous in shared Clock callers that can run before an awaited command boundary. Keep it in
+// deferred too, where writes use it directly, rather than forcing every caller to know which module is active.
+const SHARED_OPS = new Set(['issue']);
 assert.equal(STARTUP_OPS.size, STARTUP_OPERATIONS.length, 'startup operation manifest has no duplicates');
 for (const op of STARTUP_OPERATIONS) assert.equal(isStartupOperation(op), true);
 assert.equal(isStartupOperation('apply_write'), false);
@@ -96,11 +99,19 @@ for (const fixture of fixtures) {
       'error' in test ? { version: 1, error: test.error } : { version: 1, ok: test.ok },
       test.name,
     );
-    assert.equal(
-      JSON.parse((startup ? evaluateDeferred : evaluateStartup)(request)).error,
-      'invalid_request',
-      `${test.name}: opposite module refuses ${test.request.op}`,
-    );
+    const opposite = JSON.parse((startup ? evaluateDeferred : evaluateStartup)(request));
+    if (SHARED_OPS.has(test.request.op))
+      assert.deepEqual(
+        opposite,
+        result,
+        `${test.name}: shared operation agrees in both lifecycle modules`,
+      );
+    else
+      assert.equal(
+        opposite.error,
+        'invalid_request',
+        `${test.name}: opposite module refuses ${test.request.op}`,
+      );
     count++;
     if (startup) {
       startupCount++;

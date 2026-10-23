@@ -4,6 +4,7 @@ export const STARTUP_OPERATIONS: readonly [
   'doc_name',
   'doc_merge',
   'capture',
+  'issue',
   'episode_mark',
   'continue_entry',
   'episode_state_v4',

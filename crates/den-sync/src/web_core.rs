@@ -146,7 +146,6 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
                 serde_json::from_value(Value::Object(fields)).map_err(|_| INVALID.to_string())?;
             Ok(continue_entry(&input))
         }
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "issue" => {
             let last: Stamp = take(&mut fields, "last")?;
             let last = optional::<Stamp>(&mut fields, "seen")?
