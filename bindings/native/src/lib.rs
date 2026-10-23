@@ -28,6 +28,34 @@ mod tests {
         document
     }
 
+    #[test]
+    fn season_projection_crosses_the_native_binding() {
+        let season = json!({
+            "format": 4,
+            "kind": "season",
+            "title": {"type": "tv", "id": 1399},
+            "season": 1,
+            "seasonReset": null,
+            "episodes": {
+                "1": {"progress": {"value": 1, "at": [1000, 0, "a1b2c3d4e5f60718"], "viewing": 0},
+                    "imported": false, "plays": {"0": 1000}, "cleared": null},
+                "2": {}
+            }
+        });
+        let batch: Value = serde_json::from_str(&evaluate(
+            json!({"op": "season_state_v4", "season": season, "now": 2000}).to_string(),
+        ))
+        .unwrap();
+        for episode in [1, 2] {
+            let single: Value = serde_json::from_str(&evaluate(
+                json!({"op": "episode_state_v4", "season": season, "episode": episode, "now": 2000})
+                    .to_string(),
+            ))
+            .unwrap();
+            assert_eq!(batch["ok"][episode.to_string()], single["ok"]);
+        }
+    }
+
     fn migration_input(fixture: &Value, case: &Value) -> Value {
         let mut input = case.clone();
         if case.get("observed").and_then(Value::as_str) == Some("committed")
