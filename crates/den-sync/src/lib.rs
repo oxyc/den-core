@@ -75,6 +75,7 @@ enum Request {
         at: Stamp,
         id: String,
     },
+    #[cfg(feature = "tracker-delivery")]
     Commands {
         event: Value,
         current: Value,
@@ -113,6 +114,7 @@ enum Request {
         now: i64,
         device: String,
     },
+    #[cfg(feature = "tracker-delivery")]
     Decide {
         command: Command,
         remote: Remote,
@@ -173,6 +175,7 @@ enum Request {
         order: Value,
     },
     /// Library v4 §9: also the entry it replaces (absent or null for none), whose lasting elements it keeps.
+    #[cfg(feature = "tracker-delivery")]
     SettleV4 {
         outcome: Value,
         built_from: Value,
@@ -243,6 +246,7 @@ enum Request {
         stored: bool,
     },
     /// Profiles v1: converge two valid versions of one profile-directory document.
+    #[cfg(feature = "profile-admin")]
     ProfilesMerge {
         a: Value,
         b: Value,
@@ -260,27 +264,33 @@ enum Request {
         at: Option<Value>,
     },
     /// Profiles v1: turn one stored-valid directory into canonical library-v4 document bytes.
+    #[cfg(feature = "profile-admin")]
     ProfilesMaterialize {
         document: Value,
     },
     /// Profiles v1: choose the next crash-safe persistent Kid creation effect.
+    #[cfg(feature = "profile-admin")]
     ProfilesCreateNext {
         input: Value,
     },
     /// Profiles v1: choose the next initial-split effect from validated durable observations.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationNext {
         input: Value,
     },
     /// Profiles v1: construct one exact-attempt split authorization or bind it to verified commit evidence.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationAuthorization {
         input: Value,
     },
     /// Profiles v1: calculate one canonical migration evidence digest without storage or network effects.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationDigest {
         kind: String,
         input: Value,
     },
     /// Profiles v1: construct and stored-validate the first Owner-only directory.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationConstructDirectory {
         input: Value,
     },
@@ -295,10 +305,12 @@ enum Request {
         input: Value,
     },
     /// Profiles v1: validate a materialized projection and return its canonical seal-ready bytes.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationMaterializePlaintext {
         input: Value,
     },
     /// Profiles v1: reproduce the provider's non-secret backup authorization representation.
+    #[cfg(feature = "profile-admin")]
     ProfilesMigrationAuthorizationFingerprint {
         input: Value,
     },
@@ -307,6 +319,7 @@ enum Request {
         input: Value,
     },
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
+    #[cfg(feature = "profile-admin")]
     ProfilesResetNext {
         input: Value,
     },
@@ -375,6 +388,7 @@ enum Request {
         now: i64,
     },
     /// Library v4 §9 *Fit before sending*.
+    #[cfg(feature = "tracker-delivery")]
     DeliveryWrite {
         #[serde(default)]
         document: Option<Value>,
@@ -667,6 +681,7 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
 
 /// Library v4 §9 `pending_targets_v4`: the documents, delivery documents included, and the account's `set:deliver`
 /// facts.
+#[cfg(feature = "tracker-delivery")]
 #[derive(Deserialize)]
 struct PendingTargetsRequest<'a> {
     #[serde(borrow)]
@@ -698,6 +713,7 @@ struct V4DryRunRequest<'a> {
 }
 
 /// Profiles v1: account every authenticated legacy row into household/Owner migration material.
+#[cfg(feature = "profile-admin")]
 #[derive(Deserialize)]
 struct PartitionRequest<'a> {
     #[serde(borrow)]
@@ -739,6 +755,7 @@ fn library_op(input: &str) -> Option<String> {
     }
     let op = serde_json::from_str::<Op>(input).ok()?.op;
     Some(match &*op {
+        #[cfg(feature = "tracker-delivery")]
         "pending_targets_v4" => answer(read(input).and_then(|r: PendingTargetsRequest| {
             library_v4::delivery::pending(
                 r.documents
@@ -756,6 +773,7 @@ fn library_op(input: &str) -> Option<String> {
                 library_v4::switch::v4_dry_run(&r.rows, r.form, r.now)
             }))
         }
+        #[cfg(feature = "profile-admin")]
         "profiles_migration_partition_rows" => answer(
             read(input).and_then(|r: PartitionRequest| profiles::migration_partition(r.input)),
         ),
@@ -1055,6 +1073,7 @@ fn run(request: Request) -> Result<Value, String> {
             at,
             id,
         } => capture(&before, &after, &at, &id),
+        #[cfg(feature = "tracker-delivery")]
         Request::Commands { event, current } => commands(&event, &current),
         Request::EpisodeMark {
             row,
@@ -1090,6 +1109,7 @@ fn run(request: Request) -> Result<Value, String> {
             let last = seen.map(|seen| last.clone().max(seen)).unwrap_or(last);
             Ok(json!(last.issue(now, device)?))
         }
+        #[cfg(feature = "tracker-delivery")]
         Request::Decide { command, remote } => Ok(json!(decide(&command, &remote))),
         Request::EpisodeState {
             register,
@@ -1142,6 +1162,7 @@ fn run(request: Request) -> Result<Value, String> {
             built_from,
             order,
         } => library_v3::settle(&outcome, &built_from, &order),
+        #[cfg(feature = "tracker-delivery")]
         Request::SettleV4 {
             outcome,
             built_from,
@@ -1179,6 +1200,7 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesValidate { document, stored } => {
             profiles::validate_input(&document, stored)
         }
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMerge { a, b } => profiles::merge(&a, &b),
         Request::ProfilesApply {
             document,
@@ -1195,27 +1217,38 @@ fn run(request: Request) -> Result<Value, String> {
             value.as_ref(),
             at.as_ref(),
         ),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMaterialize { document } => profiles::materialize(&document),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesCreateNext { input } => profiles::create_next(&input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationAuthorization { input } => {
             profiles::migration_authorization(&input)
         }
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationDigest { kind, input } => {
             profiles::migration_digest(&kind, &input)
         }
-        Request::ProfilesMigrationConstructDirectory { input }
-        | Request::ProfilesConstructDirectory { input } => {
+        #[cfg(feature = "profile-admin")]
+        Request::ProfilesMigrationConstructDirectory { input } => {
+            profiles::migration_construct_directory(&input)
+        }
+        Request::ProfilesConstructDirectory { input } => {
             profiles::migration_construct_directory(&input)
         }
         Request::ProfilesSnapshotDigest { kind, input } => profiles::snapshot_digest(&kind, &input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationMaterializePlaintext { input } => {
             profiles::migration_materialize_plaintext(&input)
         }
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesMigrationAuthorizationFingerprint { input } => {
             profiles::migration_authorization_fingerprint(&input)
         }
         Request::ProfilesCapability { input } => profiles::profile_capability(&input),
+        #[cfg(feature = "profile-admin")]
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilesPartitionPreferences { values } => {
             profiles::partition_preferences(&values)
@@ -1262,6 +1295,7 @@ fn run(request: Request) -> Result<Value, String> {
             &receipts,
             now,
         ),
+        #[cfg(feature = "tracker-delivery")]
         Request::DeliveryWrite {
             document,
             identity,
@@ -1418,5 +1452,44 @@ mod tests {
         });
         let response: Value = serde_json::from_str(&evaluate(&request.to_string())).unwrap();
         assert!(response.get("ok").is_some(), "{response}");
+    }
+
+    #[cfg(not(feature = "tracker-delivery"))]
+    #[test]
+    fn tracker_delivery_ops_compile_out() {
+        let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
+        for request in [
+            r#"{"op":"commands","event":{},"current":{}}"#,
+            r#"{"op":"decide","command":{},"remote":{}}"#,
+            r#"{"op":"delivery_write","commands":[],"identity":{}}"#,
+            r#"{"op":"pending_targets_v4","documents":[],"deliver":{},"now":0}"#,
+            r#"{"op":"settle_v4","outcome":{},"built_from":{},"order":{}}"#,
+        ] {
+            assert_eq!(evaluate_core(request), invalid, "{request}");
+        }
+        assert_ne!(
+            evaluate_core(r#"{"op":"rank_releases","releases":[],"tried":[]}"#),
+            invalid
+        );
+    }
+
+    #[cfg(not(feature = "profile-admin"))]
+    #[test]
+    fn profile_admin_ops_compile_out_but_viewer_policy_stays() {
+        let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
+        for request in [
+            r#"{"op":"profiles_merge","a":{},"b":{}}"#,
+            r#"{"op":"profiles_materialize","document":{}}"#,
+            r#"{"op":"profiles_create_next","input":{}}"#,
+            r#"{"op":"profiles_reset_next","input":{}}"#,
+            r#"{"op":"profiles_migration_next","input":{}}"#,
+            r#"{"op":"profiles_migration_partition_rows","input":{}}"#,
+        ] {
+            assert_eq!(evaluate_core(request), invalid, "{request}");
+        }
+        assert_ne!(
+            evaluate_core(r#"{"op":"profile_policy_allows","policy":{"unrestricted":true}}"#),
+            invalid
+        );
     }
 }

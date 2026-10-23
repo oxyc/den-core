@@ -31,9 +31,23 @@ const encodedFlags = [
   `--remap-path-prefix=${process.env.CARGO_HOME ?? join(homedir(), '.cargo')}=/cargo`,
   `--remap-path-prefix=${sysroot}=/rust-toolchain`,
 ].join('\x1f');
+const features = (process.env.DEN_TIZEN3_FEATURES ?? '')
+  .split(',')
+  .map((feature) => feature.trim())
+  .filter(Boolean);
+const cargoArgs = [
+  'build',
+  '--locked',
+  '--release',
+  '-p',
+  'den-core-web-tizen3',
+  '--target',
+  'wasm32-unknown-unknown',
+  ...(features.length ? ['--features', features.join(',')] : []),
+];
 execFileSync(
   'cargo',
-  ['build', '--locked', '--release', '-p', 'den-core-web-tizen3', '--target', 'wasm32-unknown-unknown'],
+  cargoArgs,
   {
     cwd: root,
     stdio: 'inherit',
