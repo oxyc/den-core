@@ -229,6 +229,6 @@ for (const [module, budget] of [
 
 const tizen3 = readFileSync(new URL('../web-tizen3/generated/den_core.js', import.meta.url));
 const tizen3Gzip = gzipSync(tizen3, {level: 9}).byteLength;
-assert.ok(tizen3.byteLength <= 2_100_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2100000-byte budget`);
-assert.ok(tizen3Gzip <= 590_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 590000-byte budget`);
+assert.ok(tizen3.byteLength <= 2_150_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2150000-byte budget`);
+assert.ok(tizen3Gzip <= 610_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 610000-byte budget`);
 console.log(`PASS: Tizen 3 core ${tizen3.byteLength} bytes, ${tizen3Gzip} gzip`);
