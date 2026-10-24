@@ -32,7 +32,7 @@ jobs:
         with:
           toolchain: 1.95.0
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: checks
       # The format gate, then `cargo test --locked --workspace` (den-sync, den-store, ...).
@@ -50,17 +50,17 @@ jobs:
           toolchain: 1.95.0
           targets: wasm32-unknown-unknown
           components: rust-src
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: wasm
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
       # The prebuilt, checksum-verified release rather than `cargo install`, which compiled it from source on
       # every run (over two minutes). The version must match the `wasm-bindgen` crate in Cargo.lock.
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: wasm-bindgen@0.2.129
       # wasm-opt and wasm2js at the version build-bindings.sh requires, from Binaryen's own release, checksummed.
@@ -76,7 +76,7 @@ jobs:
       - run: bash scripts/build-bindings.sh --only wasm
       - run: node scripts/test-wasm.mjs
       - run: node scripts/test-wasm-lifecycle.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wasm-bindings
           path: |
@@ -92,14 +92,14 @@ jobs:
           toolchain: 1.95.0
           targets: aarch64-apple-tvos,aarch64-apple-tvos-sim,aarch64-apple-ios,aarch64-apple-ios-sim
       # Every Apple target's release build, across runs. Keyed on the toolchain and Cargo.lock by default.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # build-bindings keeps the cross-target build-std trees under target/native-cross so this cache can
           # restore them. Include the two scripts that define their deployment metadata in the cache identity.
           shared-key: native-${{ hashFiles('scripts/build-bindings.sh', 'scripts/rustc-apple-deployment.sh') }}
       - run: bash scripts/build-bindings.sh --only native
       - run: swift build --package-path Swift
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-bindings
           path: |
@@ -111,16 +111,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: native-bindings
           path: Swift
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: wasm-bindings
           path: .
