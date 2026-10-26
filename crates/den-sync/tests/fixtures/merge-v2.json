@@ -84,4 +84,3 @@
     {"case": "after seeing a later stamp, the next edit is later still", "last": [1000, 0, "dddd"], "seen": [9000, 2, "eeee"], "now": 2000, "issued": [9000, 3, "dddd"]}
   ]
 }
-
