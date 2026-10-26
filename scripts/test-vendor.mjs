@@ -34,6 +34,8 @@ function checkManifest(dir) {
   assert.deepEqual(manifest.artifacts, hashes(dir, false));
   assert.equal(manifest.artifacts['profiles-v1.json'],
     sha(readFileSync(join(root, 'crates/den-sync/tests/fixtures/profiles-v1.json'))));
+  assert.equal(manifest.artifacts['preferences-v1.json'],
+    sha(readFileSync(join(root, 'crates/den-sync/tests/fixtures/preferences-v1.json'))));
   return manifest;
 }
 function checkTizen3(dir, sourceManifest) {

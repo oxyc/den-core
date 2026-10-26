@@ -7,6 +7,7 @@ mod downloads;
 mod episodes;
 mod events;
 mod library_v4;
+mod preferences;
 mod profiles;
 mod projection;
 mod recovery;
@@ -29,6 +30,7 @@ pub use downloads::{
 };
 pub use episodes::episode_mark;
 pub use events::commands;
+pub use preferences::subtitle_v1 as preferences_subtitle_v1;
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
     create_next as profiles_create_next, household_audit as profile_household_audit,
@@ -276,6 +278,14 @@ enum Request {
     /// Profiles v1 §6.3: the `set:prefs` values a profile library is given from an older household's.
     ProfilesSeedPreferences {
         input: Value,
+    },
+    /// Preferences v1: read or atomically encode Automatic, Off, or one subtitle language.
+    PreferencesSubtitleV1 {
+        operation: String,
+        #[serde(default)]
+        values: Option<Value>,
+        #[serde(default)]
+        choice: Option<Value>,
     },
     /// Profiles v1 §8.2: whether one row (`{name[, values]}`) may be written to a profile-aware household.
     ProfileHouseholdWrite {
@@ -1145,6 +1155,11 @@ fn run(request: Request) -> Result<Value, String> {
             profiles::partition_preferences(&values)
         }
         Request::ProfilesSeedPreferences { input } => profiles::seed_preferences(&input),
+        Request::PreferencesSubtitleV1 {
+            operation,
+            values,
+            choice,
+        } => preferences::subtitle_v1(&operation, values.as_ref(), choice.as_ref()),
         Request::ProfileHouseholdWrite { row } => profiles::household_write(&row),
         Request::ProfileHouseholdAudit { rows } => profiles::household_audit(&rows),
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
@@ -1333,10 +1348,32 @@ mod tests {
             include_str!("../tests/fixtures/policy-v1.json"),
             include_str!("../tests/fixtures/policy-v4.json"),
             include_str!("../tests/fixtures/profiles-v1.json"),
+            include_str!("../tests/fixtures/preferences-v1.json"),
         ] {
             let fixture: Value = serde_json::from_str(fixture).unwrap();
-            for case in fixture["cases"].as_array().unwrap() {
-                let request = case["request"].to_string();
+            if let Some(cases) = fixture["cases"].as_array() {
+                for case in cases {
+                    let request = case["request"].to_string();
+                    assert_eq!(
+                        evaluate(&request),
+                        evaluate_legacy(&request),
+                        "{}",
+                        case["name"]
+                    );
+                }
+                continue;
+            }
+            for case in fixture["readCases"].as_array().unwrap() {
+                let request = json!({"op":"preferences_subtitle_v1","operation":"read","values":case["values"]}).to_string();
+                assert_eq!(
+                    evaluate(&request),
+                    evaluate_legacy(&request),
+                    "{}",
+                    case["name"]
+                );
+            }
+            for case in fixture["writeCases"].as_array().unwrap() {
+                let request = json!({"op":"preferences_subtitle_v1","operation":"write","choice":case["choice"]}).to_string();
                 assert_eq!(
                     evaluate(&request),
                     evaluate_legacy(&request),
