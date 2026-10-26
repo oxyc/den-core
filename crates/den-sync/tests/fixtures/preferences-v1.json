@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "readCases": [
+    { "name": "absent is automatic", "values": {}, "choice": { "mode": "automatic" } },
+    { "name": "atomic automatic", "values": { "den.preferredSubtitleLanguage": null, "den.hasExplicitSubtitlePreference": null }, "choice": { "mode": "automatic" } },
+    { "name": "explicit off", "values": { "den.preferredSubtitleLanguage": null, "den.hasExplicitSubtitlePreference": { "bool": true } }, "choice": { "mode": "off" } },
+    { "name": "explicit language", "values": { "den.preferredSubtitleLanguage": { "string": "sv" }, "den.hasExplicitSubtitlePreference": { "bool": true } }, "choice": { "mode": "language", "language": "sv" } },
+    { "name": "legacy language stays explicit", "values": { "den.preferredSubtitleLanguage": { "string": "fi" } }, "choice": { "mode": "language", "language": "fi" } },
+    { "name": "stale web off tombstone stays off", "values": { "den.preferredSubtitleLanguage": null }, "choice": { "mode": "off" } },
+    { "name": "unknown preferences are preserved by omission", "values": { "future.preference": { "string": "keep" } }, "choice": { "mode": "automatic" } }
+  ],
+  "writeCases": [
+    { "name": "write automatic", "choice": { "mode": "automatic" }, "changes": { "den.preferredSubtitleLanguage": null, "den.hasExplicitSubtitlePreference": null } },
+    { "name": "write off", "choice": { "mode": "off" }, "changes": { "den.preferredSubtitleLanguage": null, "den.hasExplicitSubtitlePreference": { "bool": true } } },
+    { "name": "write language", "choice": { "mode": "language", "language": "sv" }, "changes": { "den.preferredSubtitleLanguage": { "string": "sv" }, "den.hasExplicitSubtitlePreference": { "bool": true } } }
+  ],
+  "invalidCases": [
+    { "name": "false marker is not a fourth state", "operation": "read", "values": { "den.hasExplicitSubtitlePreference": { "bool": false } } },
+    { "name": "wrong marker type", "operation": "read", "values": { "den.hasExplicitSubtitlePreference": { "string": "true" } } },
+    { "name": "explicit automatic conflict", "operation": "read", "values": { "den.preferredSubtitleLanguage": null, "den.hasExplicitSubtitlePreference": { "bool": false } } },
+    { "name": "upper-case language", "operation": "write", "choice": { "mode": "language", "language": "SV" } },
+    { "name": "missing language", "operation": "write", "choice": { "mode": "language" } },
+    { "name": "unknown mode", "operation": "write", "choice": { "mode": "default" } }
+  ]
+}

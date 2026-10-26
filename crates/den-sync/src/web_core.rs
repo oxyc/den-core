@@ -320,6 +320,13 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
         #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
         "profiles_seed_preferences" => profiles::seed_preferences(&value(&mut fields, "input")?),
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        "preferences_subtitle_v1" => {
+            let operation = text(&mut fields, "operation")?;
+            let values = optional::<Value>(&mut fields, "values")?;
+            let choice = optional::<Value>(&mut fields, "choice")?;
+            preferences::subtitle_v1(&operation, values.as_ref(), choice.as_ref())
+        }
+        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profile_household_write" => profiles::household_write(&value(&mut fields, "row")?),
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profile_household_audit" => profiles::household_audit(&value(&mut fields, "rows")?),

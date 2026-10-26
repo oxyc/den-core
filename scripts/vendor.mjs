@@ -95,7 +95,7 @@ export function vendor({
     'web/recovery.js', 'web/recovery.d.ts',
     ...['den_core', 'den_core_startup', 'den_core_deferred', 'den_core_assistant', 'den_core_recovery'].flatMap((module) =>
       ['.js', '.d.ts', '_bg.wasm', '_bg.wasm.d.ts'].map((suffix) => `web/generated/${module}${suffix}`)),
-    ...['policy-v1.json', 'profiles-v1.json']
+    ...['policy-v1.json', 'profiles-v1.json', 'preferences-v1.json']
       .map((fixture) => `crates/den-sync/tests/fixtures/${fixture}`)];
   required.push('web-tizen3/index.js', 'web-tizen3/index.d.ts', 'web-tizen3/generated/den_core.js');
   for (const source of required) accessSync(join(root, source));
@@ -106,7 +106,7 @@ export function vendor({
   copy('LICENSE', join(native, 'LICENSE'));
   // The golden cases travel with the binary, as they already do for the web. Kept beside it rather than copied
   // into the client's own tests, so the manifest covers them and the two cannot drift apart unnoticed.
-  for (const fixture of ['policy-v1.json', 'profiles-v1.json']) {
+  for (const fixture of ['policy-v1.json', 'profiles-v1.json', 'preferences-v1.json']) {
     copy(`crates/den-sync/tests/fixtures/${fixture}`, join(native, fixture));
   }
   manifest(native);
@@ -123,7 +123,7 @@ export function vendor({
     }
   }
   copy('LICENSE', join(web, 'LICENSE'));
-  for (const fixture of ['policy-v1.json', 'profiles-v1.json']) {
+  for (const fixture of ['policy-v1.json', 'profiles-v1.json', 'preferences-v1.json']) {
     copy(`crates/den-sync/tests/fixtures/${fixture}`, join(web, fixture));
   }
   manifest(web);
