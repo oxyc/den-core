@@ -50,7 +50,7 @@ pub use profiles::{
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
-    ContinueInput, ContinueMark, Coord, LastPlayed, SeasonCount,
+    ContinueInput, ContinueMark, Coord, Finished, LastPlayed, SeasonCount,
 };
 pub use watch::{lease, receipt_row_name, watch_row_name};
 pub use wire::{capture, merge, Stamp};

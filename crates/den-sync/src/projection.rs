@@ -194,10 +194,10 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
         if title.is_some_and(|t| is_true(t, "deleted")) {
             continue;
         }
-        // The three summaries `continue_entry` asks for: the mark touched last, the furthest finished, the furthest
+        // The three summaries `continue_entry` asks for: the mark touched last, the one finished last, the furthest
         // watched with no mark of its own.
         let mut latest: Option<(i64, u64, u64, f64)> = None;
-        let mut finished: Option<(u64, u64)> = None;
+        let mut finished: Option<(i64, u64, u64)> = None;
         let mut flag: Option<(u64, u64)> = None;
         for (season, document) in by_season {
             let doc = &reread(document)?;
@@ -243,8 +243,8 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
                     if latest.is_none_or(|l| at > l.0) {
                         latest = Some((at, *season, episode, fraction));
                     }
-                    if fraction >= WATCHED && finished.is_none_or(|f| (*season, episode) > f) {
-                        finished = Some((*season, episode));
+                    if fraction >= WATCHED && finished.is_none_or(|f| (at, *season, episode) > f) {
+                        finished = Some((at, *season, episode));
                     }
                 }
             }
@@ -264,7 +264,7 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
         let coord = |c: Option<(u64, u64)>| c.map(|(s, e)| json!({"season": s, "episode": e}));
         let input: ContinueInput = serde_json::from_value(json!({
             "mark": latest.map(|(at, s, e, f)| json!({"season": s, "episode": e, "fraction": f, "at": at})),
-            "finished": coord(finished),
+            "finished": finished.map(|(at, s, e)| json!({"season": s, "episode": e, "at": at})),
             "flag": coord(flag),
             "seasons": layout.map_or(json!([]), |l| l["seasons"].clone()),
             "last_aired": layout.map_or(Value::Null, |l| l["last_aired"].clone()),
