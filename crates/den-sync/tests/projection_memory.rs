@@ -99,7 +99,8 @@ fn household() -> (Vec<Value>, Map<String, Value>) {
         for season in 1..=seasons {
             let episodes: Map<String, Value> = (1..=10u64)
                 .map(|e| {
-                    let at = NOW - DAY - (s * 40 + season * 10 + e) * 3_600_000;
+                    // Each series watched in order: a later episode finished later.
+                    let at = NOW - DAY - (s * 60 + 60 - season * 10 - e) * 3_600_000;
                     let value = if watching && season == seasons && e == 10 {
                         json!(0.5)
                     } else {

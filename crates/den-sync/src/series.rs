@@ -145,8 +145,10 @@ pub const RESUME_FLOOR: f64 = 0.02;
 pub struct ContinueInput {
     /// The most recently touched mark — where a resume would go.
     pub mark: Option<ContinueMark>,
-    /// The furthest episode with a *finished* mark. Not the same as `mark`.
-    pub finished: Option<Coord>,
+    /// The episode *finished* most recently, and when. Not the same as `mark`, and not the furthest: a rewatch
+    /// of an earlier episode, or an autoplay that ran on unwatched and was rewound, continues from what was
+    /// actually watched last.
+    pub finished: Option<Finished>,
     /// The furthest episode known watched with no mark of its own — a tracker import, or an evicted mark.
     pub flag: Option<Coord>,
     /// The season layout; empty when this client does not know it yet.
@@ -161,6 +163,15 @@ pub struct ContinueInput {
 }
 
 #[derive(Deserialize)]
+pub struct Finished {
+    pub season: i64,
+    pub episode: i64,
+    /// When it was finished. A client with no time for it is judged by position, as a flag is.
+    #[serde(default)]
+    pub at: Option<i64>,
+}
+
+#[derive(Deserialize)]
 pub struct ContinueMark {
     pub season: i64,
     pub episode: i64,
@@ -172,9 +183,11 @@ pub struct ContinueMark {
 ///
 /// This is where the two clients disagreed most, and every part of it was a real defect in one of them:
 ///
-/// - A series' place is decided by the furthest episode *finished*, not the one touched last. Watching E1-E4
-///   and then opening E5 for two seconds leaves the newest mark on E5, below the resume floor — and reading
-///   that alone concludes nothing is finished and drops a series being actively watched.
+/// - A series' place is decided by the episode *finished* most recently, not the one touched last. Watching
+///   E1-E4 and then opening E5 for two seconds leaves the newest mark on E5, below the resume floor — and
+///   reading that alone concludes nothing is finished and drops a series being actively watched.
+/// - Most recently, not furthest: rewatching E1 after an autoplay ran on through E2 unwatched continues at E2,
+///   and an episode left part-way after that resumes even when it is earlier than something finished.
 /// - A bare watched flag counts. A tracker pull writes nothing else, so a series watched through SIMKL or on
 ///   another device was watched everywhere except the row whose job is to offer its next episode.
 /// - The resume floor suppresses a *resume*, not the series: when the front carries it further, it still
@@ -195,18 +208,31 @@ pub fn continue_entry(input: &ContinueInput) -> Value {
     if input.dismissed_at.is_some_and(|at| at >= activity) {
         return none("dismissed", "dismissed");
     }
-    let front = [input.finished, input.flag]
-        .into_iter()
-        .flatten()
-        .max_by_key(|at| (at.season, at.episode));
+    // A flag has no time, so it can only be weighed by position: one past what was finished last is watched
+    // somewhere this library has no time for, and that is still how far the series got.
+    let finished = input.finished.as_ref();
+    let finished_at = finished.map(|f| Coord {
+        season: f.season,
+        episode: f.episode,
+    });
+    let (front, front_time) = match (finished_at, input.flag) {
+        (Some(f), Some(flag)) if (flag.season, flag.episode) > (f.season, f.episode) => {
+            (Some(flag), None)
+        }
+        (Some(f), _) => (Some(f), finished.and_then(|f| f.at)),
+        (None, flag) => (flag, None),
+    };
     if let Some(mark) = &input.mark {
         let at = Coord {
             season: mark.season,
             episode: mark.episode,
         };
-        let ahead = front
-            .map(|f| (f.season, f.episode) < (at.season, at.episode))
-            .unwrap_or(true);
+        // Touched after the front was finished; with no time for the front, past it.
+        let ahead = match (front, front_time) {
+            (None, _) => true,
+            (Some(_), Some(time)) => mark.at > time,
+            (Some(f), None) => (f.season, f.episode) < (at.season, at.episode),
+        };
         if mark.fraction > RESUME_FLOOR && mark.fraction < WATCHED && ahead {
             return json!({
                 "action": "resume", "code": "resume", "episode": coord(at), "fraction": mark.fraction,
@@ -231,7 +257,7 @@ pub fn continue_entry(input: &ContinueInput) -> Value {
     }
     json!({
         "action": "next", "code": "next", "episode": coord(next), "fraction": 0.0,
-        "reason": "the next episode after the furthest finished",
+        "reason": "the next episode after the one finished last",
     })
 }
 

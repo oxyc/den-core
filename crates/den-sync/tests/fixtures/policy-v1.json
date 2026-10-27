@@ -2074,7 +2074,127 @@
      "episode": 5
     },
     "fraction": 0.0,
-    "reason": "the next episode after the furthest finished"
+    "reason": "the next episode after the one finished last"
+   }
+  },
+  {
+   "name": "a finished rewatch continues after it, not after a later episode finished before it",
+   "request": {
+    "op": "continue_entry",
+    "mark": {
+     "season": 2,
+     "episode": 1,
+     "fraction": 1.0,
+     "at": 3000
+    },
+    "finished": {
+     "season": 2,
+     "episode": 1,
+     "at": 3000
+    },
+    "flag": null,
+    "seasons": [
+     {
+      "season": 1,
+      "episodes": 10
+     },
+     {
+      "season": 2,
+      "episodes": 6
+     }
+    ],
+    "last_aired": null,
+    "dismissed_at": null
+   },
+   "ok": {
+    "action": "next",
+    "code": "next",
+    "episode": {
+     "season": 2,
+     "episode": 2
+    },
+    "fraction": 0.0,
+    "reason": "the next episode after the one finished last"
+   }
+  },
+  {
+   "name": "a rewatch in progress resumes though a later episode was finished before it",
+   "request": {
+    "op": "continue_entry",
+    "mark": {
+     "season": 2,
+     "episode": 1,
+     "fraction": 0.317,
+     "at": 3000
+    },
+    "finished": {
+     "season": 2,
+     "episode": 2,
+     "at": 2000
+    },
+    "flag": null,
+    "seasons": [
+     {
+      "season": 1,
+      "episodes": 10
+     },
+     {
+      "season": 2,
+      "episodes": 6
+     }
+    ],
+    "last_aired": null,
+    "dismissed_at": null
+   },
+   "ok": {
+    "action": "resume",
+    "code": "resume",
+    "episode": {
+     "season": 2,
+     "episode": 1
+    },
+    "fraction": 0.317,
+    "reason": "resuming where it was left"
+   }
+  },
+  {
+   "name": "an earlier mark touched before the last finish does not resume",
+   "request": {
+    "op": "continue_entry",
+    "mark": {
+     "season": 2,
+     "episode": 1,
+     "fraction": 0.317,
+     "at": 1000
+    },
+    "finished": {
+     "season": 2,
+     "episode": 2,
+     "at": 2000
+    },
+    "flag": null,
+    "seasons": [
+     {
+      "season": 1,
+      "episodes": 10
+     },
+     {
+      "season": 2,
+      "episodes": 6
+     }
+    ],
+    "last_aired": null,
+    "dismissed_at": null
+   },
+   "ok": {
+    "action": "next",
+    "code": "next",
+    "episode": {
+     "season": 2,
+     "episode": 3
+    },
+    "fraction": 0.0,
+    "reason": "the next episode after the one finished last"
    }
   },
   {
@@ -2104,7 +2224,7 @@
      "episode": 5
     },
     "fraction": 0.0,
-    "reason": "the next episode after the furthest finished"
+    "reason": "the next episode after the one finished last"
    }
   },
   {
@@ -2171,7 +2291,7 @@
      "episode": 5
     },
     "fraction": 0.0,
-    "reason": "the next episode after the furthest finished"
+    "reason": "the next episode after the one finished last"
    }
   },
   {
@@ -2202,7 +2322,7 @@
      "episode": 5
     },
     "fraction": 0.0,
-    "reason": "the next episode after the furthest finished"
+    "reason": "the next episode after the one finished last"
    }
   },
   {
