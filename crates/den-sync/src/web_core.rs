@@ -272,44 +272,16 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
         #[cfg(feature = "profile-admin")]
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profiles_create_next" => profiles::create_next(&value(&mut fields, "input")?),
-        #[cfg(feature = "profile-admin")]
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
-        "profiles_migration_next" => profiles::migration_next(&value(&mut fields, "input")?),
-        #[cfg(feature = "profile-admin")]
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
-        "profiles_migration_authorization" => {
-            profiles::migration_authorization(&value(&mut fields, "input")?)
-        }
-        #[cfg(feature = "profile-admin")]
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
-        "profiles_migration_digest" => {
-            profiles::migration_digest(&text(&mut fields, "kind")?, &value(&mut fields, "input")?)
-        }
-        #[cfg(feature = "profile-admin")]
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
-        "profiles_migration_construct_directory" => {
-            profiles::migration_construct_directory(&value(&mut fields, "input")?)
-        }
+
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profiles_construct_directory" => {
-            profiles::migration_construct_directory(&value(&mut fields, "input")?)
+            profiles::construct_directory(&value(&mut fields, "input")?)
         }
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profiles_snapshot_digest" => {
             profiles::snapshot_digest(&text(&mut fields, "kind")?, &value(&mut fields, "input")?)
         }
-        #[cfg(feature = "profile-admin")]
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
-        "profiles_migration_materialize_plaintext" => {
-            profiles::migration_materialize_plaintext(&value(&mut fields, "input")?)
-        }
-        #[cfg(feature = "profile-admin")]
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
-        "profiles_migration_authorization_fingerprint" => {
-            profiles::migration_authorization_fingerprint(&value(&mut fields, "input")?)
-        }
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
-        "profiles_capability" => profiles::profile_capability(&value(&mut fields, "input")?),
+
         #[cfg(feature = "profile-admin")]
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profiles_reset_next" => profiles::reset_next(&value(&mut fields, "input")?),

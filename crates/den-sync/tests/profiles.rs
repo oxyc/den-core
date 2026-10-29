@@ -88,163 +88,6 @@ fn remove(document: &Value, pointer: &str) -> Value {
     document
 }
 
-fn migration_input(vectors: &Value, case: &Value) -> Value {
-    let mut input = case.clone();
-    if case.get("observed").and_then(Value::as_str) == Some("committed")
-        && !case
-            .get("omitDirectory")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-    {
-        input["directory"] = vectors["validDirectories"][0]["document"].clone();
-        if let Some(mutation) = case.get("directoryMutation") {
-            input["directory"] = mutate(&input["directory"], mutation);
-        }
-    }
-    if case.get("observed").and_then(Value::as_str) == Some("legacy")
-        && case.get("state").and_then(Value::as_str) != Some("idle")
-    {
-        input["fence"] = vectors["migrationFence"].clone();
-        if !case
-            .get("omitObservedFence")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            input["observedFence"] = vectors["migrationFence"].clone();
-        }
-        if let Some(mutation) = case.get("fenceMutation") {
-            input["fence"] = mutate(&input["fence"], mutation);
-        }
-        if let Some(mutation) = case.get("observedFenceMutation") {
-            input["observedFence"] = mutate(&input["observedFence"], mutation);
-        }
-    }
-    let state = case.get("state").and_then(Value::as_str);
-    let observed = case.get("observed").and_then(Value::as_str);
-    let needs_authorization = (state == Some("idle")
-        && case
-            .get("explicitIntent")
-            .and_then(Value::as_bool)
-            .unwrap_or(false))
-        || state == Some("commit-unknown")
-        || (observed == Some("legacy") && !matches!(state, Some("idle" | "restore-required")));
-    if needs_authorization {
-        let fixture = &vectors["migrationAuthorization"];
-        let intent = fixture["intent"].clone();
-        input["attempt"] = intent["attempt"].clone();
-        input["householdId"] = intent["householdId"].clone();
-        if state == Some("idle") {
-            input["observedFence"] = intent["source"].clone();
-        }
-        if state == Some("awaiting-confirmation") {
-            input
-                .as_object_mut()
-                .unwrap()
-                .entry("backupDigest")
-                .or_insert_with(|| fixture["evidence"]["backupDigest"].clone());
-            input
-                .as_object_mut()
-                .unwrap()
-                .entry("stagedDigest")
-                .or_insert_with(|| fixture["evidence"]["stagedDigest"].clone());
-            input
-                .as_object_mut()
-                .unwrap()
-                .entry("wireMin")
-                .or_insert(json!(5));
-        }
-        if case
-            .get("commitAuthorized")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            let mut evidence = fixture["evidence"].clone();
-            if state == Some("commit-unknown") {
-                input
-                    .as_object_mut()
-                    .unwrap()
-                    .entry("fence")
-                    .or_insert_with(|| intent["source"].clone());
-                input
-                    .as_object_mut()
-                    .unwrap()
-                    .entry("backupVerified")
-                    .or_insert(json!(true));
-                input
-                    .as_object_mut()
-                    .unwrap()
-                    .entry("candidateKey")
-                    .or_insert_with(|| evidence["candidateKey"].clone());
-                input
-                    .as_object_mut()
-                    .unwrap()
-                    .entry("candidateHead")
-                    .or_insert_with(|| evidence["candidateHead"].clone());
-                input
-                    .as_object_mut()
-                    .unwrap()
-                    .entry("ownerVerified")
-                    .or_insert(json!(true));
-            }
-            for key in [
-                "candidateKey",
-                "candidateHead",
-                "backupDigest",
-                "stagedDigest",
-                "wireMin",
-            ] {
-                if let Some(value) = input.get(key) {
-                    evidence[key] = value.clone();
-                } else if matches!(key, "backupDigest" | "stagedDigest" | "wireMin") {
-                    input[key] = evidence[key].clone();
-                }
-            }
-            evidence["fence"] = input
-                .get("fence")
-                .cloned()
-                .unwrap_or_else(|| intent["source"].clone());
-            let response = request(json!({
-                "op":"profiles_migration_authorization",
-                "input":{"intent":intent, "evidence":evidence}
-            }));
-            input["splitAuthorization"] = response
-                .get("ok")
-                .cloned()
-                .unwrap_or_else(|| fixture["prepared"].clone());
-        } else {
-            input["splitAuthorization"] = fixture["prepared"].clone();
-        }
-        if let Some(mutation) = case.get("splitAuthorizationMutation") {
-            input["splitAuthorization"] = mutate(&input["splitAuthorization"], mutation);
-        }
-        if case
-            .get("omitSplitAuthorization")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            input.as_object_mut().unwrap().remove("splitAuthorization");
-        }
-        if let Some(attempt) = case.get("plannerAttempt") {
-            input["attempt"] = attempt.clone();
-        }
-    }
-    if case
-        .get("omitState")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        input.as_object_mut().unwrap().remove("state");
-    }
-    if case
-        .get("omitObserved")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        input.as_object_mut().unwrap().remove("observed");
-    }
-    input
-}
-
 #[test]
 fn den_spec_profile_directories_validate() {
     let Some(vectors) = vectors() else { return };
@@ -277,120 +120,26 @@ fn den_spec_profile_directories_validate() {
 }
 
 #[test]
-fn den_spec_migration_digests_match_canonical_bytes_and_sha256() {
+fn den_spec_snapshot_digests_match_canonical_bytes_and_sha256() {
     let Some(vectors) = vectors() else { return };
-    let Some(cases) = vectors
-        .get("migrationDigestCases")
-        .and_then(Value::as_array)
-    else {
-        // The binding fixture pins den-spec PR #51's exact-head cases while this dependent PR is reviewed.
-        return;
-    };
-    for case in cases {
+    for case in vectors["snapshotDigestCases"].as_array().unwrap() {
         let response = request(json!({
-            "op": "profiles_migration_digest",
-            "kind": case["kind"],
-            "input": case["input"],
-        }));
-        assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
-        // §1.2's neutral name answers the two shared kinds identically and refuses the split-only ones.
-        let neutral = request(json!({
             "op": "profiles_snapshot_digest",
             "kind": case["kind"],
             "input": case["input"],
         }));
-        if matches!(case["kind"].as_str(), Some("source" | "owner")) {
-            assert_eq!(neutral, response, "{}", case["name"]);
-        } else {
-            assert_eq!(
-                neutral["error"], "invalid_migration_digest_kind",
-                "{}",
-                case["name"]
-            );
-        }
+        assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
     }
 }
 
 #[test]
-fn den_spec_migration_row_partitions_match() {
+fn den_spec_initial_directory_construction_matches() {
     let Some(vectors) = vectors() else { return };
-    let Some(cases) = vectors
-        .get("migrationPartitionCases")
-        .and_then(Value::as_array)
-    else {
-        // This PR depends on den-spec #52; keep the core branch testable until that contract lands.
-        return;
-    };
-    for case in cases {
-        let response = request(json!({
-            "op":"profiles_migration_partition_rows",
-            "input":case["input"]
-        }));
-        if let Some(error) = case.get("error") {
-            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
-        } else {
-            assert_eq!(
-                response["ok"], case["expect"],
-                "{}: {response}",
-                case["name"]
-            );
-        }
-    }
-}
-
-#[test]
-fn den_spec_migration_materialization_matches() {
-    let Some(vectors) = vectors() else { return };
-    let cases = vectors["migrationMaterializeCases"]
+    let base = &vectors["initialDirectoryConstructorInput"];
+    for case in vectors["initialDirectoryConstructorCases"]
         .as_array()
-        .expect("den-spec materialization cases");
-    for case in cases {
-        let response = request(json!({
-            "op":"profiles_migration_materialize_plaintext",
-            "input":case["input"]
-        }));
-        if let Some(error) = case.get("error") {
-            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
-        } else {
-            assert_eq!(
-                response["ok"], case["expect"],
-                "{}: {response}",
-                case["name"]
-            );
-        }
-    }
-}
-
-#[test]
-fn den_spec_migration_authorization_fingerprints_match() {
-    let Some(vectors) = vectors() else { return };
-    let cases = vectors["migrationAuthorizationFingerprintCases"]
-        .as_array()
-        .expect("den-spec authorization fingerprint cases");
-    for case in cases {
-        let response = request(json!({
-            "op":"profiles_migration_authorization_fingerprint",
-            "input":case["input"]
-        }));
-        if let Some(error) = case.get("error") {
-            assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
-        } else {
-            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
-        }
-    }
-}
-
-#[test]
-fn den_spec_migration_directory_construction_matches() {
-    let Some(vectors) = vectors() else { return };
-    let Some(cases) = vectors
-        .get("migrationDirectoryConstructorCases")
-        .and_then(Value::as_array)
-    else {
-        return;
-    };
-    let base = &vectors["migrationDirectoryConstructorInput"];
-    for case in cases {
+        .unwrap()
+    {
         let mut input = base.clone();
         for mutation in case["mutations"].as_array().into_iter().flatten() {
             input = mutate(&input, mutation);
@@ -398,16 +147,7 @@ fn den_spec_migration_directory_construction_matches() {
         if let Some(pointer) = case.get("remove").and_then(Value::as_str) {
             input = remove(&input, pointer);
         }
-        let response = request(json!({
-            "op":"profiles_migration_construct_directory",
-            "input":input
-        }));
-        assert_eq!(
-            request(json!({"op":"profiles_construct_directory", "input":input})),
-            response,
-            "the neutral name answers {} identically",
-            case["name"]
-        );
+        let response = request(json!({"op":"profiles_construct_directory", "input":input}));
         if let Some(error) = case.get("error") {
             assert_eq!(&response["error"], error, "{}: {response}", case["name"]);
         } else {
@@ -422,124 +162,6 @@ fn den_spec_migration_directory_construction_matches() {
             );
         }
     }
-}
-
-#[test]
-fn migration_row_partition_rejects_ambiguous_authenticated_evidence() {
-    let stamp = json!([1, 0, "a1b2c3d4e5f60718"]);
-    let key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let base = |opened: Value| {
-        json!({
-            "base":1,
-            "ownerPolicyAt":stamp,
-            "rows":[{"k":key, "seq":1, "v":"sealed", "opened":opened}]
-        })
-    };
-    assert_eq!(
-        request(
-            json!({"op":"profiles_migration_partition_rows", "input":base(json!({
-                "status":"row", "name":"set:prefs", "legacy":false,
-                "row":{"kind":"future", "schema":1}
-            }))})
-        )["error"],
-        "newer_profile_row"
-    );
-    assert_eq!(
-        request(
-            json!({"op":"profiles_migration_partition_rows", "input":base(json!({
-                "status":"document", "name":"title:movie:550",
-                "document":{"format":4,"kind":"title","schema":1,"title":{"type":"movie","id":550}},
-                "dropped":[{"kind":"future"}]
-            }))})
-        )["error"],
-        "invalid_source_row"
-    );
-    assert_eq!(
-        request(
-            json!({"op":"profiles_migration_partition_rows", "input":base(json!({
-                "status":"unreadable", "reason":"aead"
-            }))})
-        )["error"],
-        "unreadable_source_row"
-    );
-}
-
-/// The partition reads each row only when it uses it, and answers as when it parsed the request whole: a member or
-/// row that is no JSON value refuses the request before anything else is checked.
-#[test]
-fn migration_row_partition_refuses_as_a_whole_request_did() {
-    let at = r#"[1,0,"a1b2c3d4e5f60718"]"#;
-    let input = |rest: &str| format!(r#"{{"base":1,"ownerPolicyAt":{at},{rest}}}"#);
-    for (input, error) in [
-        (r#""rows""#.to_owned(), "invalid_partition_input"),
-        ("[1e400]".to_owned(), "invalid_request"),
-        (input(r#""rows":5"#), "invalid_partition_input"),
-        (input(r#""rows":[1]"#), "invalid_source_row"),
-        (input(r#""rows":[{"n":1e400}]"#), "invalid_request"),
-        (input(r#""rows":[1,{"n":1e400}]"#), "invalid_request"),
-        (input(r#""rows":[],"more":1"#), "invalid_partition_input"),
-        (input(r#""rows":[1],"more":1e400"#), "invalid_request"),
-        (input(r#""rows":[]"#), "ok"),
-    ] {
-        let request = format!(r#"{{"op":"profiles_migration_partition_rows","input":{input}}}"#);
-        for answer in [evaluate(&request), den_sync::evaluate_core(&request)] {
-            let answer: Value = serde_json::from_str(&answer).unwrap();
-            match error {
-                "ok" => assert!(answer.get("ok").is_some(), "{request}: {answer}"),
-                _ => assert_eq!(answer, json!({"version": 1, "error": error}), "{request}"),
-            }
-        }
-    }
-}
-
-#[test]
-fn migration_digest_rejects_duplicate_rows_and_unknown_kinds() {
-    let fixture: Value = serde_json::from_str(include_str!("fixtures/profiles-v1.json")).unwrap();
-    let case = fixture["cases"]
-        .as_array()
-        .and_then(|cases| {
-            cases
-                .iter()
-                .find(|case| case["request"]["kind"] == "source")
-        })
-        .expect("pinned source migration digest case");
-    let mut input = case["request"]["input"].clone();
-    input["rows"][1]["k"] = input["rows"][0]["k"].clone();
-    assert_eq!(
-        request(json!({"op":"profiles_migration_digest", "kind":"source", "input":input}))["error"],
-        "invalid_migration_digest"
-    );
-    assert_eq!(
-        request(json!({"op":"profiles_migration_digest", "kind":"other", "input":{}}))["error"],
-        "invalid_migration_digest_kind"
-    );
-}
-
-#[test]
-fn migration_backup_id_limit_counts_unicode_characters() {
-    let fixture: Value = serde_json::from_str(include_str!("fixtures/profiles-v1.json")).unwrap();
-    let case = fixture["cases"]
-        .as_array()
-        .and_then(|cases| {
-            cases
-                .iter()
-                .find(|case| case["request"]["kind"] == "backup")
-        })
-        .expect("pinned backup migration digest case");
-    let mut input = case["request"]["input"].clone();
-    input["id"] = json!("é".repeat(256));
-    let accepted = request(json!({
-        "op":"profiles_migration_digest", "kind":"backup", "input":input
-    }));
-    assert!(accepted["ok"]
-        .as_str()
-        .is_some_and(|digest| digest.len() == 64));
-
-    input["id"] = json!("é".repeat(257));
-    assert_eq!(
-        request(json!({"op":"profiles_migration_digest", "kind":"backup", "input":input}))["error"],
-        "invalid_migration_digest"
-    );
 }
 
 #[test]
@@ -955,30 +577,6 @@ fn den_spec_whole_directory_merges_converge_or_reject_identity_conflicts() {
 #[test]
 fn den_spec_profile_lifecycle_decisions() {
     let Some(vectors) = vectors() else { return };
-    let fixture = &vectors["migrationAuthorization"];
-    assert_eq!(
-        request(json!({
-            "op":"profiles_migration_authorization",
-            "input":{"intent":fixture["intent"], "evidence":Value::Null}
-        }))["ok"],
-        fixture["prepared"]
-    );
-    assert_eq!(
-        request(json!({
-            "op":"profiles_migration_authorization",
-            "input":{"intent":fixture["intent"], "evidence":fixture["evidence"]}
-        }))["ok"],
-        fixture["bound"]
-    );
-    for case in vectors["migrationCases"].as_array().unwrap() {
-        let input = migration_input(&vectors, case);
-        let response = request(json!({"op":"profiles_migration_next", "input":input}));
-        if let Some(error) = case.get("error") {
-            assert_eq!(&response["error"], error, "{}", case["name"]);
-        } else {
-            assert_eq!(&response["ok"], &case["expect"], "{}", case["name"]);
-        }
-    }
     for case in vectors["resetCases"].as_array().unwrap() {
         let mut directory = vectors["validDirectories"][0]["document"].clone();
         if let Some(mutation) = case.get("directoryMutate") {
@@ -1013,41 +611,6 @@ fn den_spec_profile_lifecycle_decisions() {
                 "householdCommitted":case["householdCommitted"],
                 "oldHouseholdRetired":case["oldHouseholdRetired"]
             }
-        }));
-        if let Some(error) = case.get("error") {
-            assert_eq!(&response["error"], error, "{}", case["name"]);
-        } else {
-            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
-        }
-    }
-}
-
-#[test]
-fn den_spec_profile_capability_decisions() {
-    let Some(vectors) = vectors() else { return };
-    let contract = &vectors["profileCapabilityContract"];
-    for case in contract["cases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .chain(contract["mixedHost"].as_array().unwrap())
-    {
-        let response = request(json!({"op":"profiles_capability", "input":case["input"]}));
-        if let Some(error) = case.get("error") {
-            assert_eq!(&response["error"], error, "{}", case["name"]);
-        } else {
-            assert_eq!(&response["ok"], &case["expect"], "{}", case["name"]);
-        }
-    }
-}
-
-#[test]
-fn den_spec_profile_preferences_partition_without_interpreting_values() {
-    let Some(vectors) = vectors() else { return };
-    for case in vectors["settingsPartitionCases"].as_array().unwrap() {
-        let response = request(json!({
-            "op":"profiles_partition_preferences",
-            "values":case["values"]
         }));
         if let Some(error) = case.get("error") {
             assert_eq!(&response["error"], error, "{}", case["name"]);
@@ -1133,40 +696,30 @@ fn household_write_never_lets_a_scoped_row_through_by_prefix_or_alias() {
 }
 
 #[test]
-fn profile_preference_partition_moves_every_key_and_preserves_stamped_extensions() {
-    let stamped = json!({
-        "value":{"futureTypedValue":{"nested":true}},
-        "at":[1800000000000_i64,0,"a1b2c3d4e5f60718"],
-        "futureStampedMember":"kept"
-    });
-    let response = request(json!({
-        "op":"profiles_partition_preferences",
-        "values":{
-            "den.hideWatched":stamped,
-            "den.myServicePicks":stamped,
-            "den.watchRegion":stamped,
-            "future.preference":stamped
-        }
-    }));
-    for key in [
-        "den.hideWatched",
-        "den.myServicePicks",
-        "den.watchRegion",
-        "future.preference",
-    ] {
-        assert_eq!(response["ok"]["owner"][key], stamped, "{key}");
-    }
-    assert_eq!(response["ok"]["household"], json!({}));
-    assert_eq!(response["ok"]["ownerMaturity"], Value::Null);
-}
-
-#[test]
 fn den_spec_preference_seed_gives_only_the_keys_a_profile_lacks() {
     let Some(vectors) = vectors() else { return };
     let cases = vectors["settingsSeedCases"].as_array().unwrap();
     assert!(!cases.is_empty());
     for case in cases {
         let response = request(json!({"op":"profiles_seed_preferences", "input":case["input"]}));
+        if let Some(error) = case.get("error") {
+            assert_eq!(&response["error"], error, "{}", case["name"]);
+        } else {
+            assert_eq!(response["ok"], case["expect"], "{}", case["name"]);
+        }
+    }
+}
+
+#[test]
+fn den_spec_browser_local_preference_partition_preserves_unknowns() {
+    let Some(vectors) = vectors() else { return };
+    let cases = vectors["settingsPartitionCases"].as_array().unwrap();
+    assert!(!cases.is_empty());
+    for case in cases {
+        let response = request(json!({
+            "op":"profiles_partition_preferences",
+            "values":case["values"]
+        }));
         if let Some(error) = case.get("error") {
             assert_eq!(&response["error"], error, "{}", case["name"]);
         } else {
