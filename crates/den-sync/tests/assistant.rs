@@ -5,8 +5,8 @@
 //! cases of `fixtures/policy-v1.json` must be the same cases, so the binding contract and the spec cannot drift.
 
 use den_assistant::{
-    b64url, grant_public, hex, hpke_seal, kem_public, key_id, seal_claim, seal_request, wrap,
-    wrap_key, GrantKey, Request, REQUEST_INFO, SIGN_CONTEXT,
+    b64url, grant_public, hex, hpke_seal, kem_public, key_id, seal_claim, seal_playback_receipt,
+    seal_request, wrap, wrap_key, GrantKey, PlaybackReceipt, Request, REQUEST_INFO, SIGN_CONTEXT,
 };
 use den_sync::evaluate;
 use serde_json::{json, Map, Value};
@@ -193,6 +193,65 @@ fn movie() -> Value {
 
 fn series() -> Value {
     json!({"type": "tv", "id": 1399})
+}
+
+#[test]
+fn a_playback_receipt_becomes_an_ordinary_replay_safe_progress_write() {
+    let k = keys();
+    let public = kem_public(&k.dropbox);
+    let kid = key_id(&public);
+    let receipt_id = id("playback receipt");
+    let ended_at = NOW - MIN;
+    let title = series();
+    let sealed = seal_playback_receipt(
+        &public,
+        &PlaybackReceipt {
+            library: LIBRARY,
+            kid: &kid,
+            id: &receipt_id,
+            title: &title,
+            season: Some(2),
+            episode: Some(3),
+            position_seconds: 2_310,
+            duration_seconds: 2_400,
+            completed: false,
+            ended_at,
+            expires_at: NOW + DAY,
+        },
+        &eseed("playback receipt"),
+    )
+    .unwrap();
+    let request = json!({
+        "op": "playback_receipt_open",
+        "library": LIBRARY,
+        "device": D,
+        "sealed": sealed,
+        "assistant": dropbox_row(&[k.dropbox]),
+        "applied": row("playback-receipts-applied", json!({})),
+        "localApplied": {},
+        "now": NOW,
+    });
+    let opened = ok(&request);
+    assert_eq!(opened["accept"]["id"], receipt_id);
+    assert_eq!(opened["accept"]["title"], series());
+    assert_eq!(opened["accept"]["write"]["episode"], json!([2, 3]));
+    assert_eq!(opened["accept"]["write"]["seconds"], 2_310);
+    assert_eq!(opened["accept"]["write"]["at"], json!([ended_at, 0, D]));
+    assert_eq!(opened["accept"]["setting"], receipt_id);
+
+    let replayed = ok(&json!({
+        "op": "playback_receipt_open",
+        "library": LIBRARY,
+        "device": D,
+        "sealed": request["sealed"],
+        "assistant": request["assistant"],
+        "applied": row("playback-receipts-applied", json!({
+            receipt_id: setting(opened["accept"]["value"].clone(), NOW)
+        })),
+        "localApplied": {},
+        "now": NOW,
+    }));
+    assert_eq!(replayed, json!({"reject": "replay"}));
 }
 
 /// A message object (not yet bytes) from the grant, for `library`.

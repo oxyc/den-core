@@ -460,7 +460,9 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
             }
             Ok(json!(at))
         }
-        op if op.starts_with("assistant_") => Err("assistant_module".into()),
+        op if op.starts_with("assistant_") || op.starts_with("playback_receipt_") => {
+            Err("assistant_module".into())
+        }
         _ => Err(INVALID.into()),
     }
 }
