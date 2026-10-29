@@ -60,7 +60,7 @@ jobs:
       - run: npm ci --ignore-scripts
       # The prebuilt, checksum-verified release rather than `cargo install`, which compiled it from source on
       # every run (over two minutes). The version must match the `wasm-bindgen` crate in Cargo.lock.
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: wasm-bindgen@0.2.129
       # wasm-opt and wasm2js at the version build-bindings.sh requires, from Binaryen's own release, checksummed.
