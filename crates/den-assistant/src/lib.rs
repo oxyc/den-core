@@ -27,6 +27,9 @@ use zeroize::Zeroizing;
 
 /// HPKE `info` of a request sealed to a library's drop-box key (§4).
 pub const REQUEST_INFO: &[u8] = b"den/assistant/v1";
+/// HPKE `info` of a managed-playback completion receipt sealed to the same household drop-box key. A distinct
+/// domain means an assistant request can never be replayed as playback evidence, or the reverse.
+pub const PLAYBACK_RECEIPT_INFO: &[u8] = b"den/playback-receipt/v1";
 /// HPKE `info` of the grant key sealed into an access token for den-mcp (§7).
 pub const TOKEN_INFO: &[u8] = b"den/assistant/token/v1";
 /// HKDF `info` of the key a grant key is wrapped under at rest (§8).
@@ -48,6 +51,8 @@ const TAG_LEN: usize = 16;
 pub const SIG_LEN: usize = 64;
 /// The longest message a request may carry, in bytes.
 pub const MAX_MESSAGE: usize = 1024;
+/// A playback receipt is deliberately smaller than an assistant request: it carries one fixed progress operation.
+pub const MAX_PLAYBACK_RECEIPT_MESSAGE: usize = 768;
 /// den-edge's cap on one queued entry, in characters of base64url.
 pub const MAX_SEALED: usize = 4096;
 /// A grant key as a claim or a wrap holds it: the grant id's 16 bytes, then the Ed25519 seed.
@@ -164,6 +169,35 @@ pub enum Reject {
     Replay,
     OpNotAllowed,
     OverDailyCap,
+}
+
+/// Why a device refuses a managed-playback receipt. Unlike an assistant request, a receipt has no grant: its
+/// authority is the authenticated, session-bound Hearth callback that was allowed to append it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackReceiptReject {
+    DoesNotOpen,
+    Malformed,
+    WrongLibrary,
+    WrongKey,
+    FromFuture,
+    Stale,
+    Expired,
+    Replay,
+}
+
+impl PlaybackReceiptReject {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DoesNotOpen => "does_not_open",
+            Self::Malformed => "malformed",
+            Self::WrongLibrary => "wrong_library",
+            Self::WrongKey => "wrong_key",
+            Self::FromFuture => "from_future",
+            Self::Stale => "stale",
+            Self::Expired => "expired",
+            Self::Replay => "replay",
+        }
+    }
 }
 
 impl Reject {
@@ -638,6 +672,215 @@ pub fn parse_message(bytes: &[u8]) -> Option<Message> {
         op: op.to_owned(),
         args: object["args"].clone(),
     })
+}
+
+// ---- managed-playback completion receipts
+
+/// The fixed progress evidence Hearth seals when an authenticated managed playback session ends.
+pub struct PlaybackReceipt<'a> {
+    pub library: &'a str,
+    /// The drop-box key id Edge attached to the session when it was authorized.
+    pub kid: &'a str,
+    /// Stable for this session's terminal sequence, so a callback retry is the same operation.
+    pub id: &'a str,
+    pub title: &'a Value,
+    pub season: Option<u64>,
+    pub episode: Option<u64>,
+    pub position_seconds: u64,
+    pub duration_seconds: u64,
+    pub completed: bool,
+    /// The time of the last player evidence, not the later time an idle supervisor happened to reap the session.
+    pub ended_at: u64,
+    pub expires_at: u64,
+}
+
+/// A checked receipt a client may turn into the ordinary progress write.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlaybackReceiptMessage {
+    pub library: String,
+    pub kid: String,
+    pub id: String,
+    pub title: Value,
+    pub season: Option<u64>,
+    pub episode: Option<u64>,
+    pub position_seconds: u64,
+    pub duration_seconds: u64,
+    pub completed: bool,
+    pub ended_at: u64,
+    pub expires_at: u64,
+}
+
+/// The canonical bytes of a receipt. Keeping seconds integral avoids two runtimes giving one media clock different
+/// floating-point spellings.
+pub fn playback_receipt_message(receipt: &PlaybackReceipt<'_>) -> Result<Vec<u8>, Error> {
+    let mut value = json!({
+        "v": 1,
+        "library": receipt.library,
+        "kid": receipt.kid,
+        "id": receipt.id,
+        "title": receipt.title,
+        "positionSeconds": receipt.position_seconds,
+        "durationSeconds": receipt.duration_seconds,
+        "completed": receipt.completed,
+        "endedAt": receipt.ended_at,
+        "expiresAt": receipt.expires_at,
+    });
+    if let Some(season) = receipt.season {
+        value["season"] = json!(season);
+    }
+    if let Some(episode) = receipt.episode {
+        value["episode"] = json!(episode);
+    }
+    let bytes = serde_json::to_vec(&value).map_err(|_| Error::InvalidRequest)?;
+    parse_playback_receipt(&bytes).ok_or(Error::InvalidRequest)?;
+    Ok(bytes)
+}
+
+/// Seal one receipt under the household drop-box public key. `eseed` is exposed for vectors; production calls
+/// [`seal_playback_receipt_with_rng`].
+#[doc(hidden)]
+pub fn seal_playback_receipt(
+    public: &[u8],
+    receipt: &PlaybackReceipt<'_>,
+    eseed: &[u8],
+) -> Result<String, Error> {
+    if key_id(public) != receipt.kid {
+        return Err(Error::InvalidKey);
+    }
+    let message = playback_receipt_message(receipt)?;
+    let sealed = b64url(&hpke_seal(
+        public,
+        PLAYBACK_RECEIPT_INFO,
+        receipt.library.as_bytes(),
+        &message,
+        eseed,
+    )?);
+    (sealed.len() <= MAX_SEALED)
+        .then_some(sealed)
+        .ok_or(Error::InvalidRequest)
+}
+
+/// [`seal_playback_receipt`] with fresh HPKE randomness.
+pub fn seal_playback_receipt_with_rng(
+    public: &[u8],
+    receipt: &PlaybackReceipt<'_>,
+    rng: &mut impl rand_core::CryptoRng,
+) -> Result<String, Error> {
+    let mut eseed = Zeroizing::new([0u8; ESEED_LEN]);
+    rng.fill_bytes(&mut *eseed);
+    seal_playback_receipt(public, receipt, &*eseed)
+}
+
+/// Parse and validate a receipt's canonical plaintext, without judging its delivery time or replay state.
+pub fn parse_playback_receipt(bytes: &[u8]) -> Option<PlaybackReceiptMessage> {
+    if bytes.len() > MAX_PLAYBACK_RECEIPT_MESSAGE {
+        return None;
+    }
+    let value: Value = serde_json::from_slice(bytes).ok()?;
+    if serde_json::to_vec(&value).ok()? != bytes {
+        return None;
+    }
+    let object = value.as_object()?;
+    if !keys_are(
+        object,
+        &[
+            "v",
+            "library",
+            "kid",
+            "id",
+            "title",
+            "positionSeconds",
+            "durationSeconds",
+            "completed",
+            "endedAt",
+            "expiresAt",
+        ],
+        &["season", "episode"],
+    ) || object["v"] != json!(1)
+    {
+        return None;
+    }
+    let text = |key: &str| object[key].as_str().filter(|s| lower_hex_id(s));
+    let (library, kid, id) = (text("library")?, text("kid")?, text("id")?);
+    let media = title(&object["title"])?;
+    let season = match object.get("season") {
+        Some(value) => Some(safe(value)?),
+        None => None,
+    };
+    let episode = match object.get("episode") {
+        Some(value) => Some(safe(value)?),
+        None => None,
+    };
+    if season.is_some() != episode.is_some()
+        || season.is_some() && media != "tv"
+        || episode.is_some_and(|episode| episode == 0 || episode > MAX_EPISODE)
+    {
+        return None;
+    }
+    let position_seconds = safe(&object["positionSeconds"])?;
+    let duration_seconds = safe(&object["durationSeconds"]).filter(|duration| *duration > 0)?;
+    if position_seconds > duration_seconds {
+        return None;
+    }
+    let ended_at = safe(&object["endedAt"])?;
+    let expires_at = safe(&object["expiresAt"])?;
+    if expires_at < ended_at || expires_at > ended_at.saturating_add(STALE_MS) {
+        return None;
+    }
+    Some(PlaybackReceiptMessage {
+        library: library.to_owned(),
+        kid: kid.to_owned(),
+        id: id.to_owned(),
+        title: object["title"].clone(),
+        season,
+        episode,
+        position_seconds,
+        duration_seconds,
+        completed: object["completed"].as_bool()?,
+        ended_at,
+        expires_at,
+    })
+}
+
+/// Open a receipt with the library's drop-box keys and enforce its library, key epoch, freshness and replay fences.
+pub fn open_playback_receipt(
+    dropbox: &[(String, [u8; KEM_SECRET_LEN])],
+    library: &str,
+    sealed: &str,
+    applied: &std::collections::BTreeSet<String>,
+    now: u64,
+) -> Result<PlaybackReceiptMessage, PlaybackReceiptReject> {
+    let bytes = (sealed.len() <= MAX_SEALED)
+        .then(|| b64url_decode(sealed))
+        .flatten()
+        .ok_or(PlaybackReceiptReject::DoesNotOpen)?;
+    let (opened_kid, plaintext) = dropbox
+        .iter()
+        .find_map(|(kid, secret)| {
+            hpke_open(secret, PLAYBACK_RECEIPT_INFO, library.as_bytes(), &bytes)
+                .map(|plaintext| (kid, plaintext))
+        })
+        .ok_or(PlaybackReceiptReject::DoesNotOpen)?;
+    let message = parse_playback_receipt(&plaintext).ok_or(PlaybackReceiptReject::Malformed)?;
+    if message.library != library {
+        return Err(PlaybackReceiptReject::WrongLibrary);
+    }
+    if &message.kid != opened_kid {
+        return Err(PlaybackReceiptReject::WrongKey);
+    }
+    if message.ended_at > now.saturating_add(FUTURE_MS) {
+        return Err(PlaybackReceiptReject::FromFuture);
+    }
+    if message.ended_at < now.saturating_sub(STALE_MS) {
+        return Err(PlaybackReceiptReject::Stale);
+    }
+    if message.expires_at <= now {
+        return Err(PlaybackReceiptReject::Expired);
+    }
+    if applied.contains(&message.id) {
+        return Err(PlaybackReceiptReject::Replay);
+    }
+    Ok(message)
 }
 
 // ---- the accept rules
@@ -1598,5 +1841,87 @@ mod tests {
                 Error::InvalidRandomness
             );
         }
+    }
+
+    #[test]
+    fn a_playback_receipt_is_domain_separated_fresh_and_replay_safe() {
+        let secret = [9; 32];
+        let public = kem_public(&secret);
+        let kid = key_id(&public);
+        let title = json!({"type":"tv","id":1399});
+        let receipt = PlaybackReceipt {
+            library: "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e",
+            kid: &kid,
+            id: "00112233445566778899aabbccddeeff",
+            title: &title,
+            season: Some(1),
+            episode: Some(2),
+            position_seconds: 3120,
+            duration_seconds: 3200,
+            completed: true,
+            ended_at: 1_789_999_940_000,
+            expires_at: 1_790_604_740_000,
+        };
+        let sealed = seal_playback_receipt(&public, &receipt, &[7; ESEED_LEN]).unwrap();
+        let keys = vec![(kid.clone(), secret)];
+        let now = receipt.ended_at;
+        let opened =
+            open_playback_receipt(&keys, receipt.library, &sealed, &Default::default(), now)
+                .unwrap();
+        assert_eq!(opened.id, receipt.id);
+        assert_eq!(opened.position_seconds, 3120);
+        assert!(opened.completed);
+
+        let mut applied = std::collections::BTreeSet::new();
+        applied.insert(receipt.id.to_owned());
+        assert_eq!(
+            open_playback_receipt(&keys, receipt.library, &sealed, &applied, now),
+            Err(PlaybackReceiptReject::Replay)
+        );
+        let request_open = hpke_open(
+            &secret,
+            REQUEST_INFO,
+            receipt.library.as_bytes(),
+            &b64url_decode(&sealed).unwrap(),
+        );
+        assert!(
+            request_open.is_none(),
+            "a receipt must not open in the assistant-request domain"
+        );
+    }
+
+    #[test]
+    fn playback_receipts_reject_bad_coordinates_and_time_bounds() {
+        let title = json!({"type":"movie","id":550});
+        let make = || PlaybackReceipt {
+            library: "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e",
+            kid: "00112233445566778899aabbccddeeff",
+            id: "ffeeddccbbaa99887766554433221100",
+            title: &title,
+            season: None,
+            episode: None,
+            position_seconds: 10,
+            duration_seconds: 100,
+            completed: false,
+            ended_at: 1000,
+            expires_at: 2000,
+        };
+        assert!(playback_receipt_message(&make()).is_ok());
+        assert!(playback_receipt_message(&PlaybackReceipt {
+            position_seconds: 101,
+            ..make()
+        })
+        .is_err());
+        assert!(playback_receipt_message(&PlaybackReceipt {
+            season: Some(1),
+            episode: Some(1),
+            ..make()
+        })
+        .is_err());
+        assert!(playback_receipt_message(&PlaybackReceipt {
+            expires_at: STALE_MS + 1001,
+            ..make()
+        })
+        .is_err());
     }
 }

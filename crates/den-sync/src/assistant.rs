@@ -85,6 +85,75 @@ fn dropbox_keys(row: Option<&Value>) -> Result<Vec<(String, [u8; 32], Stamp)>, S
     Ok(keys)
 }
 
+/// `playback_receipt_open`: open one Hearth completion receipt with the household drop-box keys and turn it into
+/// the ordinary library-v4 progress write plus the replay record that must land in the same batch.
+pub fn playback_receipt_open(
+    sealed: &str,
+    library: &str,
+    device: &str,
+    dropbox: Option<&Value>,
+    applied: Option<&Value>,
+    local_applied: &Map<String, Value>,
+    now: u64,
+) -> Result<Value, String> {
+    if device.len() != 16
+        || !device
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err("invalid_device".into());
+    }
+    let keys = dropbox_keys(dropbox)?
+        .into_iter()
+        .map(|(setting, secret, _)| {
+            (
+                setting.trim_start_matches(DROPBOX_PREFIX).to_owned(),
+                secret,
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut seen = std::collections::BTreeSet::new();
+    for id in settings(applied, "playback-receipts-applied")?
+        .into_iter()
+        .flatten()
+        .map(|(id, _)| id)
+        .chain(local_applied.keys())
+    {
+        seen.insert(id.clone());
+    }
+    let receipt = match den_assistant::open_playback_receipt(&keys, library, sealed, &seen, now) {
+        Ok(receipt) => receipt,
+        Err(reason) => return Ok(json!({"reject": reason.as_str()})),
+    };
+    let value = if receipt.completed {
+        1.0
+    } else {
+        receipt.position_seconds as f64 / receipt.duration_seconds as f64
+    };
+    let mut write = json!({
+        "kind": "progress",
+        "value": value,
+        "seconds": receipt.position_seconds,
+        "at": [receipt.ended_at, 0, device],
+    });
+    if let (Some(season), Some(episode)) = (receipt.season, receipt.episode) {
+        write["episode"] = json!([season, episode]);
+    }
+    let recorded = json!({"endedAt": receipt.ended_at, "applied": now});
+    Ok(json!({
+        "accept": {
+            "id": receipt.id,
+            "title": receipt.title,
+            "season": receipt.season,
+            "episode": receipt.episode,
+            "endedAt": receipt.ended_at,
+            "write": write,
+            "setting": receipt.id,
+            "value": jcs_string(&recorded),
+        }
+    }))
+}
+
 /// `assistant_keygen_dropbox`: 32 random bytes → a drop-box key, the setting that holds it, and its public half.
 pub fn keygen_dropbox(random: &str) -> Result<Value, String> {
     let secret = seed(random)?;

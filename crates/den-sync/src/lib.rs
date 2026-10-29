@@ -517,6 +517,20 @@ enum AssistantRequest {
         local_applied: serde_json::Map<String, Value>,
         now: u64,
     },
+    /// Playback receipt v1: a sealed Hearth completion observation against the household drop-box keys and the
+    /// receipt replay row → the ordinary progress write and its replay record, or a closed rejection reason.
+    PlaybackReceiptOpen {
+        library: String,
+        device: String,
+        sealed: String,
+        #[serde(default)]
+        assistant: Option<Value>,
+        #[serde(default)]
+        applied: Option<Value>,
+        #[serde(default, rename = "localApplied")]
+        local_applied: serde_json::Map<String, Value>,
+        now: u64,
+    },
 }
 
 /// Assistant v1 §15: the library's documents → the projection for every live read grant, sealed, and the read grants
@@ -940,6 +954,23 @@ fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
             local_applied,
             now,
         } => assistant::prune(applied.as_ref(), &local_applied, now),
+        AssistantRequest::PlaybackReceiptOpen {
+            library,
+            device,
+            sealed,
+            assistant,
+            applied,
+            local_applied,
+            now,
+        } => assistant::playback_receipt_open(
+            &sealed,
+            &library,
+            &device,
+            assistant.as_ref(),
+            applied.as_ref(),
+            &local_applied,
+            now,
+        ),
     }
 }
 
