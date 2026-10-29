@@ -63,21 +63,6 @@ fixtures.push({
       error: 'profiles_migration_required',
     },
     {
-      name: 'deferred selects the runtime profile capability',
-      request: {
-        op: 'profiles_capability',
-        input: {
-          enrollment: 'off',
-          wireMin: 5,
-          directory: 'valid',
-          request: 'ordinary',
-          wire: 5,
-          authenticated: true,
-        },
-      },
-      ok: { state: 'runtime', effect: 'serve-runtime' },
-    },
-    {
       name: 'deferred derives a watch row name',
       request: { op: 'watch_name', media: 'tv', id: 1399, season: 1, episode: 1 },
       ok: 'wat:tv:1399:1:0',

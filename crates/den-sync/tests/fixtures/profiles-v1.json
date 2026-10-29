@@ -1,512 +1,6 @@
 {
   "version": 1,
-  "denSpecMigrationDigestHead": "f715764f6eab2eb1d22187d05cc86053942119ee",
-  "denSpecMigrationPartitionHead": "36bf5ce0b14e2d827e87927577b4ba12d0e55c8a",
-  "denSpecMigrationPartitionIdentityHead": "d8dc21e4df56e1edd07ee2903385810c87dd1636",
-  "denSpecMigrationMaterializeHead": "0322c972b3b5f8dbe1d21475506484e9d07ab6bd",
-  "denSpecMigrationDirectoryConstructorHead": "bb7a3e44f5dc72523b7bc4faf1a724d3e0e7004d",
-  "partitionIdentityGuards": [
-    {
-      "name": "rec",
-      "identity": "rec:movie:550",
-      "error": "legacy_source_row"
-    },
-    {
-      "name": "wat",
-      "identity": "wat:movie:550",
-      "error": "legacy_source_row"
-    },
-    {
-      "name": "snt",
-      "identity": "snt:movie:550",
-      "error": "legacy_source_row"
-    },
-    {
-      "name": "ep",
-      "identity": "ep:tv:1399:1:1",
-      "error": "legacy_source_row"
-    },
-    {
-      "name": "tracker event",
-      "identity": "set:tracker-event:1",
-      "error": "legacy_source_row"
-    },
-    {
-      "name": "profile directory",
-      "identity": "profiles",
-      "error": "profiles_already_present"
-    },
-    {
-      "name": "Kid approvals",
-      "identity": "kid-title-approvals:11112222333344445555666677778888",
-      "error": "profiles_already_present"
-    }
-  ],
   "cases": [
-    {
-      "name": "a settings projection seals its exact RFC 8785 bytes",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "set:prefs",
-          "row": {
-            "values": {
-              "z": {
-                "value": {
-                  "string": "é"
-                },
-                "at": [
-                  2,
-                  0,
-                  "a1b2c3d4e5f60718"
-                ]
-              },
-              "a": {
-                "value": {
-                  "bool": true
-                },
-                "at": [
-                  1,
-                  0,
-                  "a1b2c3d4e5f60718"
-                ]
-              }
-            },
-            "schema": 2,
-            "name": "prefs",
-            "kind": "set"
-          }
-        }
-      },
-      "ok": {
-        "jcs": "eyJraW5kIjoic2V0IiwibmFtZSI6InByZWZzIiwic2NoZW1hIjoyLCJ2YWx1ZXMiOnsiYSI6eyJhdCI6WzEsMCwiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6eyJib29sIjp0cnVlfX0sInoiOnsiYXQiOlsyLDAsImExYjJjM2Q0ZTVmNjA3MTgiXSwidmFsdWUiOnsic3RyaW5nIjoiw6kifX19fQ",
-        "plaintext": "eyJraW5kIjoic2V0IiwibmFtZSI6InByZWZzIiwic2NoZW1hIjoyLCJ2YWx1ZXMiOnsiYSI6eyJhdCI6WzEsMCwiYTFiMmMzZDRlNWY2MDcxOCJdLCJ2YWx1ZSI6eyJib29sIjp0cnVlfX0sInoiOnsiYXQiOlsyLDAsImExYjJjM2Q0ZTVmNjA3MTgiXSwidmFsdWUiOnsic3RyaW5nIjoiw6kifX19fQ"
-      }
-    },
-    {
-      "name": "a document projection returns JCS and seal-ready compressed plaintext",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "title:movie:550",
-          "row": {
-            "format": 4,
-            "kind": "title",
-            "title": {
-              "id": 550,
-              "type": "movie"
-            },
-            "watch": {
-              "cleared": null,
-              "plays": {
-                "0": 1000,
-                "1": 1001,
-                "2": 1002,
-                "3": 1003,
-                "4": 1004,
-                "5": 1005,
-                "6": 1006,
-                "7": 1007
-              }
-            }
-          }
-        }
-      },
-      "ok": {
-        "jcs": "eyJmb3JtYXQiOjQsImtpbmQiOiJ0aXRsZSIsInRpdGxlIjp7ImlkIjo1NTAsInR5cGUiOiJtb3ZpZSJ9LCJ3YXRjaCI6eyJjbGVhcmVkIjpudWxsLCJwbGF5cyI6eyIwIjoxMDAwLCIxIjoxMDAxLCIyIjoxMDAyLCIzIjoxMDAzLCI0IjoxMDA0LCI1IjoxMDA1LCI2IjoxMDA2LCI3IjoxMDA3fX19",
-        "plaintext": "AC3NTQqEMAyG4bt86yxatQq9TXE6TJn4g1ZFpHc3Bld5eEnIhe-0DCHDN4R_Gj_wyClzBL3TX0hSnTNSzlkChmlPEYVwhNz_no2eY1iirI0bM2HmcK5PN_DWGLm0CkuoFBWhVtSERiHvncIRWkVL6BRdKeUG"
-      }
-    },
-    {
-      "name": "a document that library-v4 would normalize cannot materialize",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "title:movie:550",
-          "row": {
-            "format": 4,
-            "kind": "title",
-            "title": {
-              "id": 550,
-              "type": "movie"
-            },
-            "watch": {
-              "cleared": null,
-              "plays": {
-                "0": 1000,
-                "1": 1001,
-                "2": 1002,
-                "3": 1003,
-                "4": 1004,
-                "5": 1005,
-                "6": 1006,
-                "7": 1007,
-                "8": 1008
-              }
-            }
-          }
-        }
-      },
-      "error": "invalid_materialize_input"
-    },
-    {
-      "name": "a materialized name must match the document identity",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "title:movie:551",
-          "row": {
-            "format": 4,
-            "kind": "title",
-            "title": {
-              "id": 550,
-              "type": "movie"
-            }
-          }
-        }
-      },
-      "error": "materialize_name_mismatch"
-    },
-    {
-      "name": "a settings name must match its authenticated logical name",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "set:keys",
-          "row": {
-            "kind": "set",
-            "name": "prefs",
-            "schema": 2,
-            "values": {}
-          }
-        }
-      },
-      "error": "materialize_name_mismatch"
-    },
-    {
-      "name": "an unknown kind cannot cross the materialize boundary",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "future:one",
-          "row": {
-            "kind": "future",
-            "format": 4
-          }
-        }
-      },
-      "error": "unsupported_materialize_kind"
-    },
-    {
-      "name": "a profile control document cannot cross the materialize boundary",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "profiles",
-          "row": {
-            "kind": "profiles",
-            "format": 4,
-            "schema": 1
-          }
-        }
-      },
-      "error": "unsupported_materialize_kind"
-    },
-    {
-      "name": "a newer document format cannot be written during migration",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "title:movie:550",
-          "row": {
-            "format": 5,
-            "kind": "title",
-            "title": {
-              "id": 550,
-              "type": "movie"
-            }
-          }
-        }
-      },
-      "error": "invalid_materialize_input"
-    },
-    {
-      "name": "extra materialize input authority is rejected",
-      "request": {
-        "op": "profiles_migration_materialize_plaintext",
-        "input": {
-          "name": "set:prefs",
-          "row": {
-            "kind": "set",
-            "name": "prefs",
-            "schema": 2,
-            "values": {}
-          },
-          "plaintext": "client-selected"
-        }
-      },
-      "error": "invalid_materialize_input"
-    },
-    {
-      "name": "library-v2 token and member text reproduce deployed provider hashes",
-      "request": {
-        "op": "profiles_migration_authorization_fingerprint",
-        "input": {
-          "token": "6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d",
-          "member": "2d54fbcfefc5085203126c6e52894e102dd9a73d6fc778a53394988287fe1207"
-        }
-      },
-      "ok": {
-        "tokenHash": "04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3",
-        "memberHash": "ae99678a53affff9e4fc494ccd07bf85999d18fa6293d8537c28f67e780b9caf"
-      }
-    },
-    {
-      "name": "an unregistered household fingerprints a null member",
-      "request": {
-        "op": "profiles_migration_authorization_fingerprint",
-        "input": {
-          "token": "6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d",
-          "member": null
-        }
-      },
-      "ok": {
-        "tokenHash": "04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3",
-        "memberHash": null
-      }
-    },
-    {
-      "name": "credential text is canonical lowercase hex",
-      "request": {
-        "op": "profiles_migration_authorization_fingerprint",
-        "input": {
-          "token": "6B837F1C76BBF17BB1B225057063236F945592467BFCEED80734383E832D382D",
-          "member": null
-        }
-      },
-      "error": "invalid_authorization_fingerprint"
-    },
-    {
-      "name": "fingerprint input accepts no client-selected output",
-      "request": {
-        "op": "profiles_migration_authorization_fingerprint",
-        "input": {
-          "token": "6b837f1c76bbf17bb1b225057063236f945592467bfceed80734383e832d382d",
-          "member": null,
-          "tokenHash": "04b2b60fdf053a02961c819bf0c3a2a06df0ff3623f38ce961e26a7035e216b3"
-        }
-      },
-      "error": "invalid_authorization_fingerprint"
-    },
-    {
-      "name": "Owner assistant receipt partition crosses native and web bindings",
-      "request": {
-        "op": "profiles_migration_partition_rows",
-        "input": {
-          "base": 1,
-          "ownerPolicyAt": [
-            1,
-            0,
-            "a1b2c3d4e5f60718"
-          ],
-          "rows": [
-            {
-              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "seq": 1,
-              "v": "sealed-applied",
-              "opened": {
-                "status": "row",
-                "name": "set:assistant-applied",
-                "legacy": false,
-                "row": {
-                  "kind": "set",
-                  "schema": 2,
-                  "name": "assistant-applied",
-                  "values": {}
-                }
-              }
-            }
-          ]
-        }
-      },
-      "ok": {
-        "household": [],
-        "owner": [
-          {
-            "source": {
-              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "seq": 1
-            },
-            "mode": "materialize",
-            "name": "set:assistant-applied",
-            "row": {
-              "kind": "set",
-              "schema": 2,
-              "name": "assistant-applied",
-              "values": {}
-            }
-          }
-        ],
-        "ownerPolicy": {
-          "value": {
-            "maximumAge": null,
-            "unknownRatings": "allow"
-          },
-          "at": [
-            1,
-            0,
-            "a1b2c3d4e5f60718"
-          ]
-        },
-        "accounting": [
-          {
-            "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "seq": 1,
-            "destinations": [
-              "owner"
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "name": "unknown profile-named row rejects across native and web bindings",
-      "request": {
-        "op": "profiles_migration_partition_rows",
-        "input": {
-          "base": 1,
-          "ownerPolicyAt": [
-            1,
-            0,
-            "a1b2c3d4e5f60718"
-          ],
-          "rows": [
-            {
-              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "seq": 1,
-              "v": "sealed",
-              "opened": {
-                "status": "row",
-                "name": "set:prefs",
-                "legacy": false,
-                "row": {
-                  "kind": "future",
-                  "schema": 1
-                }
-              }
-            }
-          ]
-        }
-      },
-      "error": "newer_profile_row"
-    },
-    {
-      "name": "household source authority crosses native and web bindings",
-      "request": {
-        "op": "profiles_migration_digest",
-        "kind": "source",
-        "input": {
-          "libraryId": "0123456789abcdef0123456789abcdef",
-          "generation": 7,
-          "base": 2,
-          "wireMin": 4,
-          "rows": [
-            {
-              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "seq": 2,
-              "v": "sealed-β"
-            },
-            {
-              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "seq": 1,
-              "v": "sealed-a"
-            }
-          ]
-        }
-      },
-      "ok": "768265809617d97f163f9bfe9bc4be81855bfa4d24888f29877aa91e54c28ee8"
-    },
-    {
-      "name": "immutable backup manifest crosses native and web bindings",
-      "request": {
-        "op": "profiles_migration_digest",
-        "kind": "backup",
-        "input": {
-          "id": "backup-0123456789abcdef",
-          "householdId": "0123456789abcdef0123456789abcdef",
-          "attempt": "11111111111111111111111111111111",
-          "source": {
-            "generation": 7,
-            "base": 2,
-            "head": "1111111111111111111111111111111111111111111111111111111111111111",
-            "rewrite": "rewrite-0123456789abcdef"
-          },
-          "wireMin": 4,
-          "authorization": {
-            "tokenHash": "2222222222222222222222222222222222222222222222222222222222222222",
-            "memberHash": "3333333333333333333333333333333333333333333333333333333333333333"
-          },
-          "rows": [
-            {
-              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "seq": 2,
-              "v": "sealed-β"
-            },
-            {
-              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "seq": 1,
-              "v": "sealed-a"
-            }
-          ]
-        }
-      },
-      "ok": "68056362a0662435c032689d482345fd119016d9b7a34e66971769c070c65b82"
-    },
-    {
-      "name": "staged household rows cross native and web bindings",
-      "request": {
-        "op": "profiles_migration_digest",
-        "kind": "staged",
-        "input": {
-          "rows": [
-            {
-              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "v": "sealed-β"
-            },
-            {
-              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "v": "sealed-a"
-            }
-          ]
-        }
-      },
-      "ok": "ce6925812e2cf7942d0121d34a73f4642d12b30b7bbd5b91c12e67266ced6fd3"
-    },
-    {
-      "name": "Owner migration head crosses native and web bindings",
-      "request": {
-        "op": "profiles_migration_digest",
-        "kind": "owner",
-        "input": {
-          "libraryId": "fedcba9876543210fedcba9876543210",
-          "base": 2,
-          "wireMin": 4,
-          "rows": [
-            {
-              "k": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "seq": 2,
-              "v": "sealed-β"
-            },
-            {
-              "k": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "seq": 1,
-              "v": "sealed-a"
-            }
-          ]
-        }
-      },
-      "ok": "8d91158e1f4928a0df53257d027014537dd3f3c058c7dcb65b70483214fbe8e5"
-    },
     {
       "name": "the source digest answers under its neutral name across native and web bindings",
       "request": {
@@ -559,7 +53,7 @@
       "ok": "8d91158e1f4928a0df53257d027014537dd3f3c058c7dcb65b70483214fbe8e5"
     },
     {
-      "name": "the neutral snapshot digest refuses the split-only staged kind",
+      "name": "the neutral snapshot digest refuses the retired staged kind",
       "request": {
         "op": "profiles_snapshot_digest",
         "kind": "staged",
@@ -772,78 +266,221 @@
       }
     },
     {
-      "name": "preference partition moves every preference to Owner and the household keeps none",
+      "name": "household write refuses a title document",
+      "request": {
+        "op": "profile_household_write",
+        "row": {
+          "name": "title:movie:550"
+        }
+      },
+      "ok": {
+        "effect": "refuse"
+      }
+    },
+    {
+      "name": "household write allows a household row",
+      "request": {
+        "op": "profile_household_write",
+        "row": {
+          "name": "set:download-lease"
+        }
+      },
+      "ok": {
+        "effect": "allow"
+      }
+    },
+    {
+      "name": "household write refuses prefs whole, services and region included",
+      "request": {
+        "op": "profile_household_write",
+        "row": {
+          "name": "set:prefs",
+          "values": {
+            "den.watchRegion": {
+              "value": {
+                "string": "FI"
+              },
+              "at": [
+                1,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            },
+            "den.myServicePicks": {
+              "value": {
+                "strings": [
+                  "8@FI"
+                ]
+              },
+              "at": [
+                2,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            },
+            "den.hideWatched": {
+              "value": {
+                "bool": true
+              },
+              "at": [
+                3,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            }
+          }
+        }
+      },
+      "ok": {
+        "effect": "refuse"
+      }
+    },
+    {
+      "name": "seed gives a profile the household preferences it lacks, stamps untouched",
+      "request": {
+        "op": "profiles_seed_preferences",
+        "input": {
+          "household": {
+            "den.watchRegion": {
+              "value": {
+                "string": "FI"
+              },
+              "at": [
+                10,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            },
+            "den.myServicePicks": {
+              "value": {
+                "strings": [
+                  "8@FI"
+                ]
+              },
+              "at": [
+                11,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            },
+            "den.maturityCeiling": {
+              "value": {
+                "string": "pg13"
+              },
+              "at": [
+                12,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            }
+          },
+          "profile": {
+            "den.watchRegion": {
+              "value": null,
+              "at": [
+                20,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            }
+          }
+        }
+      },
+      "ok": {
+        "values": {
+          "den.myServicePicks": {
+            "value": {
+              "strings": [
+                "8@FI"
+              ]
+            },
+            "at": [
+              11,
+              0,
+              "a1b2c3d4e5f60718"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "browser-local conversion partitions preferences without interpreting stamped values",
       "request": {
         "op": "profiles_partition_preferences",
         "values": {
-          "den.watchRegion": {
-            "value": {
-              "string": "FI"
-            },
-            "at": [
-              1,
-              0,
-              "a1b2c3d4e5f60718"
-            ]
-          },
-          "den.hideWatched": {
-            "value": {
-              "bool": true
-            },
-            "at": [
-              2,
-              0,
-              "a1b2c3d4e5f60718"
-            ]
+          "future.preference": {
+            "value": {"future": "kept"},
+            "at": [1, 0, "a1b2c3d4e5f60718"],
+            "futureStampedMember": "kept"
           },
           "den.maturityCeiling": {
-            "value": {
-              "string": "pg13"
-            },
-            "at": [
-              3,
-              0,
-              "a1b2c3d4e5f60718"
-            ]
-          },
-          "future.preference": {
-            "value": {
-              "future": true
-            },
-            "at": [
-              4,
-              0,
-              "a1b2c3d4e5f60718"
-            ]
+            "value": {"string": "pg13"},
+            "at": [2, 0, "a1b2c3d4e5f60718"]
           }
         }
       },
       "ok": {
         "household": {},
         "owner": {
-          "den.watchRegion": {
-            "value": {
-              "string": "FI"
-            },
-            "at": [
-              1,
-              0,
-              "a1b2c3d4e5f60718"
-            ]
-          },
           "future.preference": {
-            "value": {
-              "future": true
+            "value": {"future": "kept"},
+            "at": [1, 0, "a1b2c3d4e5f60718"],
+            "futureStampedMember": "kept"
+          }
+        },
+        "ownerMaturity": {
+          "value": {"string": "pg13"},
+          "at": [2, 0, "a1b2c3d4e5f60718"]
+        }
+      }
+    },
+    {
+      "name": "seed refuses non-object preferences",
+      "request": {
+        "op": "profiles_seed_preferences",
+        "input": {
+          "household": [],
+          "profile": null
+        }
+      },
+      "error": "invalid_preferences"
+    },
+    {
+      "name": "household write drops simkl from keys",
+      "request": {
+        "op": "profile_household_write",
+        "row": {
+          "name": "set:keys",
+          "values": {
+            "simkl": {
+              "value": {
+                "string": "token"
+              },
+              "at": [
+                1,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
             },
-            "at": [
-              4,
-              0,
-              "a1b2c3d4e5f60718"
-            ]
-          },
-          "den.hideWatched": {
+            "tmdb": {
+              "value": {
+                "string": "k"
+              },
+              "at": [
+                2,
+                0,
+                "a1b2c3d4e5f60718"
+              ]
+            }
+          }
+        }
+      },
+      "ok": {
+        "effect": "restrict",
+        "values": {
+          "tmdb": {
             "value": {
-              "bool": true
+              "string": "k"
             },
             "at": [
               2,
@@ -851,174 +488,114 @@
               "a1b2c3d4e5f60718"
             ]
           }
-        },
-        "ownerMaturity": {
-          "value": {
-            "string": "pg13"
-          },
-          "at": [
-            3,
-            0,
-            "a1b2c3d4e5f60718"
-          ]
         }
       }
     },
     {
-      "name": "household write refuses a title document",
-      "request": {"op": "profile_household_write", "row": {"name": "title:movie:550"}},
-      "ok": {"effect": "refuse"}
-    },
-    {
-      "name": "household write allows a household row",
-      "request": {"op": "profile_household_write", "row": {"name": "set:download-lease"}},
-      "ok": {"effect": "allow"}
-    },
-    {
-      "name": "household write refuses prefs whole, services and region included",
-      "request": {"op": "profile_household_write", "row": {"name": "set:prefs", "values": {
-        "den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-        "den.myServicePicks": {"value": {"strings": ["8@FI"]}, "at": [2, 0, "a1b2c3d4e5f60718"]},
-        "den.hideWatched": {"value": {"bool": true}, "at": [3, 0, "a1b2c3d4e5f60718"]}
-      }}},
-      "ok": {"effect": "refuse"}
-    },
-    {
-      "name": "seed gives a profile the household preferences it lacks, stamps untouched",
-      "request": {"op": "profiles_seed_preferences", "input": {
-        "household": {
-          "den.watchRegion": {"value": {"string": "FI"}, "at": [10, 0, "a1b2c3d4e5f60718"]},
-          "den.myServicePicks": {"value": {"strings": ["8@FI"]}, "at": [11, 0, "a1b2c3d4e5f60718"]},
-          "den.maturityCeiling": {"value": {"string": "pg13"}, "at": [12, 0, "a1b2c3d4e5f60718"]}
-        },
-        "profile": {"den.watchRegion": {"value": null, "at": [20, 0, "a1b2c3d4e5f60718"]}}
-      }},
-      "ok": {"values": {
-        "den.myServicePicks": {"value": {"strings": ["8@FI"]}, "at": [11, 0, "a1b2c3d4e5f60718"]}
-      }}
-    },
-    {
-      "name": "seed refuses non-object preferences",
-      "request": {"op": "profiles_seed_preferences", "input": {"household": [], "profile": null}},
-      "error": "invalid_preferences"
-    },
-    {
-      "name": "household write drops simkl from keys",
-      "request": {"op": "profile_household_write", "row": {"name": "set:keys", "values": {
-        "simkl": {"value": {"string": "token"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-        "tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}
-      }}},
-      "ok": {"effect": "restrict", "values": {
-        "tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}
-      }}
-    },
-    {
       "name": "household write needs values for prefs",
-      "request": {"op": "profile_household_write", "row": {"name": "set:prefs"}},
+      "request": {
+        "op": "profile_household_write",
+        "row": {
+          "name": "set:prefs"
+        }
+      },
       "error": "invalid_household_write"
     },
     {
       "name": "household audit removes and rewrites in input order",
-      "request": {"op": "profile_household_audit", "rows": [
-        {"name": "title:movie:550"},
-        {"name": "profiles"},
-        {"name": "set:keys", "values": {
-          "simkl": {"value": {"string": "token"}, "at": [1, 0, "a1b2c3d4e5f60718"]},
-          "tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}
-        }},
-        {"name": "set:trackers"},
-        {"name": "set:prefs", "values": {"den.watchRegion": {"value": {"string": "FI"}, "at": [1, 0, "a1b2c3d4e5f60718"]}}}
-      ]},
-      "ok": {"remove": ["title:movie:550", "set:trackers", "set:prefs"], "rewrite": [
-        {"name": "set:keys", "values": {"tmdb": {"value": {"string": "k"}, "at": [2, 0, "a1b2c3d4e5f60718"]}}}
-      ]}
-    },
-    {
-      "name": "household audit refuses a repeated row name",
-      "request": {"op": "profile_household_audit", "rows": [{"name": "profiles"}, {"name": "profiles"}]},
-      "error": "invalid_household_write"
-    },
-    {
-      "name": "migration planner never cleans a committed profile key",
       "request": {
-        "op": "profiles_migration_next",
-        "input": {
-          "state": "cleaning-loser",
-          "observed": "committed",
-          "candidateAttempt": "fedcba9876543210fedcba9876543210",
-          "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-          "winnerVerified": true,
-          "candidateRetired": false,
-          "directory": {
-            "format": 4,
-            "kind": "profiles",
-            "schema": 1,
-            "owner": "00112233445566778899aabbccddeeff",
-            "migration": {
-              "version": 1,
-              "attempt": "0123456789abcdef0123456789abcdef",
-              "source": {
-                "generation": 7,
-                "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "op": "profile_household_audit",
+        "rows": [
+          {
+            "name": "title:movie:550"
+          },
+          {
+            "name": "profiles"
+          },
+          {
+            "name": "set:keys",
+            "values": {
+              "simkl": {
+                "value": {
+                  "string": "token"
+                },
+                "at": [
+                  1,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
               },
-              "backup": {
-                "id": "backup-7",
-                "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-              },
-              "ownerProfile": "00112233445566778899aabbccddeeff",
-              "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-            },
-            "profiles": {
-              "00112233445566778899aabbccddeeff": {
-                "id": "00112233445566778899aabbccddeeff",
-                "role": "owner",
-                "display": {
-                  "value": {
-                    "name": "Owner"
-                  },
-                  "at": [
-                    1,
-                    0,
-                    "a1b2c3d4e5f60718"
-                  ]
+              "tmdb": {
+                "value": {
+                  "string": "k"
                 },
-                "library": {
-                  "value": {
-                    "keyVersion": 1,
-                    "key": "ERERERERERERERERERERERERERERERERERERERERERE="
-                  },
-                  "at": [
-                    1,
-                    1,
-                    "a1b2c3d4e5f60718"
-                  ]
-                },
-                "policy": {
-                  "value": {
-                    "maximumAge": null,
-                    "unknownRatings": "allow"
-                  },
-                  "at": [
-                    1,
-                    2,
-                    "a1b2c3d4e5f60718"
-                  ]
-                },
-                "deleted": {
-                  "value": false,
-                  "at": [
-                    1,
-                    3,
-                    "a1b2c3d4e5f60718"
-                  ]
-                }
+                "at": [
+                  2,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
               }
             }
           },
-          "legacyStaleCandidate": true
-        }
+          {
+            "name": "set:trackers"
+          },
+          {
+            "name": "set:prefs",
+            "values": {
+              "den.watchRegion": {
+                "value": {
+                  "string": "FI"
+                },
+                "at": [
+                  1,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
+              }
+            }
+          }
+        ]
       },
-      "ok": "cleanup_targets_winner"
+      "ok": {
+        "remove": [
+          "title:movie:550",
+          "set:trackers",
+          "set:prefs"
+        ],
+        "rewrite": [
+          {
+            "name": "set:keys",
+            "values": {
+              "tmdb": {
+                "value": {
+                  "string": "k"
+                },
+                "at": [
+                  2,
+                  0,
+                  "a1b2c3d4e5f60718"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "household audit refuses a repeated row name",
+      "request": {
+        "op": "profile_household_audit",
+        "rows": [
+          {
+            "name": "profiles"
+          },
+          {
+            "name": "profiles"
+          }
+        ]
+      },
+      "error": "invalid_household_write"
     },
     {
       "name": "reset planner is bound to the committed directory and names pending profiles",
@@ -1173,7 +750,6 @@
       }
     }
   ],
-  "denSpecActivationCapabilityHead": "de6a080c5fb0e7b17eb076af005ccf9f1caf1a84",
   "migrationBase": {
     "format": 4,
     "kind": "profiles",
@@ -1331,1247 +907,7 @@
       }
     }
   },
-  "migrationFence": {
-    "generation": 7,
-    "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  },
-  "migrationCases": [
-    {
-      "name": "explicit intent first acquires a fence",
-      "state": "idle",
-      "observed": "legacy",
-      "explicitIntent": true,
-      "expect": "acquire-fence"
-    },
-    {
-      "name": "no journal and no explicit intent performs no work",
-      "state": "idle",
-      "observed": "legacy",
-      "explicitIntent": false,
-      "expect": "no-op"
-    },
-    {
-      "name": "old explicit-intent input without exact authorization fails closed",
-      "state": "idle",
-      "observed": "legacy",
-      "explicitIntent": true,
-      "omitSplitAuthorization": true,
-      "error": "migration_authorization_required"
-    },
-    {
-      "name": "authorization cannot be copied to another attempt",
-      "state": "idle",
-      "observed": "legacy",
-      "explicitIntent": true,
-      "plannerAttempt": "fedcba9876543210fedcba9876543210",
-      "error": "migration_authorization_mismatch"
-    },
-    {
-      "name": "the atomically bound backup is verified before any Owner destination write",
-      "state": "fenced",
-      "observed": "legacy",
-      "expect": "verify-backup"
-    },
-    {
-      "name": "verified backup permits Owner creation",
-      "state": "backed-up",
-      "observed": "legacy",
-      "backupVerified": true,
-      "expect": "create-owner-library"
-    },
-    {
-      "name": "copied Owner must be verified",
-      "state": "owner-copied",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "expect": "verify-owner-library"
-    },
-    {
-      "name": "prepared journal records its exact commit binding without another prompt",
-      "state": "awaiting-confirmation",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": false,
-      "expect": "record-commit-binding"
-    },
-    {
-      "name": "restart resumes the exact authorized attempt without another prompt",
-      "state": "awaiting-confirmation",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "expect": "record-commit-binding"
-    },
-    {
-      "name": "authorization cannot be recorded before preparation finishes",
-      "state": "owner-copied",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "error": "premature_commit_authorization"
-    },
-    {
-      "name": "ready state without the durable exact-attempt binding cannot commit",
-      "state": "ready-to-commit",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": false,
-      "error": "commit_authorization_required"
-    },
-    {
-      "name": "the PIN-authorized exact-attempt binding permits automatic commit",
-      "state": "ready-to-commit",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "expect": "commit-fenced-household"
-    },
-    {
-      "name": "tampered exact-attempt binding cannot commit",
-      "state": "ready-to-commit",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "splitAuthorizationMutation": {
-        "path": "/commitBinding",
-        "value": "0000000000000000000000000000000000000000000000000000000000000000"
-      },
-      "error": "migration_authorization_mismatch"
-    },
-    {
-      "name": "verified Owner without a copied head is rejected",
-      "state": "ready-to-commit",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "commitAuthorized": true,
-      "error": "invalid_copy_head"
-    },
-    {
-      "name": "ready journal without backup evidence is rejected",
-      "state": "ready-to-commit",
-      "observed": "legacy",
-      "backupVerified": false,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "error": "invalid_evidence"
-    },
-    {
-      "name": "unknown commit without durable final authorization is contradictory",
-      "state": "commit-unknown",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": false,
-      "error": "commit_authorization_required"
-    },
-    {
-      "name": "unknown confirmed commit first looks up its attempt",
-      "state": "commit-unknown",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "expect": "lookup-attempt"
-    },
-    {
-      "name": "unknown commit lookup precedes a missing household observation",
-      "state": "commit-unknown",
-      "observed": "legacy",
-      "omitObserved": true,
-      "commitAuthorized": true,
-      "expect": "lookup-attempt"
-    },
-    {
-      "name": "unknown commit lookup precedes a corrupt household observation",
-      "state": "commit-unknown",
-      "observed": "corrupt",
-      "commitAuthorized": true,
-      "expect": "lookup-attempt"
-    },
-    {
-      "name": "attempt lookup is followed by a fresh authenticated read",
-      "state": "commit-unknown",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "attemptLookup": "open",
-      "expect": "read-household"
-    },
-    {
-      "name": "fresh read is requested before interpreting corrupt household state",
-      "state": "commit-unknown",
-      "observed": "corrupt",
-      "commitAuthorized": true,
-      "attemptLookup": "committed",
-      "expect": "read-household"
-    },
-    {
-      "name": "terminal committed lookup cannot agree with fresh corrupt household",
-      "state": "commit-unknown",
-      "observed": "corrupt",
-      "commitAuthorized": true,
-      "attemptLookup": "committed",
-      "householdFresh": true,
-      "error": "terminal_household_mismatch"
-    },
-    {
-      "name": "fresh unchanged open attempt retries only its bound commit",
-      "state": "commit-unknown",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "attemptLookup": "open",
-      "householdFresh": true,
-      "expect": "retry-bound-commit"
-    },
-    {
-      "name": "unknown commit reads before interpreting a changed fence",
-      "state": "commit-unknown",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "commitAuthorized": true,
-      "attemptLookup": "open",
-      "householdFresh": false,
-      "observedFenceMutation": {
-        "path": "/generation",
-        "value": 8
-      },
-      "expect": "read-household"
-    },
-    {
-      "name": "cancel first durably aborts its open attempt",
-      "state": "awaiting-confirmation",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "cancelRequested": true,
-      "attemptAborted": false,
-      "expect": "abort-attempt"
-    },
-    {
-      "name": "cancel performs a fresh authenticated household read after abort",
-      "state": "awaiting-confirmation",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "cancelRequested": true,
-      "attemptAborted": true,
-      "attemptLookup": "aborted",
-      "expect": "read-household"
-    },
-    {
-      "name": "cancel conditionally retires only its unreferenced candidate after fresh read",
-      "state": "awaiting-confirmation",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "cancelRequested": true,
-      "attemptAborted": true,
-      "attemptLookup": "aborted",
-      "householdFresh": true,
-      "expect": "retire-losing-candidate"
-    },
-    {
-      "name": "cancel discards its journal only after fresh read and candidate absence",
-      "state": "awaiting-confirmation",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "candidateRetired": true,
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "cancelRequested": true,
-      "attemptAborted": true,
-      "attemptLookup": "aborted",
-      "householdFresh": true,
-      "expect": "discard-journal"
-    },
-    {
-      "name": "legacy stale candidate waits for committed library verification",
-      "state": "ready-to-commit",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "legacyStaleCandidate": true,
-      "winnerVerified": false,
-      "candidateRetired": false,
-      "expect": "verify-winner"
-    },
-    {
-      "name": "legacy stale candidate is retired only when unreferenced",
-      "state": "ready-to-commit",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "legacyStaleCandidate": true,
-      "winnerVerified": true,
-      "candidateRetired": false,
-      "expect": "retire-losing-candidate"
-    },
-    {
-      "name": "legacy stale-candidate cleanup is idempotent before activation",
-      "state": "cleaning-loser",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "legacyStaleCandidate": true,
-      "winnerVerified": true,
-      "candidateRetired": true,
-      "expect": "activate"
-    },
-    {
-      "name": "legacy superseded evidence still requires a fresh household read",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "0123456789abcdef0123456789abcdef",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "legacyStaleCandidate": true,
-      "directoryMutation": {
-        "path": "/migration/attempt",
-        "value": "fedcba9876543210fedcba9876543210"
-      },
-      "winnerVerified": true,
-      "commitAuthorized": true,
-      "attemptLookup": "superseded",
-      "householdFresh": false,
-      "expect": "read-household"
-    },
-    {
-      "name": "legacy superseded evidence may clean its exact stale candidate after the fresh read",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "0123456789abcdef0123456789abcdef",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "legacyStaleCandidate": true,
-      "directoryMutation": {
-        "path": "/migration/attempt",
-        "value": "fedcba9876543210fedcba9876543210"
-      },
-      "winnerVerified": true,
-      "commitAuthorized": true,
-      "attemptLookup": "superseded",
-      "householdFresh": true,
-      "expect": "retire-losing-candidate"
-    },
-    {
-      "name": "superseded lookup cannot substitute a caller-supplied candidate attempt",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "winnerVerified": true,
-      "commitAuthorized": true,
-      "attemptLookup": "superseded",
-      "householdFresh": true,
-      "error": "terminal_directory_mismatch"
-    },
-    {
-      "name": "superseded lookup cannot name the same attempt as the fresh directory",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "0123456789abcdef0123456789abcdef",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "legacyStaleCandidate": true,
-      "winnerVerified": true,
-      "commitAuthorized": true,
-      "attemptLookup": "superseded",
-      "householdFresh": true,
-      "error": "terminal_directory_mismatch"
-    },
-    {
-      "name": "committed lookup cannot name a different fresh directory winner",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "winnerVerified": true,
-      "commitAuthorized": true,
-      "attemptLookup": "committed",
-      "householdFresh": true,
-      "error": "terminal_directory_mismatch"
-    },
-    {
-      "name": "committed lookup cannot substitute the directory attempt for the authorized attempt",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-      "directoryMutation": {
-        "path": "/migration/attempt",
-        "value": "fedcba9876543210fedcba9876543210"
-      },
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "winnerVerified": false,
-      "commitAuthorized": true,
-      "attemptLookup": "committed",
-      "householdFresh": true,
-      "error": "terminal_directory_mismatch"
-    },
-    {
-      "name": "own committed candidate is verified after lookup and fresh read",
-      "state": "commit-unknown",
-      "observed": "committed",
-      "candidateAttempt": "0123456789abcdef0123456789abcdef",
-      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "winnerVerified": false,
-      "commitAuthorized": true,
-      "attemptLookup": "committed",
-      "householdFresh": true,
-      "expect": "verify-winner"
-    },
-    {
-      "name": "own verified committed candidate activates",
-      "state": "adopting",
-      "observed": "committed",
-      "candidateAttempt": "0123456789abcdef0123456789abcdef",
-      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-      "ownerVerified": true,
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "winnerVerified": true,
-      "expect": "activate"
-    },
-    {
-      "name": "matching Owner key without matching immutable evidence is rejected",
-      "state": "ready-to-commit",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-      "legacyStaleCandidate": true,
-      "winnerVerified": true,
-      "error": "winner_evidence_mismatch"
-    },
-    {
-      "name": "cleanup can never target committed Owner",
-      "state": "cleaning-loser",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-      "legacyStaleCandidate": true,
-      "winnerVerified": true,
-      "expect": "cleanup_targets_winner"
-    },
-    {
-      "name": "cleanup can never target any other live profile",
-      "state": "cleaning-loser",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
-      "legacyStaleCandidate": true,
-      "winnerVerified": true,
-      "expect": "cleanup_targets_winner"
-    },
-    {
-      "name": "cleanup can never target a live adult profile",
-      "state": "cleaning-loser",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
-      "legacyStaleCandidate": true,
-      "directoryMutation": {
-        "path": "/profiles/9999aaaabbbbccccddddeeeeffff0000/role",
-        "value": "adult"
-      },
-      "winnerVerified": true,
-      "expect": "cleanup_targets_winner"
-    },
-    {
-      "name": "retired evidence cannot claim a committed key was deleted",
-      "state": "cleaning-loser",
-      "observed": "committed",
-      "candidateAttempt": "fedcba9876543210fedcba9876543210",
-      "candidateKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-      "legacyStaleCandidate": true,
-      "candidateRetired": true,
-      "winnerVerified": true,
-      "error": "committed_key_retired"
-    },
-    {
-      "name": "winner is verified before activation",
-      "state": "adopting",
-      "observed": "committed",
-      "winnerVerified": false,
-      "expect": "verify-winner"
-    },
-    {
-      "name": "committed observation requires a valid stored directory",
-      "state": "adopting",
-      "observed": "committed",
-      "omitDirectory": true,
-      "winnerVerified": true,
-      "error": "committed_directory_missing"
-    },
-    {
-      "name": "changed legacy fence restarts after candidate cleanup",
-      "state": "owner-copied",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "observedFenceMutation": {
-        "path": "/generation",
-        "value": 8
-      },
-      "expect": "retire-losing-candidate"
-    },
-    {
-      "name": "malformed source fence is rejected",
-      "state": "fenced",
-      "observed": "legacy",
-      "fenceMutation": {
-        "path": "/head",
-        "value": "bad"
-      },
-      "error": "invalid_migration_fence"
-    },
-    {
-      "name": "missing observed fence is rejected",
-      "state": "fenced",
-      "observed": "legacy",
-      "omitObservedFence": true,
-      "error": "invalid_migration_fence"
-    },
-    {
-      "name": "malformed observed fence is rejected",
-      "state": "fenced",
-      "observed": "legacy",
-      "observedFenceMutation": {
-        "path": "/head",
-        "value": "bad"
-      },
-      "error": "invalid_migration_fence"
-    },
-    {
-      "name": "malformed candidate key is rejected",
-      "state": "owner-copied",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "bad",
-      "error": "invalid_library_key"
-    },
-    {
-      "name": "noncanonical candidate key is rejected",
-      "state": "owner-copied",
-      "observed": "legacy",
-      "backupVerified": true,
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ",
-      "error": "invalid_library_key"
-    },
-    {
-      "name": "null candidate key is rejected rather than treated as absent",
-      "state": "fenced",
-      "observed": "legacy",
-      "candidateKey": null,
-      "error": "invalid_library_key"
-    },
-    {
-      "name": "null candidate attempt is rejected rather than treated as absent",
-      "state": "fenced",
-      "observed": "legacy",
-      "candidateAttempt": null,
-      "error": "invalid_candidate_attempt"
-    },
-    {
-      "name": "null candidate head is rejected rather than treated as absent",
-      "state": "fenced",
-      "observed": "legacy",
-      "candidateHead": null,
-      "error": "invalid_copy_head"
-    },
-    {
-      "name": "null directory is forbidden for a legacy observation",
-      "state": "fenced",
-      "observed": "legacy",
-      "directory": null,
-      "error": "invalid_evidence"
-    },
-    {
-      "name": "null committed directory is malformed rather than missing",
-      "state": "adopting",
-      "observed": "committed",
-      "directory": null,
-      "omitDirectory": true,
-      "winnerVerified": true,
-      "error": "invalid_profiles"
-    },
-    {
-      "name": "non-boolean evidence is rejected",
-      "state": "backed-up",
-      "observed": "legacy",
-      "backupVerified": "yes",
-      "error": "invalid_evidence"
-    },
-    {
-      "name": "retired evidence requires a candidate",
-      "state": "fenced",
-      "observed": "legacy",
-      "candidateRetired": true,
-      "error": "invalid_evidence"
-    },
-    {
-      "name": "legacy adopting phase is rejected as a contradiction",
-      "state": "adopting",
-      "observed": "legacy",
-      "error": "invalid_state"
-    },
-    {
-      "name": "missing state is rejected",
-      "state": "fenced",
-      "omitState": true,
-      "observed": "legacy",
-      "error": "invalid_state"
-    },
-    {
-      "name": "non-string state is rejected",
-      "state": 7,
-      "observed": "legacy",
-      "error": "invalid_state"
-    },
-    {
-      "name": "missing observation is rejected",
-      "state": "fenced",
-      "observed": "legacy",
-      "omitObserved": true,
-      "error": "invalid_observation"
-    },
-    {
-      "name": "non-string observation is rejected",
-      "state": "fenced",
-      "observed": 7,
-      "error": "invalid_observation"
-    },
-    {
-      "name": "verified backup alone cannot start recovery",
-      "state": "restore-required",
-      "observed": "corrupt",
-      "backupVerified": true,
-      "expect": "recovery-blocked"
-    },
-    {
-      "name": "separate owner authorized recovery opens a fresh restore attempt",
-      "state": "restore-required",
-      "observed": "corrupt",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "expect": "open-recovery-attempt"
-    },
-    {
-      "name": "split commit authorization cannot substitute for recovery intent",
-      "state": "restore-required",
-      "observed": "corrupt",
-      "backupVerified": true,
-      "commitAuthorized": true,
-      "error": "premature_commit_authorization"
-    },
-    {
-      "name": "backup never restores over committed winner",
-      "state": "restore-required",
-      "observed": "committed",
-      "backupVerified": true,
-      "winnerVerified": true,
-      "expect": "activate"
-    },
-    {
-      "name": "intact legacy household without recovery intent stays recovery-blocked",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "expect": "recovery-blocked"
-    },
-    {
-      "name": "intact legacy household without a verified backup stays recovery-blocked",
-      "state": "restore-required",
-      "observed": "legacy",
-      "recoveryIntent": true,
-      "expect": "recovery-blocked"
-    },
-    {
-      "name": "intact legacy household at the frozen source aborts the recovery attempt instead of restoring",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "expect": "abort-attempt"
-    },
-    {
-      "name": "an open recovery lookup still aborts before any fresh read",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "attemptLookup": "open",
-      "expect": "abort-attempt"
-    },
-    {
-      "name": "a legacy fence that differs from the frozen source is never restored over",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "observedFenceMutation": {
-        "path": "/generation",
-        "value": 8
-      },
-      "error": "recovery_source_mismatch"
-    },
-    {
-      "name": "a legacy fence mismatch without recovery intent is still recovery-blocked",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "observedFenceMutation": {
-        "path": "/generation",
-        "value": 8
-      },
-      "expect": "recovery-blocked"
-    },
-    {
-      "name": "aborted recovery attempt requires a fresh household read",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "attemptLookup": "aborted",
-      "expect": "read-household"
-    },
-    {
-      "name": "aborted recovery attempt discards its journal after the fresh read",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "attemptLookup": "aborted",
-      "householdFresh": true,
-      "expect": "discard-journal"
-    },
-    {
-      "name": "a household changed after the lock was released does not block discarding the aborted journal",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "attemptLookup": "aborted",
-      "householdFresh": true,
-      "observedFenceMutation": {
-        "path": "/generation",
-        "value": 8
-      },
-      "expect": "discard-journal"
-    },
-    {
-      "name": "a committed lookup cannot agree with an intact legacy household",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "attemptLookup": "committed",
-      "householdFresh": true,
-      "error": "terminal_household_mismatch"
-    },
-    {
-      "name": "intact legacy recovery still requires the observed fence",
-      "state": "restore-required",
-      "observed": "legacy",
-      "backupVerified": true,
-      "recoveryIntent": true,
-      "omitObservedFence": true,
-      "error": "invalid_migration_fence"
-    }
-  ],
-  "profileCapabilityContract": {
-    "states": [
-      "off",
-      "prepare",
-      "runtime"
-    ],
-    "scope": "per-household",
-    "migrationRequestWire": 5,
-    "runtimeHouseholdWire": 5,
-    "runtimeProfileWire": 4,
-    "offMigrationStatus": 404,
-    "oldRuntimeStatus": 426,
-    "runtimeDerivedFromStoredDirectory": true,
-    "migrationTransportDirectoryIndependent": true,
-    "newerMinimumPrecedesMigration": true,
-    "operatorFlipAfterCommit": false,
-    "cases": [
-      {
-        "name": "off keeps an authenticated wire-4 Owner household usable",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "ordinary",
-          "wire": 4,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "off",
-          "effect": "serve-legacy"
-        }
-      },
-      {
-        "name": "prepare keeps an authenticated wire-4 Owner household usable",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "ordinary",
-          "wire": 4,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "prepare",
-          "effect": "serve-legacy"
-        }
-      },
-      {
-        "name": "a wire-5 preparation client still reads legacy until commit",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "prepare",
-          "effect": "serve-legacy"
-        }
-      },
-      {
-        "name": "off hides every migration route before wire and authentication distinctions",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "migration",
-          "wire": 1,
-          "authenticated": false
-        },
-        "expect": {
-          "state": "off",
-          "effect": "not-found"
-        }
-      },
-      {
-        "name": "prepare exposes only exact wire-5 migration storage",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "migration",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "prepare",
-          "effect": "migration-storage"
-        }
-      },
-      {
-        "name": "prepare rejects a lower migration wire without storage effects",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "migration",
-          "wire": 4,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "prepare",
-          "effect": "migration-wire-required",
-          "requiredWire": 5
-        }
-      },
-      {
-        "name": "prepare rejects a higher migration wire without storage effects",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "migration",
-          "wire": 6,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "prepare",
-          "effect": "migration-wire-required",
-          "requiredWire": 5
-        }
-      },
-      {
-        "name": "prepare migration storage requires household authentication",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "migration",
-          "wire": 5,
-          "authenticated": false
-        },
-        "expect": {
-          "state": "prepare",
-          "effect": "authentication-required"
-        }
-      },
-      {
-        "name": "a committed directory enters runtime without another operator flip",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 5,
-          "directory": "valid",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "runtime",
-          "effect": "serve-runtime"
-        }
-      },
-      {
-        "name": "disabling preparation cannot demote a committed household",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "valid",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "runtime",
-          "effect": "serve-runtime"
-        }
-      },
-      {
-        "name": "a committed household retains exact wire-5 migration recovery storage",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "valid",
-          "request": "migration",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "effect": "migration-storage"
-        }
-      },
-      {
-        "name": "committed migration recovery remains available when the directory is missing",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "absent",
-          "request": "migration",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "effect": "migration-storage"
-        }
-      },
-      {
-        "name": "committed migration recovery remains available when the directory is invalid",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "invalid",
-          "request": "migration",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "effect": "migration-storage"
-        }
-      },
-      {
-        "name": "committed migration recovery still requires household authentication",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "invalid",
-          "request": "migration",
-          "wire": 5,
-          "authenticated": false
-        },
-        "expect": {
-          "effect": "authentication-required"
-        }
-      },
-      {
-        "name": "committed migration also rejects a non-exact migration wire",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "valid",
-          "request": "migration",
-          "wire": 6,
-          "authenticated": true
-        },
-        "expect": {
-          "effect": "migration-wire-required",
-          "requiredWire": 5
-        }
-      },
-      {
-        "name": "an old client is gated before it can decode runtime state",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "invalid",
-          "request": "ordinary",
-          "wire": 4,
-          "authenticated": true
-        },
-        "expect": {
-          "effect": "update-required",
-          "requiredWire": 5
-        }
-      },
-      {
-        "name": "a wire-5 client fails closed when the committed directory is missing",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 5,
-          "directory": "absent",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "error": "runtime_directory_required"
-      },
-      {
-        "name": "a wire-5 client fails closed when the committed directory is invalid",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 5,
-          "directory": "invalid",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "error": "runtime_directory_required"
-      },
-      {
-        "name": "a profiles row below wire 5 is an inconsistent partial state",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "valid",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "error": "inconsistent_profiles_state"
-      },
-      {
-        "name": "a newer household minimum remains update-required",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 6,
-          "directory": "valid",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "effect": "update-required",
-          "requiredWire": 6
-        }
-      },
-      {
-        "name": "a newer household minimum gates migration recovery before v1 decoding",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 6,
-          "directory": "invalid",
-          "request": "migration",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "effect": "update-required",
-          "requiredWire": 6
-        }
-      },
-      {
-        "name": "unknown capability enrollment fails closed",
-        "input": {
-          "enrollment": "enabled",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "ordinary",
-          "wire": 4,
-          "authenticated": true
-        },
-        "error": "invalid_profile_capability"
-      }
-    ],
-    "mixedHost": [
-      {
-        "household": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "ordinary",
-          "wire": 4,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "off",
-          "effect": "serve-legacy"
-        }
-      },
-      {
-        "household": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "input": {
-          "enrollment": "prepare",
-          "wireMin": 4,
-          "directory": "absent",
-          "request": "ordinary",
-          "wire": 4,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "prepare",
-          "effect": "serve-legacy"
-        }
-      },
-      {
-        "household": "cccccccccccccccccccccccccccccccc",
-        "input": {
-          "enrollment": "off",
-          "wireMin": 5,
-          "directory": "valid",
-          "request": "ordinary",
-          "wire": 5,
-          "authenticated": true
-        },
-        "expect": {
-          "state": "runtime",
-          "effect": "serve-runtime"
-        }
-      }
-    ]
-  },
-  "migrationDirectoryConstructorInput": {
-    "attempt": "0123456789abcdef0123456789abcdef",
-    "source": {
-      "generation": 7,
-      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    },
-    "backup": {
-      "id": "backup-7",
-      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    },
-    "owner": {
-      "id": "00112233445566778899aabbccddeeff",
-      "display": {
-        "value": {
-          "name": "Cindy",
-          "avatar": "fox",
-          "futureDisplayFact": {
-            "kept": true
-          },
-          "futureNumbers": [
-            1.0,
-            -0.0,
-            1E-7,
-            0.000001,
-            1E+20,
-            1E+21,
-            333333333.33333329,
-            1E+30,
-            4.5,
-            0.002,
-            1E-27
-          ]
-        },
-        "at": [
-          1800000000000,
-          0,
-          "a1b2c3d4e5f60718"
-        ]
-      },
-      "libraryKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
-      "libraryAt": [
-        1800000000000,
-        1,
-        "a1b2c3d4e5f60718"
-      ],
-      "policy": {
-        "value": {
-          "maximumAge": 13,
-          "unknownRatings": "allow",
-          "futurePolicyFact": [
-            "kept"
-          ]
-        },
-        "at": [
-          1800000000000,
-          2,
-          "a1b2c3d4e5f60718"
-        ]
-      },
-      "deletedAt": [
-        1800000000000,
-        3,
-        "a1b2c3d4e5f60718"
-      ]
-    },
-    "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-  },
-  "migrationDirectoryConstructorCases": [
+  "initialDirectoryConstructorCases": [
     {
       "name": "the first stored directory derives every Owner identity binding and preserves extensions",
       "expect": {
@@ -2867,59 +1203,72 @@
       "error": "invalid_directory_constructor"
     }
   ],
-  "denSpecOneShotAuthorizationHead": "bc2536b6fa549fab1978af0a170a2545a9beba90",
-  "migrationAuthorization": {
-    "intent": {
-      "version": 1,
-      "action": "enable-profiles",
-      "attempt": "0123456789abcdef0123456789abcdef",
-      "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
-      "source": {
-        "generation": 7,
-        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
+  "initialDirectoryConstructorInput": {
+    "attempt": "0123456789abcdef0123456789abcdef",
+    "source": {
+      "generation": 7,
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
-    "prepared": {
-      "intent": {
-        "version": 1,
-        "action": "enable-profiles",
-        "attempt": "0123456789abcdef0123456789abcdef",
-        "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
-        "source": {
-          "generation": 7,
-          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        }
-      },
-      "intentDigest": "8dc337fda7f596b065a0b94f119ac361316a748d02a001871299ca0949e96c3a",
-      "commitBinding": null
+    "backup": {
+      "id": "backup-7",
+      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
-    "evidence": {
-      "attempt": "0123456789abcdef0123456789abcdef",
-      "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
-      "fence": {
-        "generation": 7,
-        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    "owner": {
+      "id": "00112233445566778899aabbccddeeff",
+      "display": {
+        "value": {
+          "name": "Cindy",
+          "avatar": "fox",
+          "futureDisplayFact": {
+            "kept": true
+          },
+          "futureNumbers": [
+            1.0,
+            -0.0,
+            1E-7,
+            0.000001,
+            1E+20,
+            1E+21,
+            333333333.33333329,
+            1E+30,
+            4.5,
+            0.002,
+            1E-27
+          ]
+        },
+        "at": [
+          1800000000000,
+          0,
+          "a1b2c3d4e5f60718"
+        ]
       },
-      "backupDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "candidateKey": "REREREREREREREREREREREREREREREREREREREREREQ=",
-      "candidateHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "stagedDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "wireMin": 5
+      "libraryKey": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "libraryAt": [
+        1800000000000,
+        1,
+        "a1b2c3d4e5f60718"
+      ],
+      "policy": {
+        "value": {
+          "maximumAge": 13,
+          "unknownRatings": "allow",
+          "futurePolicyFact": [
+            "kept"
+          ]
+        },
+        "at": [
+          1800000000000,
+          2,
+          "a1b2c3d4e5f60718"
+        ]
+      },
+      "deletedAt": [
+        1800000000000,
+        3,
+        "a1b2c3d4e5f60718"
+      ]
     },
-    "bound": {
-      "intent": {
-        "version": 1,
-        "action": "enable-profiles",
-        "attempt": "0123456789abcdef0123456789abcdef",
-        "householdId": "5e1ab5db12f9b30e640e3ee80fb3e072",
-        "source": {
-          "generation": 7,
-          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        }
-      },
-      "intentDigest": "8dc337fda7f596b065a0b94f119ac361316a748d02a001871299ca0949e96c3a",
-      "commitBinding": "e7de29e9391ed9e7ea519ee437a1afe72ec4956bd852f474c78d743312ef867b"
-    }
+    "ownerHead": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   },
-  "denSpecExclusiveMigrationLockHead": "1bae5f0aa1baf37adae468568385c0f365b50eb4"
+  "denSpecInitialDirectoryConstructorHead": "bb7a3e44f5dc72523b7bc4faf1a724d3e0e7004d"
 }

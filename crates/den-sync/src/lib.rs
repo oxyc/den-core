@@ -33,20 +33,12 @@ pub use events::commands;
 pub use preferences::subtitle_v1 as preferences_subtitle_v1;
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
-    create_next as profiles_create_next, household_audit as profile_household_audit,
-    household_write as profile_household_write, materialize as profiles_materialize,
-    migration_authorization as profiles_migration_authorization,
-    migration_authorization_fingerprint as profiles_migration_authorization_fingerprint,
-    migration_construct_directory as profiles_construct_directory,
-    migration_construct_directory as profiles_migration_construct_directory,
-    migration_digest as profiles_migration_digest,
-    migration_materialize_plaintext as profiles_migration_materialize_plaintext,
-    migration_next as profiles_migration_next,
-    migration_partition_rows as profiles_migration_partition_rows,
-    partition_preferences as profiles_partition_preferences, policy_relation,
-    profile_capability as profiles_capability, profiles_merge, profiles_validate,
-    reset_next as profiles_reset_next, seed_preferences as profiles_seed_preferences,
-    snapshot_digest as profiles_snapshot_digest, validate_input as profiles_validate_input,
+    construct_directory as profiles_construct_directory, create_next as profiles_create_next,
+    household_audit as profile_household_audit, household_write as profile_household_write,
+    materialize as profiles_materialize, partition_preferences as profiles_partition_preferences,
+    policy_relation, profiles_merge, profiles_validate, reset_next as profiles_reset_next,
+    seed_preferences as profiles_seed_preferences, snapshot_digest as profiles_snapshot_digest,
+    validate_input as profiles_validate_input,
 };
 pub use series::{
     aired_episodes, continue_entry, continue_target, episode_after, is_aired, series_state,
@@ -221,61 +213,27 @@ enum Request {
     ProfilesCreateNext {
         input: Value,
     },
-    /// Profiles v1: choose the next initial-split effect from validated durable observations.
-    #[cfg(feature = "profile-admin")]
-    ProfilesMigrationNext {
-        input: Value,
-    },
-    /// Profiles v1: construct one exact-attempt split authorization or bind it to verified commit evidence.
-    #[cfg(feature = "profile-admin")]
-    ProfilesMigrationAuthorization {
-        input: Value,
-    },
-    /// Profiles v1: calculate one canonical migration evidence digest without storage or network effects.
-    #[cfg(feature = "profile-admin")]
-    ProfilesMigrationDigest {
-        kind: String,
-        input: Value,
-    },
-    /// Profiles v1: construct and stored-validate the first Owner-only directory.
-    #[cfg(feature = "profile-admin")]
-    ProfilesMigrationConstructDirectory {
-        input: Value,
-    },
-    /// Profiles v1 §6.2: `profiles_migration_construct_directory` under the name that outlives the split.
+
+    /// Profiles v1: construct and stored-validate the initial Owner-only directory.
     ProfilesConstructDirectory {
         input: Value,
     },
-    /// Profiles v1 §1.2: the `source` and `owner` digests of `profiles_migration_digest`, under the name that
-    /// outlives the split.
+    /// Profiles v1: canonical `source` and `owner` snapshot digests.
     ProfilesSnapshotDigest {
         kind: String,
         input: Value,
     },
-    /// Profiles v1: validate a materialized projection and return its canonical seal-ready bytes.
-    #[cfg(feature = "profile-admin")]
-    ProfilesMigrationMaterializePlaintext {
-        input: Value,
-    },
-    /// Profiles v1: reproduce the provider's non-secret backup authorization representation.
-    #[cfg(feature = "profile-admin")]
-    ProfilesMigrationAuthorizationFingerprint {
-        input: Value,
-    },
-    /// Profiles v1: resolve one household's off/prepare/derived-runtime capability mode.
-    ProfilesCapability {
-        input: Value,
-    },
+
     /// Profiles v1: choose the next compound reset/revocation effect from validated move observations.
     #[cfg(feature = "profile-admin")]
     ProfilesResetNext {
         input: Value,
     },
-    /// Profiles v1: partition the legacy `set:prefs.values` object for household and Owner destinations.
+    /// Profiles v1: partition preferences for supported browser-local household conversion.
     ProfilesPartitionPreferences {
         values: Value,
     },
-    /// Profiles v1 §6.3: the `set:prefs` values a profile library is given from an older household's.
+    /// Profiles v1 §6.2: the `set:prefs` values a profile library is given from an older household's.
     ProfilesSeedPreferences {
         input: Value,
     },
@@ -287,11 +245,11 @@ enum Request {
         #[serde(default)]
         choice: Option<Value>,
     },
-    /// Profiles v1 §8.2: whether one row (`{name[, values]}`) may be written to a profile-aware household.
+    /// Profiles v1 §8: whether one row (`{name[, values]}`) may be written to a profile-aware household.
     ProfileHouseholdWrite {
         row: Value,
     },
-    /// Profiles v1 §8.2: the same rule over stored household rows, answering which to remove and rewrite.
+    /// Profiles v1 §8: the same rule over stored household rows, answering which to remove and rewrite.
     ProfileHouseholdAudit {
         rows: Value,
     },
@@ -643,14 +601,6 @@ struct PendingTargetsRequest<'a> {
     now: i64,
 }
 
-/// Profiles v1: account every authenticated legacy row into household/Owner migration material.
-#[cfg(feature = "profile-admin")]
-#[derive(Deserialize)]
-struct PartitionRequest<'a> {
-    #[serde(borrow)]
-    input: &'a serde_json::value::RawValue,
-}
-
 /// The answer, enveloped, of an op Den Web sends a whole library to, when `input` names one, else `None`. They are
 /// read apart from `Request` for the reason `ProjectionRequest` is: each document or row stays a slice of the request
 /// until it is used. Their answers are written straight from what they hold, not built as `Value`s first.
@@ -675,7 +625,7 @@ fn library_op(input: &str) -> Option<String> {
     fn read<'a, T: Deserialize<'a>>(input: &'a str) -> Result<T, String> {
         serde_json::from_str(input).map_err(|_| "invalid_request".to_string())
     }
-    const OPS: [&str; 2] = ["pending_targets_v4", "profiles_migration_partition_rows"];
+    const OPS: [&str; 1] = ["pending_targets_v4"];
     if bounded(input).is_err() || !OPS.iter().any(|op| input.contains(op)) {
         return None;
     }
@@ -691,10 +641,6 @@ fn library_op(input: &str) -> Option<String> {
                 r.now,
             )
         })),
-        #[cfg(feature = "profile-admin")]
-        "profiles_migration_partition_rows" => answer(
-            read(input).and_then(|r: PartitionRequest| profiles::migration_partition(r.input)),
-        ),
         _ => return None,
     })
 }
@@ -1122,34 +1068,10 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ProfilesMaterialize { document } => profiles::materialize(&document),
         #[cfg(feature = "profile-admin")]
         Request::ProfilesCreateNext { input } => profiles::create_next(&input),
-        #[cfg(feature = "profile-admin")]
-        Request::ProfilesMigrationNext { input } => profiles::migration_next(&input),
-        #[cfg(feature = "profile-admin")]
-        Request::ProfilesMigrationAuthorization { input } => {
-            profiles::migration_authorization(&input)
-        }
-        #[cfg(feature = "profile-admin")]
-        Request::ProfilesMigrationDigest { kind, input } => {
-            profiles::migration_digest(&kind, &input)
-        }
-        #[cfg(feature = "profile-admin")]
-        Request::ProfilesMigrationConstructDirectory { input } => {
-            profiles::migration_construct_directory(&input)
-        }
-        Request::ProfilesConstructDirectory { input } => {
-            profiles::migration_construct_directory(&input)
-        }
+
+        Request::ProfilesConstructDirectory { input } => profiles::construct_directory(&input),
         Request::ProfilesSnapshotDigest { kind, input } => profiles::snapshot_digest(&kind, &input),
-        #[cfg(feature = "profile-admin")]
-        Request::ProfilesMigrationMaterializePlaintext { input } => {
-            profiles::migration_materialize_plaintext(&input)
-        }
-        #[cfg(feature = "profile-admin")]
-        Request::ProfilesMigrationAuthorizationFingerprint { input } => {
-            profiles::migration_authorization_fingerprint(&input)
-        }
-        Request::ProfilesCapability { input } => profiles::profile_capability(&input),
-        #[cfg(feature = "profile-admin")]
+
         Request::ProfilesResetNext { input } => profiles::reset_next(&input),
         Request::ProfilesPartitionPreferences { values } => {
             profiles::partition_preferences(&values)
@@ -1426,8 +1348,6 @@ mod tests {
             r#"{"op":"profiles_materialize","document":{}}"#,
             r#"{"op":"profiles_create_next","input":{}}"#,
             r#"{"op":"profiles_reset_next","input":{}}"#,
-            r#"{"op":"profiles_migration_next","input":{}}"#,
-            r#"{"op":"profiles_migration_partition_rows","input":{}}"#,
         ] {
             assert_eq!(evaluate_core(request), invalid, "{request}");
         }
