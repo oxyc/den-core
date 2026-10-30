@@ -228,7 +228,7 @@ fn fraction(value: &Value) -> bool {
         .is_some_and(|v| v.is_finite() && (0.0..=1.0).contains(&v))
 }
 
-/// v2's progress value `{value, at, viewing, seconds?}` with v3 §3's bounds (a film's `resume` too).
+/// v2's progress value `{value, at, viewing, seconds?, playing?}` with v3 §3's bounds (a film's `resume` too).
 pub fn progress_ok(value: &Value) -> bool {
     let Some(p) = value.as_object() else {
         return false;
@@ -241,6 +241,7 @@ pub fn progress_ok(value: &Value) -> bool {
                 || s.as_f64()
                     .is_some_and(|s| s.is_finite() && (0.0..=1e7).contains(&s))
         })
+        && p.get("playing").is_none_or(|playing| playing.is_boolean())
 }
 
 fn stamp_or_null(value: &Value) -> bool {
