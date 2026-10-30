@@ -91,6 +91,7 @@ jobs:
         with:
           toolchain: 1.95.0
           targets: aarch64-apple-tvos,aarch64-apple-tvos-sim,aarch64-apple-ios,aarch64-apple-ios-sim
+          components: llvm-tools-preview
       # Every Apple target's release build, across runs. Keyed on the toolchain and Cargo.lock by default.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:

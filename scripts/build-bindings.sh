@@ -71,6 +71,12 @@ if want native; then
     # Apple targets and CI runs. Keeping this under target/ lets rust-cache preserve the five expensive build-std
     # trees; the old random scratch path forced every run to rebuild them from nothing.
     cargo_target="$root/target/native-cross"
+    rust_host="$(rustc -vV | awk '$1 == "host:" { print $2 }')"
+    llvm_objcopy="${LLVM_OBJCOPY:-$(rustc --print sysroot)/lib/rustlib/$rust_host/bin/llvm-objcopy}"
+    [[ -x "$llvm_objcopy" ]] || {
+        echo "missing llvm-objcopy; install rustup component llvm-tools-preview" >&2
+        exit 1
+    }
     for target in "${targets[@]}"; do
         # The wrapper sets the deployment environment only for rustc invocations carrying this target. Host-side
         # proc macros therefore remain loadable on the packaging Mac. Rebuild the pinned standard library too:
@@ -82,7 +88,22 @@ if want native; then
                 -p den-core-native --lib --target "$target"
         mkdir -p "$scratch/$target"
         cp "$cargo_target/$target/release/libden_core_native.a" "$scratch/$target/"
+        # Rust embeds LLVM bitcode in Apple release objects so the final linker can perform LTO. The vendored
+        # static archive is already the distribution boundary and does not need that compiler-only payload.
+        # Xcode's strip silently stopped removing LLVM 22 bitcode, growing each slice from ~9 MiB to ~33 MiB;
+        # use the matching Rust toolchain's objcopy before Xcode strips the remaining debug symbols.
+        "$llvm_objcopy" --remove-section '__LLVM,__bitcode' --remove-section '__LLVM,__cmdline' \
+            "$scratch/$target/libden_core_native.a"
         xcrun strip -S "$scratch/$target/libden_core_native.a"
+        if xcrun otool -l "$scratch/$target/libden_core_native.a" | grep -q 'sectname __bitcode'; then
+            echo "embedded LLVM bitcode survived packaging for $target" >&2
+            exit 1
+        fi
+        archive_bytes="$(wc -c < "$scratch/$target/libden_core_native.a" | tr -d ' ')"
+        [[ "$archive_bytes" -le 16000000 ]] || {
+            echo "native archive size regression for $target: $archive_bytes bytes" >&2
+            exit 1
+        }
     done
     assert_build_version() {
         local archive="$1" platform="$2" minos="$3" members builds bad
