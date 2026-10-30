@@ -6,6 +6,8 @@ const PREFERRED: &str = "den.preferredSubtitleLanguage";
 const EXPLICIT: &str = "den.hasExplicitSubtitlePreference";
 const INVALID_PREFERENCES: &str = "invalid_subtitle_preference";
 const INVALID_CHOICE: &str = "invalid_subtitle_choice";
+const INTERFACE_LANGUAGE: &str = "den.interfaceLanguage";
+const INVALID_INTERFACE_LANGUAGE: &str = "invalid_interface_language";
 
 /// Read or encode the atomic three-state subtitle preference.
 pub fn subtitle_v1(
@@ -20,6 +22,60 @@ pub fn subtitle_v1(
         "write" => Err(INVALID_CHOICE.into()),
         _ => Err("invalid_preferences_operation".into()),
     }
+}
+
+/// Read or encode the synced interface language without rewriting unknown future languages.
+pub fn interface_language_v1(
+    operation: &str,
+    values: Option<&Value>,
+    language: Option<&str>,
+) -> Result<Value, String> {
+    match operation {
+        "read" if language.is_none() => {
+            read_interface_language(values.ok_or(INVALID_INTERFACE_LANGUAGE)?)
+        }
+        "write" if values.is_none() => {
+            write_interface_language(language.ok_or(INVALID_INTERFACE_LANGUAGE)?)
+        }
+        "read" | "write" => Err(INVALID_INTERFACE_LANGUAGE.into()),
+        _ => Err("invalid_preferences_operation".into()),
+    }
+}
+
+fn read_interface_language(values: &Value) -> Result<Value, String> {
+    let values = values.as_object().ok_or(INVALID_INTERFACE_LANGUAGE)?;
+    if values.len() > 4096 {
+        return Err(INVALID_INTERFACE_LANGUAGE.into());
+    }
+    let Some(stored) = values.get(INTERFACE_LANGUAGE) else {
+        return Ok(
+            json!({"version":1,"selection":{"language":"en","explicit":false,"supported":true}}),
+        );
+    };
+    if stored.is_null() {
+        return Ok(
+            json!({"version":1,"selection":{"language":"en","explicit":true,"supported":true}}),
+        );
+    }
+    let code = exact_string(stored).ok_or(INVALID_INTERFACE_LANGUAGE)?;
+    if !valid_language(code) {
+        return Err(INVALID_INTERFACE_LANGUAGE.into());
+    }
+    if matches!(code, "en" | "es" | "sv") {
+        return Ok(
+            json!({"version":1,"selection":{"language":code,"explicit":true,"supported":true}}),
+        );
+    }
+    Ok(
+        json!({"version":1,"selection":{"language":"en","explicit":true,"supported":false,"storedLanguage":code}}),
+    )
+}
+
+fn write_interface_language(language: &str) -> Result<Value, String> {
+    if !matches!(language, "en" | "es" | "sv") {
+        return Err(INVALID_INTERFACE_LANGUAGE.into());
+    }
+    Ok(json!({"version":1,"changes":{INTERFACE_LANGUAGE:{"string":language}}}))
 }
 
 fn read(values: &Value) -> Result<Value, String> {
@@ -107,5 +163,18 @@ mod tests {
         let answer = subtitle_v1("write", None, Some(&json!({"mode":"off"}))).unwrap();
         assert_eq!(answer["changes"].as_object().unwrap().len(), 2);
         assert!(answer["changes"].get("future.preference").is_none());
+    }
+
+    #[test]
+    fn unknown_interface_languages_are_preserved_by_readers() {
+        let answer = interface_language_v1(
+            "read",
+            Some(&json!({INTERFACE_LANGUAGE:{"string":"fr"}})),
+            None,
+        )
+        .unwrap();
+        assert_eq!(answer["selection"]["language"], "en");
+        assert_eq!(answer["selection"]["storedLanguage"], "fr");
+        assert_eq!(answer.get("changes"), None);
     }
 }

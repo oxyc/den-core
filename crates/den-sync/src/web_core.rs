@@ -299,6 +299,13 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
             preferences::subtitle_v1(&operation, values.as_ref(), choice.as_ref())
         }
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        "preferences_interface_language_v1" => {
+            let operation = text(&mut fields, "operation")?;
+            let values = optional::<Value>(&mut fields, "values")?;
+            let language = optional::<String>(&mut fields, "language")?;
+            preferences::interface_language_v1(&operation, values.as_ref(), language.as_deref())
+        }
+        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profile_household_write" => profiles::household_write(&value(&mut fields, "row")?),
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profile_household_audit" => profiles::household_audit(&value(&mut fields, "rows")?),
