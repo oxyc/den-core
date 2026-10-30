@@ -306,6 +306,8 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
             preferences::interface_language_v1(&operation, values.as_ref(), language.as_deref())
         }
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        "heading_v1" => headings::normalize_v1(&value(&mut fields, "heading")?),
+        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profile_household_write" => profiles::household_write(&value(&mut fields, "row")?),
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "profile_household_audit" => profiles::household_audit(&value(&mut fields, "rows")?),

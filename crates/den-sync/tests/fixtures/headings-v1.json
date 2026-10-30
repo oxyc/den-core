@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "validCases": [
+    {
+      "name": "fixed product heading",
+      "value": { "id": "den.shelf.continue_watching", "args": {}, "fallback": "Continue Watching" },
+      "normalized": { "id": "den.shelf.continue_watching", "args": {}, "fallback": "Continue Watching" }
+    },
+    {
+      "name": "content argument stays verbatim",
+      "value": { "id": "den.shelf.because_watched", "args": { "title": "Dune: Part Two / Duna 🏜️" }, "fallback": "Because you watched Dune: Part Two / Duna 🏜️" },
+      "normalized": { "id": "den.shelf.because_watched", "args": { "title": "Dune: Part Two / Duna 🏜️" }, "fallback": "Because you watched Dune: Part Two / Duna 🏜️" }
+    },
+    {
+      "name": "integer argument",
+      "value": { "id": "den.shelf.decade", "args": { "decade": 1980, "media": "tv" }, "fallback": "1980s Series" },
+      "normalized": { "id": "den.shelf.decade", "args": { "decade": 1980, "media": "tv" }, "fallback": "1980s Series" }
+    },
+    {
+      "name": "external heading is explicit",
+      "value": { "id": "den.verbatim", "args": { "value": "Watchlist" }, "fallback": "Watchlist" },
+      "normalized": { "id": "den.verbatim", "args": { "value": "Watchlist" }, "fallback": "Watchlist" }
+    },
+    {
+      "name": "unknown future id is preserved",
+      "value": { "id": "den.future.row", "args": { "thing": "keep" }, "fallback": "Future row" },
+      "normalized": { "id": "den.future.row", "args": { "thing": "keep" }, "fallback": "Future row" }
+    },
+    {
+      "name": "legacy string becomes fallback only",
+      "value": "Because you watched Dune",
+      "normalized": { "id": "den.legacy", "args": {}, "fallback": "Because you watched Dune" }
+    }
+  ],
+  "invalidCases": [
+    { "name": "empty legacy string", "value": "" },
+    { "name": "missing args", "value": { "id": "den.shelf.watchlist", "fallback": "Watchlist" } },
+    { "name": "extra field", "value": { "id": "den.shelf.watchlist", "args": {}, "fallback": "Watchlist", "locale": "sv" } },
+    { "name": "localized text is not an id", "value": { "id": "Continue Watching", "args": {}, "fallback": "Continue Watching" } },
+    { "name": "empty fallback", "value": { "id": "den.shelf.watchlist", "args": {}, "fallback": "" } },
+    { "name": "boolean argument", "value": { "id": "den.shelf.media", "args": { "series": true }, "fallback": "Series" } },
+    { "name": "fraction argument", "value": { "id": "den.shelf.score", "args": { "score": 7.5 }, "fallback": "Rated 7.5" } },
+    { "name": "unsafe integer", "value": { "id": "den.shelf.count", "args": { "count": 9007199254740992 }, "fallback": "Many" } },
+    { "name": "invalid argument name", "value": { "id": "den.shelf.person", "args": { "Person Name": "Ada" }, "fallback": "Ada" } }
+  ]
+}
