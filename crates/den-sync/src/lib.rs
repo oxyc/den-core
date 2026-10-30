@@ -6,6 +6,7 @@ mod delivery;
 mod downloads;
 mod episodes;
 mod events;
+mod headings;
 mod library_v4;
 mod preferences;
 mod profiles;
@@ -30,6 +31,7 @@ pub use downloads::{
 };
 pub use episodes::episode_mark;
 pub use events::commands;
+pub use headings::{normalize_v1 as heading_v1, Heading, HeadingArgument};
 pub use preferences::{
     interface_language_v1 as preferences_interface_language_v1,
     subtitle_v1 as preferences_subtitle_v1,
@@ -255,6 +257,10 @@ enum Request {
         values: Option<Value>,
         #[serde(default)]
         language: Option<String>,
+    },
+    /// Headings v1: validate a semantic heading or safely normalize a legacy string.
+    HeadingV1 {
+        heading: Value,
     },
     /// Profiles v1 §8: whether one row (`{name[, values]}`) may be written to a profile-aware household.
     ProfileHouseholdWrite {
@@ -1129,6 +1135,7 @@ fn run(request: Request) -> Result<Value, String> {
             values,
             language,
         } => preferences::interface_language_v1(&operation, values.as_ref(), language.as_deref()),
+        Request::HeadingV1 { heading } => headings::normalize_v1(&heading),
         Request::ProfileHouseholdWrite { row } => profiles::household_write(&row),
         Request::ProfileHouseholdAudit { rows } => profiles::household_audit(&rows),
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
