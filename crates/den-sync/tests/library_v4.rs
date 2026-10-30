@@ -737,13 +737,13 @@ fn write_cases() -> Vec<Case> {
             "a first progress write creates the season document",
             "§8 Playback",
             write(
-                json!({"kind": "progress", "episode": [1, 1], "value": 0.5, "seconds": 600, "at": st(1000)}),
+                json!({"kind": "progress", "episode": [1, 1], "value": 0.5, "seconds": 600, "playing": true, "at": st(1000)}),
                 tv(),
                 Value::Null,
                 json!([]),
             ),
             docs(json!([ep(
-                json!({"1": register(json!({"progress": {"value": 0.5, "at": st(1000), "viewing": 0, "seconds": 600}}))})
+                json!({"1": register(json!({"progress": {"value": 0.5, "at": st(1000), "viewing": 0, "seconds": 600, "playing": true}}))})
             )])),
         ),
         case(

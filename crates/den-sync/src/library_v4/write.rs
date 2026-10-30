@@ -135,6 +135,12 @@ fn progress_value(write: &Value, at: &Stamp, viewing: u64) -> Result<Value, Stri
         }
         progress["seconds"] = seconds.clone();
     }
+    if let Some(playing) = write.get("playing") {
+        if !playing.is_boolean() {
+            return Err("invalid_playing".into());
+        }
+        progress["playing"] = playing.clone();
+    }
     Ok(progress)
 }
 
