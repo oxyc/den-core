@@ -21,5 +21,26 @@
     { "name": "upper-case language", "operation": "write", "choice": { "mode": "language", "language": "SV" } },
     { "name": "missing language", "operation": "write", "choice": { "mode": "language" } },
     { "name": "unknown mode", "operation": "write", "choice": { "mode": "default" } }
+  ],
+  "interfaceLanguageReadCases": [
+    { "name": "absent interface language is inheritable English", "values": {}, "selection": { "language": "en", "explicit": false, "supported": true } },
+    { "name": "tombstone is held English", "values": { "den.interfaceLanguage": null }, "selection": { "language": "en", "explicit": true, "supported": true } },
+    { "name": "explicit English", "values": { "den.interfaceLanguage": { "string": "en" } }, "selection": { "language": "en", "explicit": true, "supported": true } },
+    { "name": "explicit Spanish", "values": { "den.interfaceLanguage": { "string": "es" } }, "selection": { "language": "es", "explicit": true, "supported": true } },
+    { "name": "explicit Swedish", "values": { "den.interfaceLanguage": { "string": "sv" } }, "selection": { "language": "sv", "explicit": true, "supported": true } },
+    { "name": "future canonical language is preserved but unsupported", "values": { "den.interfaceLanguage": { "string": "fr" } }, "selection": { "language": "en", "explicit": true, "supported": false, "storedLanguage": "fr" } },
+    { "name": "unrelated preferences are ignored", "values": { "future.preference": { "string": "keep" } }, "selection": { "language": "en", "explicit": false, "supported": true } }
+  ],
+  "interfaceLanguageWriteCases": [
+    { "name": "write English explicitly", "language": "en", "changes": { "den.interfaceLanguage": { "string": "en" } } },
+    { "name": "write Spanish", "language": "es", "changes": { "den.interfaceLanguage": { "string": "es" } } },
+    { "name": "write Swedish", "language": "sv", "changes": { "den.interfaceLanguage": { "string": "sv" } } }
+  ],
+  "interfaceLanguageInvalidCases": [
+    { "name": "wrong interface type", "operation": "read", "values": { "den.interfaceLanguage": { "bool": true } } },
+    { "name": "upper-case stored interface language", "operation": "read", "values": { "den.interfaceLanguage": { "string": "SV" } } },
+    { "name": "long stored interface language", "operation": "read", "values": { "den.interfaceLanguage": { "string": "es-ES" } } },
+    { "name": "unsupported write", "operation": "write", "language": "fr" },
+    { "name": "upper-case write", "operation": "write", "language": "SV" }
   ]
 }

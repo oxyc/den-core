@@ -30,7 +30,10 @@ pub use downloads::{
 };
 pub use episodes::episode_mark;
 pub use events::commands;
-pub use preferences::subtitle_v1 as preferences_subtitle_v1;
+pub use preferences::{
+    interface_language_v1 as preferences_interface_language_v1,
+    subtitle_v1 as preferences_subtitle_v1,
+};
 pub use profiles::{
     apply as profiles_apply, approvals_merge, approvals_validate,
     construct_directory as profiles_construct_directory, create_next as profiles_create_next,
@@ -244,6 +247,14 @@ enum Request {
         values: Option<Value>,
         #[serde(default)]
         choice: Option<Value>,
+    },
+    /// Preferences v1: read or atomically encode the synced interface language.
+    PreferencesInterfaceLanguageV1 {
+        operation: String,
+        #[serde(default)]
+        values: Option<Value>,
+        #[serde(default)]
+        language: Option<String>,
     },
     /// Profiles v1 §8: whether one row (`{name[, values]}`) may be written to a profile-aware household.
     ProfileHouseholdWrite {
@@ -1113,6 +1124,11 @@ fn run(request: Request) -> Result<Value, String> {
             values,
             choice,
         } => preferences::subtitle_v1(&operation, values.as_ref(), choice.as_ref()),
+        Request::PreferencesInterfaceLanguageV1 {
+            operation,
+            values,
+            language,
+        } => preferences::interface_language_v1(&operation, values.as_ref(), language.as_deref()),
         Request::ProfileHouseholdWrite { row } => profiles::household_write(&row),
         Request::ProfileHouseholdAudit { rows } => profiles::household_audit(&rows),
         Request::ProfilePolicyNormalizeLegacy { legacy } => {
@@ -1333,6 +1349,28 @@ mod tests {
                     "{}",
                     case["name"]
                 );
+            }
+            if let Some(cases) = fixture["interfaceLanguageReadCases"].as_array() {
+                for case in cases {
+                    let request = json!({"op":"preferences_interface_language_v1","operation":"read","values":case["values"]}).to_string();
+                    assert_eq!(
+                        evaluate(&request),
+                        evaluate_legacy(&request),
+                        "{}",
+                        case["name"]
+                    );
+                }
+            }
+            if let Some(cases) = fixture["interfaceLanguageWriteCases"].as_array() {
+                for case in cases {
+                    let request = json!({"op":"preferences_interface_language_v1","operation":"write","language":case["language"]}).to_string();
+                    assert_eq!(
+                        evaluate(&request),
+                        evaluate_legacy(&request),
+                        "{}",
+                        case["name"]
+                    );
+                }
             }
         }
     }
