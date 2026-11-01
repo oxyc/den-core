@@ -160,6 +160,90 @@ pub struct ContinueInput {
     /// Whether the library holds the whole title as watched.
     #[serde(default)]
     pub title_watched: bool,
+    /// The release dates the client knows for this series' episodes: den-atlas's airing answer (its previous,
+    /// next and upcoming episodes), else TMDB's next episode to air. Only consulted once the series is caught up.
+    #[serde(default)]
+    pub airing: Vec<DatedEpisode>,
+    /// The viewer's calendar day, `YYYY-MM-DD`, that `airing`'s dates are counted from. Without it no date is
+    /// judged and a caught-up series drops as it always did.
+    #[serde(default)]
+    pub today: Option<String>,
+    /// Whether the series has ended. An ended series is not kept waiting for an episode.
+    #[serde(default)]
+    pub ended: bool,
+}
+
+/// One episode's release, as a calendar day (`YYYY-MM-DD`): the day it comes out wherever the viewer is.
+#[derive(Deserialize)]
+pub struct DatedEpisode {
+    pub season: i64,
+    pub episode: i64,
+    pub date: String,
+}
+
+/// How many calendar days ahead a caught-up series' next episode may be and still keep the series on the row.
+/// Further out it is a series between episodes or seasons, which "Coming back soon" shows instead.
+pub const UPCOMING_DAYS: i64 = 14;
+
+/// Days since 1970-01-01 of a `YYYY-MM-DD` date, or `None` when it is not one (Hinnant's `days_from_civil`).
+fn day_number(date: &str) -> Option<i64> {
+    let mut parts = date.split('-');
+    let (year, month, day) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() || year.len() != 4 || month.len() != 2 || day.len() != 2 {
+        return None;
+    }
+    let (year, month, day): (i64, i64, i64) =
+        (year.parse().ok()?, month.parse().ok()?, day.parse().ok()?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    Some(era * 146_097 + day_of_era - 719_468)
+}
+
+/// A caught-up series' place on the row from its next episode's release date, or `None` to drop it.
+///
+/// `listed` is the episode the season layout puts after `front`; when the layout lists nothing after it (a next
+/// season TMDB has not laid out yet) the earliest dated episode past `front` stands in. A date that has come means
+/// the episode is out even though the layout's last aired episode has not caught up with it: it is offered as the
+/// next episode. One within `UPCOMING_DAYS` keeps the series on the row, waiting for it.
+fn airing_soon(front: Coord, listed: Option<Coord>, input: &ContinueInput) -> Option<Value> {
+    if input.ended {
+        return None;
+    }
+    let today = day_number(input.today.as_deref()?)?;
+    let (dated, day) = input
+        .airing
+        .iter()
+        .filter(|d| d.season > 0)
+        .filter(|d| match listed {
+            Some(next) => (d.season, d.episode) == (next.season, next.episode),
+            None => (d.season, d.episode) > (front.season, front.episode),
+        })
+        .filter_map(|d| day_number(&d.date).map(|day| (d, day)))
+        .min_by_key(|(d, _)| (d.season, d.episode))?;
+    let at = Coord {
+        season: dated.season,
+        episode: dated.episode,
+    };
+    let days = day - today;
+    if days <= 0 {
+        return Some(json!({
+            "action": "next", "code": "next", "episode": coord(at), "fraction": 0.0,
+            "reason": "the next episode is out by its release date",
+        }));
+    }
+    if days > UPCOMING_DAYS {
+        return None;
+    }
+    Some(json!({
+        "action": "upcoming", "code": "upcoming", "episode": coord(at), "fraction": 0.0, "date": dated.date,
+        "reason": "caught up: the next episode comes out within 14 days",
+    }))
 }
 
 #[derive(Deserialize)]
@@ -194,6 +278,9 @@ pub struct ContinueMark {
 ///   belongs on the row as the next episode.
 /// - A title-level "watched" cannot expire — a tracker reporting a series completed hid shows still airing —
 ///   so where the layout is known, the episodes decide. With no layout there is nothing better than the flag.
+/// - Caught up is not gone: a series whose next episode comes out within `UPCOMING_DAYS` stays, as `upcoming`
+///   with that episode and its `date`. Watching the one aired episode of a new season emptied the row of the
+///   show being followed most closely.
 ///
 /// `reason` comes back with every answer so a client can say why a series is missing without a debugger.
 pub fn continue_entry(input: &ContinueInput) -> Value {
@@ -250,10 +337,12 @@ pub fn continue_entry(input: &ContinueInput) -> Value {
         return none("no_layout", "no season layout known");
     }
     let Some(next) = next_after(front, &input.seasons) else {
-        return none("finished", "finished: nothing listed after it");
+        return airing_soon(front, None, input)
+            .unwrap_or_else(|| none("finished", "finished: nothing listed after it"));
     };
     if !is_aired(next, input.last_aired) {
-        return none("not_aired", "caught up: the next episode has not aired");
+        return airing_soon(front, Some(next), input)
+            .unwrap_or_else(|| none("not_aired", "caught up: the next episode has not aired"));
     }
     json!({
         "action": "next", "code": "next", "episode": coord(next), "fraction": 0.0,
@@ -288,5 +377,140 @@ pub fn continue_target(
             None => start(first),
         },
         None => start(first),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dexter: Resurrection as it stood on 2026-10-31: S2E1 finished yesterday, the only aired episode of S2.
+    fn dexter(next_date: &str, extra: Value) -> ContinueInput {
+        let mut input = json!({
+            "mark": {"season": 2, "episode": 1, "fraction": 1.0, "at": 2000},
+            "finished": {"season": 2, "episode": 1, "at": 2000},
+            "flag": null,
+            "seasons": [{"season": 1, "episodes": 10}, {"season": 2, "episodes": 10}],
+            "last_aired": {"season": 2, "episode": 1},
+            "dismissed_at": null,
+            "airing": [
+                {"season": 2, "episode": 1, "date": "2026-10-30"},
+                {"season": 2, "episode": 2, "date": next_date},
+            ],
+            "today": "2026-10-31",
+        });
+        for (key, value) in extra.as_object().into_iter().flatten() {
+            input[key] = value.clone();
+        }
+        serde_json::from_value(input).unwrap()
+    }
+
+    #[test]
+    fn day_numbers_count_calendar_days() {
+        assert_eq!(day_number("1970-01-01"), Some(0));
+        assert_eq!(
+            day_number("2026-11-06")
+                .zip(day_number("2026-10-31"))
+                .map(|(a, b)| a - b),
+            Some(6)
+        );
+        assert_eq!(
+            day_number("2024-03-01")
+                .zip(day_number("2024-02-28"))
+                .map(|(a, b)| a - b),
+            Some(2)
+        );
+        assert_eq!(day_number("2026-13-01"), None);
+        assert_eq!(day_number("2026-11-6"), None);
+        assert_eq!(day_number("2026-11-06T00:00"), None);
+    }
+
+    #[test]
+    fn a_caught_up_series_waits_for_an_episode_out_within_the_window() {
+        let answer = continue_entry(&dexter("2026-11-06", json!({})));
+        assert_eq!(answer["action"], "upcoming");
+        assert_eq!(answer["code"], "upcoming");
+        assert_eq!(answer["episode"], json!({"season": 2, "episode": 2}));
+        assert_eq!(answer["date"], "2026-11-06");
+        // The window's last day still counts.
+        assert_eq!(
+            continue_entry(&dexter("2026-11-14", json!({})))["action"],
+            "upcoming"
+        );
+    }
+
+    #[test]
+    fn a_caught_up_series_further_out_drops() {
+        let answer = continue_entry(&dexter("2026-11-20", json!({})));
+        assert_eq!(answer["code"], "not_aired");
+        assert_eq!(
+            continue_entry(&dexter("2026-11-15", json!({})))["code"],
+            "not_aired"
+        );
+    }
+
+    #[test]
+    fn an_ended_series_drops() {
+        let answer = continue_entry(&dexter("2026-11-06", json!({"ended": true})));
+        assert_eq!(answer["code"], "not_aired");
+    }
+
+    #[test]
+    fn no_today_judges_no_date() {
+        let answer = continue_entry(&dexter("2026-11-06", json!({"today": null})));
+        assert_eq!(answer["code"], "not_aired");
+    }
+
+    #[test]
+    fn a_date_that_has_come_offers_the_episode_though_the_layout_lags() {
+        let answer = continue_entry(&dexter("2026-10-31", json!({})));
+        assert_eq!(answer["action"], "next");
+        assert_eq!(answer["episode"], json!({"season": 2, "episode": 2}));
+    }
+
+    #[test]
+    fn only_the_episode_after_the_front_is_judged() {
+        // S2E3 within the window says nothing about S2E2, which is the one the viewer is waiting for.
+        let answer = continue_entry(&dexter(
+            "2026-12-01",
+            json!({"airing": [{"season": 2, "episode": 3, "date": "2026-11-06"}]}),
+        ));
+        assert_eq!(answer["code"], "not_aired");
+    }
+
+    #[test]
+    fn a_season_not_laid_out_yet_waits_for_its_dated_premiere() {
+        let answer = continue_entry(&dexter(
+            "2026-11-06",
+            json!({
+                "seasons": [{"season": 1, "episodes": 10}],
+                "last_aired": {"season": 1, "episode": 10},
+                "finished": {"season": 1, "episode": 10, "at": 2000},
+                "mark": {"season": 1, "episode": 10, "fraction": 1.0, "at": 2000},
+                "airing": [{"season": 2, "episode": 1, "date": "2026-11-03"}],
+            }),
+        ));
+        assert_eq!(answer["action"], "upcoming");
+        assert_eq!(answer["episode"], json!({"season": 2, "episode": 1}));
+    }
+
+    #[test]
+    fn an_aired_unwatched_episode_still_wins() {
+        let answer = continue_entry(&dexter(
+            "2026-11-06",
+            json!({"last_aired": {"season": 2, "episode": 2}}),
+        ));
+        assert_eq!(answer["action"], "next");
+        assert_eq!(answer["episode"], json!({"season": 2, "episode": 2}));
+    }
+
+    #[test]
+    fn a_rewatch_in_progress_still_resumes() {
+        let answer = continue_entry(&dexter(
+            "2026-11-06",
+            json!({"mark": {"season": 1, "episode": 3, "fraction": 0.4, "at": 3000}}),
+        ));
+        assert_eq!(answer["action"], "resume");
+        assert_eq!(answer["episode"], json!({"season": 1, "episode": 3}));
     }
 }

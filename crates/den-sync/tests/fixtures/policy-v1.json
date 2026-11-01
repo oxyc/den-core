@@ -2437,6 +2437,116 @@
    }
   },
   {
+   "name": "caught up with the next episode out in 6 days stays, waiting for it",
+   "request": {
+    "op": "continue_entry",
+    "mark": {"season": 2, "episode": 1, "fraction": 1.0, "at": 2000},
+    "finished": {"season": 2, "episode": 1, "at": 2000},
+    "flag": null,
+    "seasons": [{"season": 1, "episodes": 10}, {"season": 2, "episodes": 10}],
+    "last_aired": {"season": 2, "episode": 1},
+    "dismissed_at": null,
+    "airing": [
+     {"season": 2, "episode": 1, "date": "2026-10-30"},
+     {"season": 2, "episode": 2, "date": "2026-11-06"}
+    ],
+    "today": "2026-10-31"
+   },
+   "ok": {
+    "action": "upcoming",
+    "code": "upcoming",
+    "episode": {"season": 2, "episode": 2},
+    "fraction": 0.0,
+    "date": "2026-11-06",
+    "reason": "caught up: the next episode comes out within 14 days"
+   }
+  },
+  {
+   "name": "caught up with the next episode 20 days out drops",
+   "request": {
+    "op": "continue_entry",
+    "mark": {"season": 2, "episode": 1, "fraction": 1.0, "at": 2000},
+    "finished": {"season": 2, "episode": 1, "at": 2000},
+    "flag": null,
+    "seasons": [{"season": 1, "episodes": 10}, {"season": 2, "episodes": 10}],
+    "last_aired": {"season": 2, "episode": 1},
+    "dismissed_at": null,
+    "airing": [{"season": 2, "episode": 2, "date": "2026-11-20"}],
+    "today": "2026-10-31"
+   },
+   "ok": {
+    "action": "none",
+    "code": "not_aired",
+    "episode": null,
+    "fraction": 0.0,
+    "reason": "caught up: the next episode has not aired"
+   }
+  },
+  {
+   "name": "an ended series is not kept waiting for a dated episode",
+   "request": {
+    "op": "continue_entry",
+    "mark": {"season": 2, "episode": 1, "fraction": 1.0, "at": 2000},
+    "finished": {"season": 2, "episode": 1, "at": 2000},
+    "flag": null,
+    "seasons": [{"season": 1, "episodes": 10}, {"season": 2, "episodes": 10}],
+    "last_aired": {"season": 2, "episode": 1},
+    "dismissed_at": null,
+    "airing": [{"season": 2, "episode": 2, "date": "2026-11-06"}],
+    "today": "2026-10-31",
+    "ended": true
+   },
+   "ok": {
+    "action": "none",
+    "code": "not_aired",
+    "episode": null,
+    "fraction": 0.0,
+    "reason": "caught up: the next episode has not aired"
+   }
+  },
+  {
+   "name": "an aired unwatched episode wins over a dated later one",
+   "request": {
+    "op": "continue_entry",
+    "mark": {"season": 2, "episode": 1, "fraction": 1.0, "at": 2000},
+    "finished": {"season": 2, "episode": 1, "at": 2000},
+    "flag": null,
+    "seasons": [{"season": 1, "episodes": 10}, {"season": 2, "episodes": 10}],
+    "last_aired": {"season": 2, "episode": 2},
+    "dismissed_at": null,
+    "airing": [{"season": 2, "episode": 3, "date": "2026-11-06"}],
+    "today": "2026-10-31"
+   },
+   "ok": {
+    "action": "next",
+    "code": "next",
+    "episode": {"season": 2, "episode": 2},
+    "fraction": 0.0,
+    "reason": "the next episode after the one finished last"
+   }
+  },
+  {
+   "name": "a rewatch in progress resumes whatever is dated next",
+   "request": {
+    "op": "continue_entry",
+    "mark": {"season": 1, "episode": 3, "fraction": 0.4, "at": 3000},
+    "finished": {"season": 2, "episode": 1, "at": 2000},
+    "flag": null,
+    "seasons": [{"season": 1, "episodes": 10}, {"season": 2, "episodes": 10}],
+    "last_aired": {"season": 2, "episode": 1},
+    "dismissed_at": null,
+    "airing": [{"season": 2, "episode": 2, "date": "2026-11-06"}],
+    "today": "2026-10-31"
+   },
+   "ok": {
+    "action": "resume",
+    "code": "resume",
+    "episode": {"season": 1, "episode": 3},
+    "fraction": 0.4,
+    "reason": "resuming where it was left"
+   }
+  },
+  {
    "name": "recovery_code: 22 random bytes make den-spec recovery-v1's first code",
    "request": {
     "op": "recovery_code",
