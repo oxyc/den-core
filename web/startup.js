@@ -1,4 +1,11 @@
-import init, { evaluate_startup as rustEvaluate } from './generated/den_core_startup.js';
+import init, {
+  evaluate_startup as rustEvaluate,
+  ColumnsAnswer,
+  LibraryColumns,
+} from './generated/den_core_startup.js';
+
+/** The library's documents held once in the startup module, answering whole-library lists as typed columns. */
+export { ColumnsAnswer, LibraryColumns };
 
 let initialized = false;
 let pending;

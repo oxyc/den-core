@@ -7,6 +7,7 @@ mod downloads;
 mod episodes;
 mod events;
 mod headings;
+mod index;
 mod library_v4;
 mod preferences;
 mod profiles;
@@ -32,6 +33,11 @@ pub use downloads::{
 pub use episodes::episode_mark;
 pub use events::commands;
 pub use headings::{normalize_v1 as heading_v1, Heading, HeadingArgument};
+#[cfg(feature = "library-columns")]
+pub use library_v4::columns::{
+    Airing as ColumnsAiring, Answer as ColumnsAnswer, Columns as LibraryColumns,
+    Layouts as ColumnsLayouts,
+};
 pub use preferences::{
     interface_language_v1 as preferences_interface_language_v1,
     subtitle_v1 as preferences_subtitle_v1,
@@ -307,6 +313,18 @@ enum Request {
         title: Value,
         now: i64,
     },
+    /// Whole-library lists (Home's inputs, Continue Watching, Seen history, the watchlist, the newest stamp, the
+    /// assistant projection's lists) from the documents, read once.
+    #[cfg(feature = "library-columns")]
+    LibraryColumns {
+        documents: Vec<Value>,
+        queries: Vec<String>,
+        now: i64,
+        #[serde(default)]
+        layouts: Option<Value>,
+        #[serde(default)]
+        airing: Option<Value>,
+    },
     /// Library v4 §8: one write on the documents it touches → the documents to write.
     ApplyWrite {
         write: Value,
@@ -574,6 +592,9 @@ struct ProjectionRequest<'a> {
     local_revoked: Vec<String>,
     random: String,
     now: u64,
+    /// `LibraryColumns::assistant`'s lists, in place of `documents` and `layouts`.
+    #[serde(default)]
+    lists: Option<Value>,
 }
 
 /// `assistant_projection`'s answer when `input` names it, else `None`.
@@ -611,6 +632,7 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
                         layouts: &request.layouts,
                         head: request.head,
                         prefs: request.prefs.as_ref(),
+                        lists: request.lists.as_ref(),
                     },
                     request.read.as_ref(),
                     request.grants.as_ref(),
@@ -781,7 +803,7 @@ fn bounded(input: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn envelope(result: Result<Value, String>) -> String {
+pub(crate) fn envelope(result: Result<Value, String>) -> String {
     match result {
         Ok(value) => json!({ "version": 1, "ok": value }).to_string(),
         Err(error) => json!({ "version": 1, "error": error }).to_string(),
@@ -1163,6 +1185,16 @@ fn run(request: Request) -> Result<Value, String> {
             &library_v4::readable(&title)?,
             now,
         )),
+        #[cfg(feature = "library-columns")]
+        Request::LibraryColumns {
+            documents,
+            queries,
+            now,
+            layouts,
+            airing,
+        } => {
+            library_v4::columns::answer(documents, &queries, now, layouts.as_ref(), airing.as_ref())
+        }
         Request::ApplyWrite {
             write,
             target,

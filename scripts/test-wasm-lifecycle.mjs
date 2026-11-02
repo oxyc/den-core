@@ -115,8 +115,10 @@ assert.deepEqual(
 console.log(
   `PASS: ${count} lifecycle contract cases (${startupCount} startup, ${deferredCount} deferred)`,
 );
+// The startup module holds `LibraryColumns` (~97 KB of it): the library read once and Home, Continue Watching,
+// History, the watchlist and the newest stamp answered in one call each, in place of a policy call per document.
 const budgets = new Map([
-  ['den_core_startup', 420_000],
+  ['den_core_startup', 515_000],
   ['den_core_deferred', 860_000],
 ]);
 let combined = 0;
@@ -128,5 +130,5 @@ for (const [module, budget] of budgets) {
   const gzip = gzipSync(readFileSync(file), { level: 9 }).byteLength;
   console.log(`PASS: ${module}_bg.wasm ${bytes} raw, ${gzip} gzip (budget ${budget})`);
 }
-assert.ok(combined <= 1_260_000, `lifecycle modules total ${combined} bytes (budget 1260000)`);
-console.log(`PASS: lifecycle modules total ${combined} raw (budget 1260000)`);
+assert.ok(combined <= 1_300_000, `lifecycle modules total ${combined} bytes (budget 1300000)`);
+console.log(`PASS: lifecycle modules total ${combined} raw (budget 1300000)`);

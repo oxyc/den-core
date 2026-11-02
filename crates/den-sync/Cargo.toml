@@ -6,10 +6,13 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["recovery-kdf", "tracker-delivery", "profile-admin"]
+default = ["recovery-kdf", "tracker-delivery", "profile-admin", "library-columns"]
 recovery-kdf = ["dep:argon2"]
 tracker-delivery = []
 profile-admin = []
+# `LibraryColumns` and `library_columns`: in the native binding and the browser startup module, not in the compatibility
+# core, the deferred module or Tizen 3's, which have no list to render from it.
+library-columns = []
 # Build-time partitions for the lifecycle browser modules. With neither (ordinary builds) or both (Cargo's
 # workspace-wide feature unification) enabled, the core retains every operation.
 browser-startup = []

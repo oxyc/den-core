@@ -9,5 +9,5 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-den-sync = { path = "../../crates/den-sync", default-features = false, features = ["browser-startup", "profile-admin"] }
+den-sync = { path = "../../crates/den-sync", default-features = false, features = ["browser-startup", "profile-admin", "library-columns"] }
 wasm-bindgen = "=0.2.129"

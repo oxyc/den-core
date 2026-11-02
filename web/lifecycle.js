@@ -15,6 +15,7 @@ export const STARTUP_OPERATIONS = Object.freeze([
   'profile_policy_allows',
   'kid_title_approvals_validate',
   'title_state',
+  'library_columns',
   'download_status',
 ]);
 
