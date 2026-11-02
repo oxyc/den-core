@@ -32,6 +32,7 @@ pub use downloads::{
 pub use episodes::episode_mark;
 pub use events::commands;
 pub use headings::{normalize_v1 as heading_v1, Heading, HeadingArgument};
+pub use library_v4::columns::Columns as LibraryColumns;
 pub use preferences::{
     interface_language_v1 as preferences_interface_language_v1,
     subtitle_v1 as preferences_subtitle_v1,
@@ -305,6 +306,12 @@ enum Request {
     },
     TitleState {
         title: Value,
+        now: i64,
+    },
+    /// Whole-library lists (Home's inputs, Seen history) from the documents, read once.
+    LibraryColumns {
+        documents: Vec<Value>,
+        queries: Vec<String>,
         now: i64,
     },
     /// Library v4 §8: one write on the documents it touches → the documents to write.
@@ -781,7 +788,7 @@ fn bounded(input: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn envelope(result: Result<Value, String>) -> String {
+pub(crate) fn envelope(result: Result<Value, String>) -> String {
     match result {
         Ok(value) => json!({ "version": 1, "ok": value }).to_string(),
         Err(error) => json!({ "version": 1, "error": error }).to_string(),
@@ -1163,6 +1170,11 @@ fn run(request: Request) -> Result<Value, String> {
             &library_v4::readable(&title)?,
             now,
         )),
+        Request::LibraryColumns {
+            documents,
+            queries,
+            now,
+        } => library_v4::columns::answer(documents, &queries, now),
         Request::ApplyWrite {
             write,
             target,

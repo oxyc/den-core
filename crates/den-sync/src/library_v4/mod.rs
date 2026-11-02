@@ -3,6 +3,7 @@
 //! HMAC check stay with the clients (§14).
 
 pub mod codec;
+pub mod columns;
 pub mod delivery;
 pub mod doc;
 pub mod jcs;

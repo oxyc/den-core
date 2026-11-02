@@ -343,6 +343,12 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
             &library_v4::readable(&value(&mut fields, "title")?)?,
             take(&mut fields, "now")?,
         )),
+        #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
+        "library_columns" => library_v4::columns::answer(
+            vector(&mut fields, "documents")?,
+            &vector(&mut fields, "queries")?,
+            take(&mut fields, "now")?,
+        ),
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "apply_write" => {
             let title = optional::<Value>(&mut fields, "title")?;

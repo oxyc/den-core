@@ -6,6 +6,41 @@ pub fn evaluate(request: String) -> String {
     den_sync::evaluate(&request)
 }
 
+/// The library's documents held once in den-core, and whole-library lists answered from them. Every method answers
+/// den-core's versioned envelope, as `evaluate` does.
+#[derive(uniffi::Object)]
+pub struct LibraryColumns(std::sync::Mutex<den_sync::LibraryColumns>);
+
+#[uniffi::export]
+impl LibraryColumns {
+    #[uniffi::constructor]
+    pub fn new() -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self(std::sync::Mutex::new(den_sync::LibraryColumns::new())))
+    }
+
+    /// A JSON array of documents, each added or replaced.
+    pub fn upsert(&self, documents: String) -> String {
+        self.0.lock().unwrap().upsert_text(&documents)
+    }
+
+    /// `doc_decode` of one row's plaintext, its document kept here.
+    pub fn decode(&self, plaintext: Vec<u8>, expected: Option<String>) -> String {
+        self.0
+            .lock()
+            .unwrap()
+            .decode_text(&plaintext, expected.as_deref())
+    }
+
+    pub fn remove(&self, name: String) -> bool {
+        self.0.lock().unwrap().remove(&name)
+    }
+
+    /// The named lists (`["home", "history"]`) at `now`.
+    pub fn query(&self, queries: String, now: i64) -> String {
+        self.0.lock().unwrap().query_text(&queries, now)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::evaluate;
