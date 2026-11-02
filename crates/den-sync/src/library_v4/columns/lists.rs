@@ -877,7 +877,9 @@ impl Columns {
                 .flatten()
                 .map(|&i| &seen[i]);
             let at = seen_at.max(episodes.map_or(-1, |s| s.latest_at.max(0)));
-            if at < 0 || row.is_some_and(|f| f.deleted && f.deleted_at >= at) {
+            // Watched state outlives a watchlist removal: a title `deleted` by one (before `watchlist_remove`) keeps
+            // its history.
+            if at < 0 {
                 continue;
             }
             entries.push((

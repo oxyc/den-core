@@ -76,14 +76,13 @@ impl Columns {
         let (mut watchlist, mut seen, mut films, mut rated) = (vec![], vec![], vec![], vec![]);
         for t in &titles {
             let title = (if t.tv { Media::Tv } else { Media::Movie }, t.id);
-            if is_true(&t.deleted) {
-                continue;
-            }
+            // A title `deleted` by a watchlist removal keeps its plays in `seen` and leaves every other list.
+            let deleted = is_true(&t.deleted);
             if let Some(reaction) = t
                 .reaction
                 .as_ref()
                 .map(|r| strings.get(r.value))
-                .filter(|r| matches!(*r, "dislike" | "like" | "love"))
+                .filter(|r| !deleted && matches!(*r, "dislike" | "like" | "love"))
             {
                 rated.push(RatedRow {
                     title,
@@ -91,7 +90,7 @@ impl Columns {
                     at: json!(at(&t.reaction).filter(|t| *t > 0)),
                 });
             }
-            if status(t) == Some(WATCHLIST) {
+            if !deleted && status(t) == Some(WATCHLIST) {
                 watchlist.push(WatchlistRow {
                     title,
                     // When it was listed (`TitleFacts::listed_at`): the later of `addedAt` and the status stamp.
@@ -112,7 +111,7 @@ impl Columns {
             let progress_at = t.resume.as_ref().and_then(|r| r.at).map_or(0, |a| a.t);
             let dismissed =
                 is_true(&t.dismissed) && at(&t.dismissed).is_some_and(|d| d >= progress_at);
-            if status(t) == Some(IN_PROGRESS) && !dismissed {
+            if !deleted && status(t) == Some(IN_PROGRESS) && !dismissed {
                 films.push(ContinueRow {
                     title,
                     action: json!("resume"),
@@ -128,9 +127,7 @@ impl Columns {
         for by_season in seasons.chunk_by(|a, b| a.id == b.id) {
             let id = by_season[0].id;
             let title = series_title(id);
-            if title.is_some_and(|t| is_true(&t.deleted)) {
-                continue;
-            }
+            let deleted = title.is_some_and(|t| is_true(&t.deleted));
             let mut latest: Option<(i64, u64, u64, f64)> = None;
             let mut finished: Option<(i64, u64, u64)> = None;
             let mut flag: Option<(u64, u64)> = None;
@@ -169,7 +166,7 @@ impl Columns {
                     }
                 }
             }
-            if latest.is_none() && flag.is_none() {
+            if deleted || (latest.is_none() && flag.is_none()) {
                 continue;
             }
             let (seasons, last_aired) = layouts.seasons(id);

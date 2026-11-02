@@ -99,7 +99,6 @@ fn typed_registers_derive_as_the_rules_do() {
             assert_eq!(f.seconds, s["resume"]["seconds"].as_f64());
             assert_eq!(f.playing, s["resume"]["playing"].as_bool());
             assert_eq!(f.deleted, s["deleted"]["value"] == true);
-            assert_eq!(f.deleted_at, t(&s["deleted"]["at"]));
             assert_eq!(
                 f.dismissed,
                 (s["dismissed"]["value"] == true).then(|| t(&s["dismissed"]["at"]))

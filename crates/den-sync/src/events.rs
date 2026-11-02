@@ -35,13 +35,16 @@ pub fn commands(event: &Value, current: &Value) -> Result<Value, String> {
                     .as_bool()
                     .ok_or("invalid_deleted")?;
                 if field == "status" && !deleted {
+                    let before = &event["before"]["status"]["value"];
                     kind = match current["status"]["value"].as_str() {
                         Some("watchlist") => Some("list"),
+                        // Taken off the watchlist (`watchlist_remove`), which no longer tombstones the title.
+                        Some("none") if before == "watchlist" => {
+                            added = false;
+                            Some("list")
+                        }
                         Some("watched") if media == "movie" => Some("watched"),
-                        Some("none")
-                            if media == "movie"
-                                && event["before"]["status"]["value"] == "watched" =>
-                        {
+                        Some("none") if media == "movie" && before == "watched" => {
                             Some("unwatched")
                         }
                         _ => None,

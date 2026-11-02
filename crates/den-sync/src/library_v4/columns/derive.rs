@@ -38,7 +38,6 @@ pub(super) struct TitleFacts<'a> {
     pub by: u32,
     pub added_at: f64,
     pub deleted: bool,
-    pub deleted_at: i64,
     pub dismissed: Option<i64>,
     /// `EMPTY` for none.
     pub reaction: u32,
@@ -76,7 +75,6 @@ pub(super) fn title(d: &TitleDoc, now: i64) -> TitleFacts<'_> {
         by: resume_at.map_or(EMPTY, |a| a.d),
         added_at: d.added_at.unwrap_or(0.0),
         deleted: d.deleted.as_ref().is_some_and(|x| x.value),
-        deleted_at: d.deleted.as_ref().map_or(0, |x| t(x.at)),
         dismissed: d.dismissed.as_ref().filter(|x| x.value).map(|x| t(x.at)),
         reaction: d.reaction.as_ref().map_or(EMPTY, |x| x.value),
         reaction_at: d.reaction.as_ref().map_or(0, |x| t(x.at)),

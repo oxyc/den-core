@@ -457,9 +457,17 @@ pub fn for_each_target(
         let deleted = is_deleted(title);
         let status = field(title, "status").map(|s| s["value"].clone());
         let watchlist = status.as_ref().and_then(Value::as_str) == Some("watchlist");
+        // A person's watchlist removal writes `none` at a real stamp (`watchlist_remove`; an import's is timeless): the
+        // removal of a title the account still holds as listed.
+        let listed = matches!(entry("list").as_ref().and_then(receipt),
+            Some(Receipt::Field { value, .. } | Receipt::Owed { value, .. }) if value == "in");
+        let unlisted = listed
+            && status.as_ref().and_then(Value::as_str) == Some("none")
+            && field_stamp(title, "status").0 != 0;
         let list = match (watchlist, deleted) {
             (true, false) => "in",
             (true, true) => "gone",
+            _ if unlisted => "gone",
             _ => "out",
         };
         let list_stamp = field_stamp(title, "status").max(field_stamp(title, "deleted"));
