@@ -62,6 +62,39 @@ fn answer(answer: den_sync::ColumnsAnswer) -> Arc<ColumnsAnswer> {
     Arc::new(ColumnsAnswer(answer))
 }
 
+/// A document a write or a merge changed, now held: its name and its plaintext as `doc_encode` makes it, to seal.
+#[derive(uniffi::Record)]
+pub struct WrittenDocument {
+    pub name: String,
+    pub plaintext: Vec<u8>,
+}
+
+/// What writes or a merge did to the held documents (`LibraryColumns::apply_batch`, `merge`).
+#[derive(uniffi::Record)]
+pub struct AppliedWrites {
+    /// Each changed document, once, in the order first changed.
+    pub documents: Vec<WrittenDocument>,
+    /// Documents over the cap, not held: the version held before stands.
+    pub too_large: Vec<String>,
+    /// Per write: `changed`, `unchanged`, `not_newer`, or `apply_write`'s refusal code.
+    pub outcomes: Vec<String>,
+}
+
+fn applied(
+    applied: Result<den_sync::ColumnsApplied, String>,
+) -> Result<AppliedWrites, ColumnsError> {
+    let applied = applied.map_err(ColumnsError::Refused)?;
+    Ok(AppliedWrites {
+        documents: applied
+            .documents
+            .into_iter()
+            .map(|(name, plaintext)| WrittenDocument { name, plaintext })
+            .collect(),
+        too_large: applied.too_large,
+        outcomes: applied.outcomes,
+    })
+}
+
 #[uniffi::export]
 impl LibraryColumns {
     #[uniffi::constructor]
@@ -92,6 +125,32 @@ impl LibraryColumns {
     /// One held document's JSON, as it was added.
     pub fn document(&self, name: String) -> Option<String> {
         self.held().document(&name).map(str::to_owned)
+    }
+
+    /// `apply_write` of one write (JSON) on `target` (JSON) over the held documents: held unless refused.
+    pub fn apply(
+        &self,
+        write: String,
+        target: String,
+        now: i64,
+    ) -> Result<AppliedWrites, ColumnsError> {
+        applied(self.held().apply_text(&write, &target, now))
+    }
+
+    /// `apply_write` of each `{target, write, if_newer?}` of a JSON array, in order, over the held documents. A
+    /// refused write changes nothing; with `atomic`, a refusal or a document over the cap holds nothing of the batch.
+    pub fn apply_batch(
+        &self,
+        writes: String,
+        now: i64,
+        atomic: bool,
+    ) -> Result<AppliedWrites, ColumnsError> {
+        applied(self.held().apply_batch_text(&writes, now, atomic))
+    }
+
+    /// `doc_merge` of a document (JSON) with the held version of it, held.
+    pub fn merge(&self, document: String) -> Result<AppliedWrites, ColumnsError> {
+        applied(self.held().merge_text(&document))
     }
 
     #[allow(clippy::len_without_is_empty)]
@@ -159,8 +218,51 @@ impl LibraryColumns {
 
 #[cfg(test)]
 mod tests {
-    use super::evaluate;
+    use super::{evaluate, LibraryColumns};
     use serde_json::{json, Value};
+
+    #[test]
+    fn a_held_write_crosses_the_native_binding_as_doc_encode_bytes() {
+        let season = json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": 1399}, "season": 1,
+            "seasonReset": null, "episodes": {}});
+        let write = json!({"kind": "mark_watched", "episodes": [[1, 2]], "at": [5000, 0, "a1b2c3d4e5f60718"]});
+        let target = json!({"type": "tv", "id": 1399});
+        let ok = |request: Value| -> Value {
+            let answer: Value = serde_json::from_str(&evaluate(request.to_string())).unwrap();
+            answer["ok"].clone()
+        };
+        let written = ok(
+            json!({"op": "apply_write", "write": write, "target": target, "seasons": [season],
+            "now": 6000}),
+        )["documents"][0]
+            .clone();
+        let plaintext = ok(json!({"op": "doc_encode", "document": written, "write": true}))
+            ["plaintext"]
+            .clone();
+
+        let columns = LibraryColumns::new();
+        columns.upsert(json!([season]).to_string()).unwrap();
+        let ops = json!([{"target": target, "write": write, "if_newer": true},
+            {"target": target, "write": write, "if_newer": true}]);
+        let applied = columns.apply_batch(ops.to_string(), 6000, false).unwrap();
+        assert_eq!(applied.outcomes, ["changed", "not_newer"]);
+        assert_eq!(applied.documents.len(), 1);
+        assert_eq!(applied.documents[0].name, "season:tv:1399:1");
+        const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut base64 = String::new();
+        for chunk in applied.documents[0].plaintext.chunks(3) {
+            let n = chunk
+                .iter()
+                .enumerate()
+                .fold(0u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
+            for i in 0..=chunk.len() {
+                base64.push(A[((n >> (18 - 6 * i)) & 63) as usize] as char);
+            }
+        }
+        assert_eq!(json!(base64), plaintext);
+        let held = columns.document("season:tv:1399:1".into()).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&held).unwrap(), written);
+    }
 
     #[test]
     fn season_projection_crosses_the_native_binding() {
