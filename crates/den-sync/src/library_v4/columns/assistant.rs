@@ -94,7 +94,8 @@ impl Columns {
             if status(t) == Some(WATCHLIST) {
                 watchlist.push(WatchlistRow {
                     title,
-                    added_at: json!(t.added_at_integer.or_else(|| at(&t.status))),
+                    // When it was listed (`TitleFacts::listed_at`): the later of `addedAt` and the status stamp.
+                    added_at: json!(t.added_at_integer.max(at(&t.status))),
                 });
             }
             if t.tv {
