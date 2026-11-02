@@ -15,11 +15,19 @@ const fixtures = ['policy-v1.json', 'policy-v4.json', 'profiles-v1.json'].map(na
 // Optional operations run in their own modules, and every module refuses operations outside its capability.
 const assistant = (request) => typeof request.op === 'string' && request.op.startsWith('assistant_');
 const recovery = (request) => request.op === 'recovery_derive';
+// `library_columns` is the startup module's (test-wasm-lifecycle.mjs runs its cases there); this core refuses it.
+const columns = (request) => request.op === 'library_columns';
 let count = 0;
 let assistantCount = 0;
 let recoveryCount = 0;
+let columnsCount = 0;
 for (const fixture of fixtures) {
   for (const test of fixture.cases) {
+    if (columns(test.request)) {
+      assert.equal(JSON.parse(evaluate(JSON.stringify(test.request))).error, 'invalid_request', test.name);
+      columnsCount++;
+      continue;
+    }
     const own = assistant(test.request)
       ? evaluateAssistant
       : recovery(test.request)
@@ -112,6 +120,7 @@ assert.deepEqual(JSON.parse(evaluate(deepWire)), {version: 1, error: 'invalid_re
 count++;
 assert.ok(assistantCount > 0);
 assert.ok(recoveryCount > 0);
+assert.ok(columnsCount > 0);
 console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} assistant, ${recoveryCount} recovery)`);
 
 // Every Worker that loads a module compiles its own copy, and in WebKit the machine code is most of what a copy
