@@ -4,14 +4,15 @@
 //! Each document is held by name, in the order it was first added (a replaced document keeps its place), as its text
 //! (the canonical form, unknown members and all, §6) and its typed registers; device ids, statuses and reactions are
 //! held once (`Strings`). Nothing held depends on the time: a stamp more than a day ahead is read as timeless only when
-//! a list is asked for, and `reconsider_at` says when the next such reading changes without a write. The per-document
-//! merge and write ops are unchanged; this is derived state.
+//! a list is asked for, and `reconsider_at` says when the next such reading changes without a write. Writes and merges
+//! can be made on the held documents (`apply`), by the per-document ops, which are unchanged.
 //!
 //! Lists a client renders come back as typed columns (`Answer`); lists that are input to another den-core op
 //! (`pending_targets_v4`, `assistant_projection`) come back as that op's JSON, to be passed on untouched. The browser
 //! startup module holds the rendered lists only: the assistant projection runs in the assistant module, which takes the
 //! held documents (`texts`), and delivery in the deferred one.
 
+mod apply;
 #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
 mod assistant;
 mod derive;
@@ -26,6 +27,7 @@ use serde_json::{json, Map, Value};
 use std::cmp::Ordering;
 
 pub(crate) use crate::index::{indices, permute, sort, Index};
+pub use apply::Applied;
 pub use lists::{Airing, Layouts};
 
 /// A title's `type:id` key as one number: the TMDB id, then 1 for a series.
@@ -159,6 +161,11 @@ impl Columns {
     /// A document read as state is read from it (`readable`), not yet held.
     fn read(&mut self, text: Box<RawValue>) -> Result<Slot, String> {
         let value: Value = serde_json::from_str(text.get()).map_err(|_| "invalid_request")?;
+        self.read_value(text, value)
+    }
+
+    /// `read` of a document already parsed from `text`.
+    fn read_value(&mut self, text: Box<RawValue>, value: Value) -> Result<Slot, String> {
         let doc = into_readable(value)?;
         let identity = identity(&doc)?;
         let strings = &mut self.strings;

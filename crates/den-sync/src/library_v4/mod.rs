@@ -261,6 +261,29 @@ pub fn decode(plaintext: &[u8], expected: Option<&str>) -> Value {
 /// `doc_encode` (§4, §14): document → plaintext, or `too_large` against the cap. A writer decodes what it
 /// encoded and refuses a value that does not decode to the same document (§4 *Writers check themselves*).
 pub fn encode(document: &Value, write: bool) -> Result<Value, String> {
+    Ok(match encoded(document, write)? {
+        Encoded::Plaintext {
+            name,
+            plaintext,
+            sealed,
+        } => json!({"name": name, "plaintext": codec::base64(&plaintext), "sealed": sealed}),
+        Encoded::TooLarge(too_large) => too_large,
+    })
+}
+
+/// `doc_encode`'s answer before it is written as JSON.
+pub enum Encoded {
+    Plaintext {
+        name: String,
+        plaintext: Vec<u8>,
+        sealed: usize,
+    },
+    /// `doc_encode`'s `too_large` answer.
+    TooLarge(Value),
+}
+
+/// `encode`, the plaintext as bytes.
+pub fn encoded(document: &Value, write: bool) -> Result<Encoded, String> {
     let (identity, _) = checked(document)?;
     let cap = if write {
         codec::WRITE_CAP
@@ -269,22 +292,26 @@ pub fn encode(document: &Value, write: bool) -> Result<Value, String> {
     };
     let size = jcs::jcs(document).len();
     if size > codec::MAX_JCS {
-        return Ok(json!({"too_large": true, "reason": "jcs", "jcs": size, "cap": cap}));
+        return Ok(Encoded::TooLarge(
+            json!({"too_large": true, "reason": "jcs", "jcs": size, "cap": cap}),
+        ));
     }
     let plaintext = codec::compress(document)?;
     let sealed = codec::sealed_len(plaintext.len());
     if sealed > cap {
-        return Ok(json!({"too_large": true, "reason": "sealed", "sealed": sealed, "cap": cap}));
+        return Ok(Encoded::TooLarge(
+            json!({"too_large": true, "reason": "sealed", "sealed": sealed, "cap": cap}),
+        ));
     }
     let back = decode(&plaintext, Some(&identity.name()));
     if back["status"] != "document" || !jcs::same(&back["document"], document) {
         return Err(format!("self_check:{}", identity.name()));
     }
-    Ok(json!({
-        "name": identity.name(),
-        "plaintext": codec::base64(&plaintext),
-        "sealed": sealed,
-    }))
+    Ok(Encoded::Plaintext {
+        name: identity.name(),
+        plaintext,
+        sealed,
+    })
 }
 
 /// The most unreadable rows one compaction removes, and the greatest share of the rows read through its base they may

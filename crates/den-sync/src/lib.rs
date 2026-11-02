@@ -35,8 +35,8 @@ pub use events::commands;
 pub use headings::{normalize_v1 as heading_v1, Heading, HeadingArgument};
 #[cfg(feature = "library-columns")]
 pub use library_v4::columns::{
-    Airing as ColumnsAiring, Answer as ColumnsAnswer, Columns as LibraryColumns,
-    Layouts as ColumnsLayouts,
+    Airing as ColumnsAiring, Answer as ColumnsAnswer, Applied as ColumnsApplied,
+    Columns as LibraryColumns, Layouts as ColumnsLayouts,
 };
 pub use preferences::{
     interface_language_v1 as preferences_interface_language_v1,
