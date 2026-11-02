@@ -188,7 +188,7 @@ fn apply_is_apply_write_for_every_contract_case() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 49);
+    assert_eq!(compared, 55);
 }
 
 /// `merge` of each document an `apply_write` case wrote into the documents it was written over, and the contract's
@@ -241,7 +241,7 @@ fn merge_is_doc_merge() {
             compared += 1;
         }
     }
-    assert_eq!(compared, 37);
+    assert_eq!(compared, 41);
 }
 
 /// `write_back_v4` as the index does it: the log's documents held, each held document merged in, the kept writes

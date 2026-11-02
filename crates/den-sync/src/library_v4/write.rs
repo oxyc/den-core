@@ -498,6 +498,33 @@ fn film_unwatch(title: &mut Map<String, Value>, at: &Stamp, now: i64) {
     title.insert("status".into(), json!({"value": "none", "at": at}));
 }
 
+/// A person taking a title off the watchlist (§8): it leaves the watchlist and nothing else. Watched state stays, so
+/// the title is never tombstoned: a film holding a play it still shows goes back to `watched`, anything else to `none`,
+/// where a series' episodes go on saying how far it was watched. Only where `status` is `watchlist` on a title not
+/// `deleted`; a removal older than the status it would replace writes nothing.
+fn watchlist_remove(
+    title: &mut Map<String, Value>,
+    film: bool,
+    at: &Stamp,
+    now: i64,
+) -> Result<(), String> {
+    let status = title.get("status");
+    if deleted(title)
+        || status.and_then(|s| s["value"].as_str()) != Some("watchlist")
+        || stale(&[at_of(status)], at, now)
+    {
+        return Ok(());
+    }
+    let played = film
+        && title.get("watch").is_some_and(|watch| {
+            watch::episode_state(watch, &[], now)
+                .is_ok_and(|state| state["plays"].as_array().is_some_and(|p| !p.is_empty()))
+        });
+    let value = if played { "watched" } else { "none" };
+    title.insert("status".into(), json!({"value": value, "at": at}));
+    Ok(())
+}
+
 /// The receipt entry of `account` for `key` in the delivery documents given, for an import's set-aside.
 fn receipt<'a>(receipts: &'a [Value], name: &str, key: &str) -> Option<&'a Value> {
     receipts
@@ -721,6 +748,10 @@ pub fn apply_write(
                         json!(old.map_or(watched, |o| o.min(watched))),
                     );
                 }
+            }
+            "watchlist_remove" => {
+                let at = writer_stamp(&write["at"])?;
+                watchlist_remove(&mut new_title, film, &at, now)?;
             }
             "progress" if film => {
                 let at = writer_stamp(&write["at"])?;

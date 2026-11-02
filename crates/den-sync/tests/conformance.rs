@@ -462,9 +462,11 @@ fn title_intent_matrix() {
                 let event =
                     capture(&before, &after, &Stamp(2000, 0, "a".into()), "action").unwrap();
                 let expected = match (media, status, next) {
-                    (_, _, "watchlist") => Some("list"),
-                    ("movie", _, "watched") => Some("watched"),
-                    ("movie", "watched", "none") => Some("unwatched"),
+                    (_, _, "watchlist") => Some(("list", true)),
+                    // Taken off the watchlist (`watchlist_remove`).
+                    (_, "watchlist", "none") => Some(("list", false)),
+                    ("movie", _, "watched") => Some(("watched", true)),
+                    ("movie", "watched", "none") => Some(("unwatched", true)),
                     _ => None,
                 };
                 let pushes = commands(&event, &after).unwrap();
@@ -472,8 +474,9 @@ fn title_intent_matrix() {
                     pushes.as_array().unwrap().len(),
                     usize::from(expected.is_some())
                 );
-                if let Some(kind) = expected {
+                if let Some((kind, added)) = expected {
                     assert_eq!(pushes[0]["kind"], kind);
+                    assert_eq!(pushes[0]["added"], added);
                 }
             }
         }

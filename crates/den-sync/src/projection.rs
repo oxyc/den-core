@@ -139,12 +139,11 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
     let mut rated = Vec::new();
     for ((media, id), document) in &titles {
         let doc = &reread(document)?;
-        if is_true(doc, "deleted") {
-            continue;
-        }
+        // A title `deleted` by a watchlist removal keeps its plays in `seen` and leaves every other list.
+        let deleted = is_true(doc, "deleted");
         let title = title_of(media, *id);
         // A rating, not `seen` (a reaction that only says it was seen) and not a cleared one.
-        if let Some(reaction) = doc.get("reaction") {
+        if let Some(reaction) = doc.get("reaction").filter(|_| !deleted) {
             if let Some(value) = reaction["value"]
                 .as_str()
                 .filter(|v| matches!(*v, "dislike" | "like" | "love"))
@@ -157,7 +156,7 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
             }
         }
         let status = doc.get("status").and_then(|s| s["value"].as_str());
-        if status == Some("watchlist") {
+        if !deleted && status == Some("watchlist") {
             // When it was listed (`TitleFacts::listed_at`): the later of `addedAt`, the first time the title entered the
             // library, and the status stamp, which a move back onto the watchlist sets.
             let added = doc
@@ -177,7 +176,7 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
             let progress_at = at_of(resume).unwrap_or(0);
             let dismissed = is_true(doc, "dismissed")
                 && at_of(doc.get("dismissed")).is_some_and(|d| d >= progress_at);
-            if status == Some("inProgress") && !dismissed {
+            if !deleted && status == Some("inProgress") && !dismissed {
                 films.push(ContinueRow {
                     title,
                     action: json!("resume"),
@@ -197,9 +196,7 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
             None => None,
         };
         let title = title.as_ref();
-        if title.is_some_and(|t| is_true(t, "deleted")) {
-            continue;
-        }
+        let deleted = title.is_some_and(|t| is_true(t, "deleted"));
         // The three summaries `continue_entry` asks for: the mark touched last, the one finished last, the furthest
         // watched with no mark of its own.
         let mut latest: Option<(i64, u64, u64, f64)> = None;
@@ -255,7 +252,7 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
                 }
             }
         }
-        if latest.is_none() && flag.is_none() {
+        if deleted || (latest.is_none() && flag.is_none()) {
             continue;
         }
         // Every layout parses (`projection_op` checked them all).

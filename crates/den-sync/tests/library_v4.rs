@@ -964,6 +964,112 @@ fn write_cases() -> Vec<Case> {
             )])),
         ),
         case(
+            "a watchlist removal of a film watched before it was listed keeps it watched",
+            "§8 Watchlist removal",
+            write(
+                json!({"kind": "watchlist_remove", "at": st(3000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"status": {"value": "watchlist", "at": st(2000)}, "resume": {"value": 1, "at": st(1000), "viewing": 0}, "watch": {"imported": false, "plays": {"0": 1000}, "cleared": null}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({"status": {"value": "watched", "at": st(3000)}, "resume": {"value": 1, "at": st(1000), "viewing": 0}, "watch": {"imported": false, "plays": {"0": 1000}, "cleared": null}})
+            )])),
+        ),
+        case(
+            "a watchlist removal of a film never watched leaves it in no list, not deleted",
+            "§8 Watchlist removal",
+            write(
+                json!({"kind": "watchlist_remove", "at": st(3000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"status": {"value": "watchlist", "at": st(2000)}, "deleted": {"value": false, "at": st(2000)}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({"status": {"value": "none", "at": st(3000)}, "deleted": {"value": false, "at": st(2000)}})
+            )])),
+        ),
+        case(
+            "a watchlist removal of an un-watched film does not bring its play back",
+            "§8 Watchlist removal",
+            write(
+                json!({"kind": "watchlist_remove", "at": st(3000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"status": {"value": "watchlist", "at": st(2000)}, "resume": {"value": 0, "at": st(1500), "viewing": 1}, "watch": {"imported": false, "plays": {"0": 1000}, "cleared": [0, st(1500)]}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({"status": {"value": "none", "at": st(3000)}, "resume": {"value": 0, "at": st(1500), "viewing": 1}, "watch": {"imported": false, "plays": {"0": 1000}, "cleared": [0, st(1500)]}})
+            )])),
+        ),
+        case(
+            "a watchlist removal of a series leaves its episodes to say how far it was watched",
+            "§8 Watchlist removal",
+            write(
+                json!({"kind": "watchlist_remove", "at": st(3000)}),
+                tv(),
+                title(
+                    "tv",
+                    1399,
+                    json!({"status": {"value": "watchlist", "at": st(2000)}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "tv",
+                1399,
+                json!({"status": {"value": "none", "at": st(3000)}})
+            )])),
+        ),
+        case(
+            "a watchlist removal of a title not on the watchlist writes nothing",
+            "§8 Watchlist removal",
+            write(
+                json!({"kind": "watchlist_remove", "at": st(3000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([])),
+        ),
+        case(
+            "a watchlist removal older than the listing writes nothing",
+            "§8 Watchlist removal",
+            write(
+                json!({"kind": "watchlist_remove", "at": st(1500)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"status": {"value": "watchlist", "at": st(2000)}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([])),
+        ),
+        case(
             "a write with a timeless stamp is refused",
             "§8",
             write(
@@ -1938,6 +2044,22 @@ fn review_cases() -> Vec<Case> {
             Expect::Ok(json!({"commands": [], "settle": [
                 {"document": "dlv:simkl:4812736:movie:550", "key": "list", "built_from": {"key": "list", "kind": "list", "value": "gone", "stamp": st(3000)}}
             ], "held": [], "removals": null, "approval": null, "greatest_epoch": 0, "unverified": []})),
+        ),
+        case(
+            "a watchlist removal of a title the account holds as listed is a list removal",
+            "v3 §6 command table",
+            pending(
+                json!([
+                    title("tv", 1399, json!({"status": {"value": "none", "at": st(3000)}})),
+                    dlv("tv", 1399, None, json!({"list": ["in", st(1000), [2, 1, D]]}))
+                ]),
+                simkl(500),
+                4000,
+            ),
+            Expect::Subset(json!({"commands": [{
+                "kind": "list", "added": false, "at": 3000, "key": "list",
+                "built_from": {"key": "list", "kind": "list", "stamp": st(3000), "value": "gone"}
+            }]})),
         ),
         case(
             "an approval reaches the stored held when the removal that closed the latch was undone",

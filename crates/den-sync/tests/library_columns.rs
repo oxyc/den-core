@@ -165,6 +165,78 @@ fn lists(columns: &LibraryColumns, now: i64) -> Value {
     })
 }
 
+/// Watched state outlives a watchlist removal (den-spec library-v4 §8 *Watchlist removal*). A finished series and a
+/// watched film, each listed again and then removed with `watchlist_remove`, stay in History with their episodes; so
+/// does a series a removal tombstoned before that write existed, which needs no repair.
+#[test]
+fn a_watchlist_removal_keeps_what_was_watched() {
+    let h = |n: i64| NOW - n * 3_600_000;
+    let watched = |at: i64| json!({"progress": {"value": 1, "at": st(at), "viewing": 0}, "imported": false, "plays": {"0": at}, "cleared": null});
+    let listed = |media: &str, id: i64, extra: Value| {
+        let mut doc = json!({"format": 4, "kind": "title", "title": {"type": media, "id": id},
+            "status": {"value": "watchlist", "at": st(h(5))}, "addedAt": h(50)});
+        for (k, v) in extra.as_object().unwrap() {
+            doc[k] = v.clone();
+        }
+        doc
+    };
+    let remove = |title: Value, media: &str, id: i64| -> Value {
+        let answer = ok(&evaluate(
+            &json!({"op": "apply_write", "write": {"kind": "watchlist_remove", "at": st(h(1))},
+                "target": {"type": media, "id": id}, "title": title, "seasons": [], "now": NOW})
+            .to_string(),
+        ));
+        answer["documents"][0].clone()
+    };
+    let season = |id: i64| {
+        json!({"format": 4, "kind": "season", "title": {"type": "tv", "id": id}, "season": 1, "seasonReset": null,
+            "episodes": {"1": watched(h(20)), "2": watched(h(19))}})
+    };
+    let series = remove(listed("tv", 84773, json!({})), "tv", 84773);
+    let film = remove(
+        listed(
+            "movie",
+            603,
+            json!({"resume": {"value": 1, "at": st(h(30)), "viewing": 0},
+            "watch": {"imported": false, "plays": {"0": h(30)}, "cleared": null}}),
+        ),
+        "movie",
+        603,
+    );
+    assert_eq!(series["status"]["value"], "none");
+    assert_eq!(film["status"]["value"], "watched");
+    let tombstoned = listed(
+        "tv",
+        1399,
+        json!({"deleted": {"value": true, "at": st(h(1))}}),
+    );
+    let documents = vec![series, season(84773), film, tombstoned, season(1399)];
+    let history = index(&documents).history(NOW).to_json();
+    let rows: Vec<(f64, f64, f64)> = (0..history["history.id"].as_array().unwrap().len())
+        .map(|i| {
+            (
+                history["history.media"][i].as_f64().unwrap(),
+                history["history.id"][i].as_f64().unwrap(),
+                history["history.episodes"][i].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    for expected in [(1.0, 84773.0, 2.0), (0.0, 603.0, 0.0), (1.0, 1399.0, 2.0)] {
+        assert!(rows.contains(&expected), "{expected:?} in {rows:?}");
+    }
+    let watchlist = index(&documents).watchlist(NOW).to_json();
+    assert_eq!(watchlist["watchlist.id"], json!([]));
+    // The assistant's Seen keeps every play.
+    let counts = ok(&evaluate(
+        &json!({"op": "assistant_projection", "library": "4c1b7a0e9d3f2c8b5a6e1d0f7c3b9a2e", "head": 1,
+            "random": "00".repeat(32), "now": NOW, "documents": documents, "layouts": {}})
+        .to_string(),
+    ))["counts"]
+        .clone();
+    assert_eq!(counts["seen"], 5, "{counts}");
+    assert_eq!(counts["watchlist"], 0, "{counts}");
+}
+
 #[test]
 fn the_stateless_op_answers_as_the_index() {
     for documents in [household(), varied()] {
