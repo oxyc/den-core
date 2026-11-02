@@ -2,6 +2,7 @@
 //! the watchlist, Continue Watching and Seen history, built from the library-v4 documents the client already decodes,
 //! and sealed under each grant's read key. Both clients call this one op, so they publish the same thing.
 
+use crate::index;
 use crate::library_v4::{self, doc::Kind, state};
 use crate::series::{continue_entry, ContinueInput};
 use crate::wire::{canonical, stamp};
@@ -28,6 +29,9 @@ pub struct Library<'a> {
     pub head: u64,
     /// The `set:prefs` row, for the hide rules; absent is none.
     pub prefs: Option<&'a Value>,
+    /// The lists already read from the documents (`LibraryColumns::assistant`, `Lists::to_json`), in place of
+    /// `documents` and `layouts`.
+    pub lists: Option<&'a Value>,
 }
 
 fn title_ref((media, id): ProjectionTitle) -> Value {
@@ -285,20 +289,169 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
             at: json!(latest.map(|l| l.0)),
         });
     }
-    // Series and films in one order, latest first: a series by its latest mark, a film by its resume. A series known
-    // only by a flag has no time and comes last.
-    let mut continuing: Vec<ContinueRow> = series.into_iter().chain(films).collect();
-    continuing.sort_by_key(|r| order(&r.at, r.title, r.season.as_ref(), r.episode.as_ref()));
-    watchlist.sort_by_key(|r| order(&r.added_at, r.title, None, None));
-    seen.sort_by_key(|r| order(&r.at, r.title, r.season.as_ref(), r.episode.as_ref()));
-    rated.sort_by_key(|r| order(&r.at, r.title, None, None));
-    Ok(Lists {
+    let mut lists = Lists {
         watchlist,
-        continuing,
+        continuing: series.into_iter().chain(films).collect(),
         seen,
         rated,
         skipped,
-    })
+    };
+    lists.sort();
+    Ok(lists)
+}
+
+fn media(title: ProjectionTitle) -> Value {
+    json!(title.0.as_str())
+}
+
+fn optional(value: &Option<Value>) -> Value {
+    value.clone().unwrap_or(Value::Null)
+}
+
+impl Lists {
+    /// Series and films in one order, latest first: a series by its latest mark, a film by its resume. A series known
+    /// only by a flag has no time and comes last.
+    pub(crate) fn sort(&mut self) {
+        // By positions, so the four lists share one sort (the startup module holds these too).
+        fn sorted<T>(rows: Vec<T>, key: impl Fn(&T) -> Order) -> Vec<T> {
+            let keys: Vec<Order> = rows.iter().map(key).collect();
+            let mut positions = index::indices(rows.len());
+            index::sort(&mut positions, &|a, b| keys[a].cmp(&keys[b]));
+            index::permute(rows, &positions)
+        }
+        let at = |at: &Value, title, season: Option<&Value>, episode: Option<&Value>| {
+            order(at, title, season, episode)
+        };
+        self.continuing = sorted(std::mem::take(&mut self.continuing), |r| {
+            at(&r.at, r.title, r.season.as_ref(), r.episode.as_ref())
+        });
+        self.watchlist = sorted(std::mem::take(&mut self.watchlist), |r| {
+            at(&r.added_at, r.title, None, None)
+        });
+        self.seen = sorted(std::mem::take(&mut self.seen), |r| {
+            at(&r.at, r.title, r.season.as_ref(), r.episode.as_ref())
+        });
+        self.rated = sorted(std::mem::take(&mut self.rated), |r| {
+            at(&r.at, r.title, None, None)
+        });
+    }
+
+    /// The lists as `assistant_projection` takes them in place of documents: each row a tuple, title first.
+    pub fn to_json(&self) -> Value {
+        let watchlist: Vec<Value> = self
+            .watchlist
+            .iter()
+            .map(|r| json!([media(r.title), r.title.1, r.added_at]))
+            .collect();
+        let continuing: Vec<Value> = self
+            .continuing
+            .iter()
+            .map(|r| {
+                json!([
+                    media(r.title),
+                    r.title.1,
+                    r.action,
+                    optional(&r.season),
+                    optional(&r.episode),
+                    r.fraction,
+                    r.at
+                ])
+            })
+            .collect();
+        let seen: Vec<Value> = self
+            .seen
+            .iter()
+            .map(|r| {
+                json!([
+                    media(r.title),
+                    r.title.1,
+                    optional(&r.season),
+                    optional(&r.episode),
+                    r.at
+                ])
+            })
+            .collect();
+        let rated: Vec<Value> = self
+            .rated
+            .iter()
+            .map(|r| json!([media(r.title), r.title.1, r.value, r.at]))
+            .collect();
+        json!({"watchlist": watchlist, "continue": continuing, "seen": seen, "rated": rated,
+            "skipped": self.skipped})
+    }
+
+    /// `to_json`'s lists read back. A row that is not one refuses them.
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        const INVALID: &str = "invalid_lists";
+        fn rows<'a>(value: &'a Value, name: &str, width: usize) -> Result<&'a [Value], String> {
+            let rows = value[name].as_array().ok_or(INVALID)?;
+            if rows
+                .iter()
+                .all(|r| r.as_array().is_some_and(|r| r.len() == width))
+            {
+                Ok(rows)
+            } else {
+                Err(INVALID.into())
+            }
+        }
+        fn title(r: &Value) -> Result<ProjectionTitle, String> {
+            let media = match r[0].as_str() {
+                Some("movie") => Media::Movie,
+                Some("tv") => Media::Tv,
+                _ => return Err(INVALID.into()),
+            };
+            Ok((media, r[1].as_u64().ok_or(INVALID)?))
+        }
+        fn some(v: &Value) -> Option<Value> {
+            (!v.is_null()).then(|| v.clone())
+        }
+        Ok(Lists {
+            watchlist: rows(value, "watchlist", 3)?
+                .iter()
+                .map(|r| {
+                    Ok(WatchlistRow {
+                        title: title(r)?,
+                        added_at: r[2].clone(),
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            continuing: rows(value, "continue", 7)?
+                .iter()
+                .map(|r| {
+                    Ok(ContinueRow {
+                        title: title(r)?,
+                        action: r[2].clone(),
+                        season: some(&r[3]),
+                        episode: some(&r[4]),
+                        fraction: r[5].clone(),
+                        at: r[6].clone(),
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            seen: rows(value, "seen", 5)?
+                .iter()
+                .map(|r| {
+                    Ok(SeenRow {
+                        title: title(r)?,
+                        season: some(&r[2]),
+                        episode: some(&r[3]),
+                        at: r[4].clone(),
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            rated: rows(value, "rated", 4)?
+                .iter()
+                .map(|r| {
+                    Ok(RatedRow {
+                        title: title(r)?,
+                        value: r[2].clone(),
+                        at: r[3].clone(),
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+            skipped: value["skipped"].as_u64().ok_or(INVALID)?,
+        })
+    }
 }
 
 /// The household's hide rules (§15), as Den Web sends them to `/recommend` (`hide`), from the `set:prefs` row:

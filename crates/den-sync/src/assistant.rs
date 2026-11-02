@@ -668,7 +668,10 @@ pub fn projection(
     }
     let random = seed(random)?;
     settings(lib.prefs, "prefs")?;
-    let lists = crate::projection::lists(lib, now as i64)?;
+    let lists = match lib.lists {
+        Some(lists) => crate::projection::Lists::from_json(lists)?,
+        None => crate::projection::lists(lib, now as i64)?,
+    };
     let skipped = lists.skipped;
     let counts = json!({"watchlist": lists.watchlist.len(), "continue": lists.continuing.len(),
         "seen": lists.seen.len(), "rated": lists.rated.len()});

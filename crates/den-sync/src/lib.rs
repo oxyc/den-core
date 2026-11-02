@@ -7,6 +7,7 @@ mod downloads;
 mod episodes;
 mod events;
 mod headings;
+mod index;
 mod library_v4;
 mod preferences;
 mod profiles;
@@ -581,6 +582,9 @@ struct ProjectionRequest<'a> {
     local_revoked: Vec<String>,
     random: String,
     now: u64,
+    /// `LibraryColumns::assistant`'s lists, in place of `documents` and `layouts`.
+    #[serde(default)]
+    lists: Option<Value>,
 }
 
 /// `assistant_projection`'s answer when `input` names it, else `None`.
@@ -618,6 +622,7 @@ fn projection_op(input: &str) -> Option<Result<Value, String>> {
                         layouts: &request.layouts,
                         head: request.head,
                         prefs: request.prefs.as_ref(),
+                        lists: request.lists.as_ref(),
                     },
                     request.read.as_ref(),
                     request.grants.as_ref(),
