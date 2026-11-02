@@ -6,38 +6,154 @@ pub fn evaluate(request: String) -> String {
     den_sync::evaluate(&request)
 }
 
-/// The library's documents held once in den-core, and whole-library lists answered from them. Every method answers
-/// den-core's versioned envelope, as `evaluate` does.
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// A refusal by den-core: its code (`invalid_request`, `invalid_layout`, …).
+#[derive(Debug, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum ColumnsError {
+    Refused(String),
+}
+
+impl std::fmt::Display for ColumnsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ColumnsError::Refused(code) = self;
+        f.write_str(code)
+    }
+}
+
+/// One list query's answer: named typed columns, `<list>.<column>`.
 #[derive(uniffi::Object)]
-pub struct LibraryColumns(std::sync::Mutex<den_sync::LibraryColumns>);
+pub struct ColumnsAnswer(den_sync::ColumnsAnswer);
+
+#[uniffi::export]
+impl ColumnsAnswer {
+    pub fn names(&self) -> Vec<String> {
+        self.0.names()
+    }
+
+    /// A numeric column (`NaN` for none).
+    pub fn numbers(&self, name: String) -> Option<Vec<f64>> {
+        self.0.numbers(&name).map(<[f64]>::to_vec)
+    }
+
+    /// A text column (`""` for none).
+    pub fn strings(&self, name: String) -> Option<Vec<String>> {
+        self.0.strings(&name).map(<[String]>::to_vec)
+    }
+}
+
+/// The library's documents held once in den-core, and whole-library lists answered from them. Transport only: the
+/// lists are den-core's (`LibraryColumns`).
+#[derive(uniffi::Object)]
+pub struct LibraryColumns(Mutex<den_sync::LibraryColumns>);
+
+impl LibraryColumns {
+    fn held(&self) -> MutexGuard<'_, den_sync::LibraryColumns> {
+        // The index changes only by whole-document writes after every document of a batch is read, so a lock a panic
+        // poisoned still holds a consistent index.
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+fn answer(answer: den_sync::ColumnsAnswer) -> Arc<ColumnsAnswer> {
+    Arc::new(ColumnsAnswer(answer))
+}
 
 #[uniffi::export]
 impl LibraryColumns {
     #[uniffi::constructor]
-    pub fn new() -> std::sync::Arc<Self> {
-        std::sync::Arc::new(Self(std::sync::Mutex::new(den_sync::LibraryColumns::new())))
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self(Mutex::new(den_sync::LibraryColumns::new())))
     }
 
-    /// A JSON array of documents, each added or replaced.
-    pub fn upsert(&self, documents: String) -> String {
-        self.0.lock().unwrap().upsert_text(&documents)
+    /// A JSON array of documents, each added or replaced: the number held. A document that cannot be read refuses the
+    /// batch.
+    pub fn upsert(&self, documents: String) -> Result<u64, ColumnsError> {
+        self.held()
+            .upsert_text(&documents)
+            .map(|n| n as u64)
+            .map_err(ColumnsError::Refused)
     }
 
-    /// `doc_decode` of one row's plaintext, its document kept here.
+    /// `doc_decode` of one row's plaintext, its document kept here: the decode's envelope without the document.
     pub fn decode(&self, plaintext: Vec<u8>, expected: Option<String>) -> String {
-        self.0
-            .lock()
-            .unwrap()
-            .decode_text(&plaintext, expected.as_deref())
+        let decoded = self.held().decode(&plaintext, expected.as_deref());
+        format!(r#"{{"ok":{decoded},"version":1}}"#)
     }
 
     pub fn remove(&self, name: String) -> bool {
-        self.0.lock().unwrap().remove(&name)
+        self.held().remove(&name)
     }
 
-    /// The named lists (`["home", "history"]`) at `now`.
-    pub fn query(&self, queries: String, now: i64) -> String {
-        self.0.lock().unwrap().query_text(&queries, now)
+    /// One held document's JSON, as it was added.
+    pub fn document(&self, name: String) -> Option<String> {
+        self.held().document(&name).map(str::to_owned)
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> u64 {
+        self.held().len() as u64
+    }
+
+    /// Every held document's JSON, as one array.
+    pub fn documents(&self) -> String {
+        self.held().documents_text()
+    }
+
+    pub fn home(&self, now: i64) -> Arc<ColumnsAnswer> {
+        answer(self.held().home(now))
+    }
+
+    pub fn history(&self, now: i64) -> Arc<ColumnsAnswer> {
+        answer(self.held().history(now))
+    }
+
+    pub fn watchlist(&self, now: i64) -> Arc<ColumnsAnswer> {
+        answer(self.held().watchlist(now))
+    }
+
+    /// Continue Watching with `layouts` (JSON, by TMDB id) and `airing` (JSON, or none).
+    pub fn continuing(
+        &self,
+        now: i64,
+        layouts: String,
+        airing: Option<String>,
+    ) -> Result<Arc<ColumnsAnswer>, ColumnsError> {
+        let layouts =
+            den_sync::ColumnsLayouts::read_text(&layouts).map_err(ColumnsError::Refused)?;
+        let airing = airing
+            .as_deref()
+            .map(den_sync::ColumnsAiring::read_text)
+            .transpose()
+            .map_err(ColumnsError::Refused)?;
+        Ok(answer(self.held().continuing(
+            now,
+            &layouts,
+            airing.as_ref(),
+        )))
+    }
+
+    /// The newest stamp and when an answer next changes with no write.
+    pub fn newest(&self, now: i64) -> Arc<ColumnsAnswer> {
+        answer(self.held().newest(now))
+    }
+
+    /// `assistant_projection`'s `lists` for `layouts` (JSON, by TMDB id), as JSON to pass on.
+    pub fn assistant(&self, now: i64, layouts: String) -> Result<String, ColumnsError> {
+        let layouts =
+            den_sync::ColumnsLayouts::read_text(&layouts).map_err(ColumnsError::Refused)?;
+        Ok(self.held().assistant(now, &layouts).to_string())
+    }
+
+    /// `pending_targets_v4` over the held documents for one account's `deliver` facts (JSON): its answer's JSON.
+    pub fn pending(&self, deliver: String, now: i64) -> Result<String, ColumnsError> {
+        self.held()
+            .pending_text(&deliver, now)
+            .map_err(ColumnsError::Refused)
     }
 }
 

@@ -3,6 +3,7 @@
 //! HMAC check stay with the clients (§14).
 
 pub mod codec;
+#[cfg(feature = "library-columns")]
 pub mod columns;
 pub mod delivery;
 pub mod doc;
