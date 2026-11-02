@@ -42,7 +42,7 @@ zeroize = { version = "1", default-features = false, features = ["alloc"] }
 # AES-256-GCM wraps. No `getrandom` anywhere: randomness arrives as input, so the crate builds for wasm32 as is.
 # `ed25519-dalek` without `fast`: its precomputed tables would add to the web binding for a handful of signatures.
 # X-Wing needs both `mlkem` and `x25519`; `x25519` also brings HKDF-SHA256.
-hpke = { version = "0.14.1", default-features = false, features = ["alloc", "mlkem", "x25519", "aes"] }
+hpke = { version = "0.15.1", default-features = false, features = ["alloc", "mlkem", "x25519", "aes"] }
 ed25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroize"] }
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
 rand_core = { version = "0.10.1", default-features = false }
