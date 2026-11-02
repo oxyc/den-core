@@ -51,6 +51,13 @@ impl TitleFacts<'_> {
     pub fn code(&self) -> u64 {
         super::code(self.doc.tv, self.doc.id)
     }
+
+    /// When a listed title went on the watchlist: its status stamp, which only a move onto the watchlist sets while it
+    /// stays there, or `addedAt` when that is later. `addedAt` alone is the first time the title entered the library
+    /// (every merge keeps the earliest), so a finished title listed again would sort as if listed years ago.
+    pub fn listed_at(&self) -> f64 {
+        self.added_at.max(self.status_at as f64)
+    }
 }
 
 pub(super) fn title(d: &TitleDoc, now: i64) -> TitleFacts<'_> {

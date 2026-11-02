@@ -158,10 +158,12 @@ pub fn lists(lib: &Library, now: i64) -> Result<Lists, String> {
         }
         let status = doc.get("status").and_then(|s| s["value"].as_str());
         if status == Some("watchlist") {
+            // When it was listed (`TitleFacts::listed_at`): the later of `addedAt`, the first time the title entered the
+            // library, and the status stamp, which a move back onto the watchlist sets.
             let added = doc
                 .get("addedAt")
                 .and_then(Value::as_i64)
-                .or_else(|| at_of(doc.get("status")));
+                .max(at_of(doc.get("status")));
             watchlist.push(WatchlistRow {
                 title,
                 added_at: json!(added),

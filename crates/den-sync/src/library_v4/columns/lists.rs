@@ -401,7 +401,7 @@ impl Columns {
             .filter(|&i| active[i].status == WATCHLIST)
             .collect();
         sort(&mut watchlist, &|a, b| {
-            active[b].added_at.total_cmp(&active[a].added_at)
+            active[b].listed_at().total_cmp(&active[a].listed_at())
         });
         put_codes(
             &mut answer,
@@ -913,15 +913,15 @@ impl Columns {
         answer
     }
 
-    /// The watchlist (den-edge `watchlist`, before titles are named): `media`, `id`, `added_at`, newest addition
-    /// first, a tie in document order.
+    /// The watchlist (den-edge `watchlist`, before titles are named): `media`, `id`, `added_at` (when it was listed,
+    /// `listed_at`), newest addition first, a tie in document order.
     pub fn watchlist(&self, now: i64) -> Answer {
         let titles = self.titles(now);
         let mut listed: Vec<usize> = (0..titles.len())
             .filter(|&i| !titles[i].deleted && titles[i].status == WATCHLIST)
             .collect();
         sort(&mut listed, &|a, b| {
-            titles[b].added_at.total_cmp(&titles[a].added_at)
+            titles[b].listed_at().total_cmp(&titles[a].listed_at())
         });
         let mut answer = Answer::default();
         let mut keys = Keys::default();
@@ -931,7 +931,7 @@ impl Columns {
         keys.put(&mut answer, "watchlist");
         answer.put(
             "watchlist.added_at",
-            Column::Numbers(listed.iter().map(|&i| titles[i].added_at).collect()),
+            Column::Numbers(listed.iter().map(|&i| titles[i].listed_at()).collect()),
         );
         answer
     }

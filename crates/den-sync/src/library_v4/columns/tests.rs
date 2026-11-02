@@ -217,6 +217,72 @@ fn key_cmp_is_the_byte_order_of_the_keys() {
     }
 }
 
+/// A series in the library since long before the films, watched, then put back on the watchlist after them, is the
+/// newest addition on every watchlist — Den Web's, Home's and both builds of the assistant's — and its episode is
+/// still seen. `addedAt` keeps the first time it entered the library; the status stamp says when it was listed.
+#[test]
+fn a_title_listed_again_is_the_newest_addition() {
+    let d = "a1b2c3d4e5f60718";
+    let documents = vec![
+        json!({"format":4,"kind":"title","title":{"id":550,"type":"movie"},
+            "status":{"value":"watchlist","at":[2000,0,d]},"addedAt":2000}),
+        json!({"format":4,"kind":"title","title":{"id":551,"type":"movie"},
+            "status":{"value":"watchlist","at":[3000,0,d]},"addedAt":3000}),
+        json!({"format":4,"kind":"title","title":{"id":84773,"type":"tv"},
+            "status":{"value":"watchlist","at":[3500,0,d]},"deleted":{"value":false,"at":[3500,0,d]},
+            "addedAt":1000}),
+        json!({"format":4,"kind":"season","title":{"id":84773,"type":"tv"},"season":2,"seasonReset":null,
+            "episodes":{"1":{"cleared":null,"imported":false,"plays":{"0":1500},
+                "progress":{"at":[1500,0,d],"value":1,"viewing":0}}}}),
+    ];
+    let columns = index(&documents);
+    let ids = [84773.0, 551.0, 550.0];
+    let watchlist = columns.watchlist(NOW);
+    assert_eq!(watchlist.numbers("watchlist.id"), Some(&ids[..]));
+    assert_eq!(
+        watchlist.numbers("watchlist.added_at"),
+        Some(&[3500.0, 3000.0, 2000.0][..])
+    );
+    assert_eq!(columns.home(NOW).numbers("watchlist.id"), Some(&ids[..]));
+
+    let expected = json!([
+        ["tv", 84773, 3500],
+        ["movie", 551, 3000],
+        ["movie", 550, 2000]
+    ]);
+    let held = columns.assistant(NOW, &Layouts::default());
+    assert_eq!(
+        held["watchlist"], expected,
+        "the assistant's, from the held documents"
+    );
+    let texts: Vec<Box<RawValue>> = documents
+        .iter()
+        .map(|d| RawValue::from_string(d.to_string()).unwrap())
+        .collect();
+    let raws: Vec<&RawValue> = texts.iter().map(|t| t.as_ref()).collect();
+    let layouts = std::collections::BTreeMap::new();
+    let library = crate::projection::Library {
+        library: "",
+        documents: &raws,
+        layouts: &layouts,
+        head: 0,
+        prefs: None,
+        lists: None,
+    };
+    let built = crate::projection::lists(&library, NOW).unwrap().to_json();
+    assert_eq!(
+        built["watchlist"], expected,
+        "the assistant's, from the documents"
+    );
+    for lists in [&held, &built] {
+        let seen = lists["seen"].as_array().unwrap();
+        assert!(
+            seen.iter().any(|r| r[1] == 84773),
+            "its episode is still seen: {seen:?}"
+        );
+    }
+}
+
 #[test]
 fn a_document_that_cannot_be_read_refuses_its_batch() {
     let mut columns = index(&documents());
