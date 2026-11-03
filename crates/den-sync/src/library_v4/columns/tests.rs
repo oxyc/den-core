@@ -282,6 +282,28 @@ fn a_title_listed_again_is_the_newest_addition() {
     }
 }
 
+/// A series marked Seen as a whole has no episode marks, yet a client follows it for its new seasons; taking it off
+/// Coming up is its dismissal, so Home keeps that dismissal. A film marked watched has nothing to follow and keeps none.
+#[test]
+fn a_series_seen_as_a_whole_keeps_its_dismissal() {
+    let d = "a1b2c3d4e5f60718";
+    let columns = index(&[
+        json!({"format":4,"kind":"title","title":{"id":1396,"type":"tv"},
+            "status":{"value":"watched","at":[1000,0,d]},
+            "dismissed":{"value":true,"at":[2000,0,d]},"addedAt":1000,"watchedAt":1000}),
+        json!({"format":4,"kind":"title","title":{"id":550,"type":"movie"},
+            "status":{"value":"watched","at":[1000,0,d]},
+            "dismissed":{"value":true,"at":[2000,0,d]},"addedAt":1000,"watchedAt":1000}),
+        json!({"format":4,"kind":"title","title":{"id":1399,"type":"tv"},
+            "status":{"value":"watched","at":[1000,0,d]},
+            "deleted":{"value":true,"at":[1500,0,d]},
+            "dismissed":{"value":true,"at":[2000,0,d]},"addedAt":1000,"watchedAt":1000}),
+    ]);
+    let home = columns.home(NOW);
+    assert_eq!(home.numbers("dismissed.id"), Some(&[1396.0][..]));
+    assert_eq!(home.numbers("dismissed.at"), Some(&[2000.0][..]));
+}
+
 #[test]
 fn a_document_that_cannot_be_read_refuses_its_batch() {
     let mut columns = index(&documents());

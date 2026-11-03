@@ -599,10 +599,12 @@ impl Columns {
         flags.put(&mut answer, "flags");
         answer.put("flags.season", Column::Numbers(flag_season));
         answer.put("flags.episode", Column::Numbers(flag_episode));
-        // A dismissal is kept for a kept record or a series with a mark or a flag, deleted title or not.
+        // A dismissal is kept for a kept record or a series with a mark or a flag, deleted title or not, and for a
+        // series marked Seen as a whole: the new episodes a client follows it for are taken off by the same dismissal.
         let (mut dismissed, mut dismissed_at) = (Keys::default(), vec![]);
         for f in &s.titles {
-            let live = s.kept(f) || (f.doc.tv && s.active(f.doc.id));
+            let seen = f.doc.tv && !f.deleted && f.status == WATCHED;
+            let live = s.kept(f) || (f.doc.tv && s.active(f.doc.id)) || seen;
             if let Some(at) = f.dismissed.filter(|_| live) {
                 dismissed.push(f.doc.tv, f.doc.id);
                 dismissed_at.push(at as f64);
