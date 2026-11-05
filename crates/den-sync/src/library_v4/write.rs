@@ -393,6 +393,16 @@ fn film_progress(
         .and_then(|r| safe_u64(&r["viewing"]))
         .unwrap_or(0);
     let value = write["value"].as_f64().ok_or("invalid_progress")?;
+    // Explicit positive playback makes a removed film active again. Merge the field instead of assigning it so a
+    // tombstone at the same or a later stamp still wins; an old playback receipt may update hidden resume evidence,
+    // but it cannot resurrect the title.
+    if value > 0.0 {
+        let active = json!({"value": false, "at": at});
+        let next = title
+            .get("deleted")
+            .map_or_else(|| active.clone(), |stored| later(stored, &active));
+        title.insert("deleted".into(), next);
+    }
     let resumed = resume
         .as_ref()
         .and_then(|r| r["value"].as_f64())

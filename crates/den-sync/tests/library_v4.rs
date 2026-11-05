@@ -808,8 +808,69 @@ fn write_cases() -> Vec<Case> {
             docs(json!([title(
                 "movie",
                 550,
-                json!({"resume": progress(0.97, 2000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
+                json!({"deleted": {"value": false, "at": st(2000)}, "resume": progress(0.97, 2000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
             )])),
+        ),
+        case(
+            "positive film playback re-adds a deleted title",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0.4, "seconds": 1200, "at": st(2000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"deleted": {"value": true, "at": st(1500)}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({
+                    "deleted": {"value": false, "at": st(2000)},
+                    "resume": {"value": 0.4, "at": st(2000), "viewing": 0, "seconds": 1200},
+                    "status": {"value": "inProgress", "at": st(2000)}
+                })
+            )])),
+        ),
+        case(
+            "playback older than the tombstone keeps the film deleted",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0.4, "at": st(2000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"deleted": {"value": true, "at": st(3000)}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([title(
+                "movie",
+                550,
+                json!({
+                    "deleted": {"value": true, "at": st(3000)},
+                    "resume": progress(0.4, 2000, 0),
+                    "status": {"value": "inProgress", "at": st(2000)}
+                })
+            )])),
+        ),
+        case(
+            "zero film progress does not re-add a deleted title",
+            "§8 Films",
+            write(
+                json!({"kind": "progress", "value": 0, "at": st(2000)}),
+                movie(),
+                title(
+                    "movie",
+                    550,
+                    json!({"deleted": {"value": true, "at": st(1500)}}),
+                ),
+                json!([]),
+            ),
+            docs(json!([])),
         ),
         case(
             "a finished film's next finishing tick stays in its viewing",
@@ -827,7 +888,7 @@ fn write_cases() -> Vec<Case> {
             docs(json!([title(
                 "movie",
                 550,
-                json!({"resume": progress(0.98, 3000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
+                json!({"deleted": {"value": false, "at": st(3000)}, "resume": progress(0.98, 3000, 0), "status": {"value": "watched", "at": st(2000)}, "watch": {"imported": false, "plays": {"0": 2000}, "cleared": null}})
             )])),
         ),
         case(
@@ -1978,7 +2039,7 @@ fn review_cases() -> Vec<Case> {
             ),
             docs(json!([with(
                 film_watched.clone(),
-                json!({"status": {"value": "inProgress", "at": st(2000)}, "resume": progress(0.3, 2000, 1)})
+                json!({"deleted": {"value": false, "at": st(2000)}, "status": {"value": "inProgress", "at": st(2000)}, "resume": progress(0.3, 2000, 1)})
             )])),
         ),
         case(
@@ -1995,7 +2056,7 @@ fn review_cases() -> Vec<Case> {
             ),
             docs(json!([with(
                 film_watched.clone(),
-                json!({"status": {"value": "inProgress", "at": st(2000)}, "resume": progress(0.4, 3000, 1)})
+                json!({"deleted": {"value": false, "at": st(3000)}, "status": {"value": "inProgress", "at": st(2000)}, "resume": progress(0.4, 3000, 1)})
             )])),
         ),
         case(
