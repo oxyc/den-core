@@ -86,9 +86,9 @@ pub fn outcome(input: &Map<String, Value>) -> Result<Value, String> {
     // The list on screen before this lookup: kept, with the caveat it was shown with, when this one can't replace it.
     let prior = field(input, "prior", Value::as_object)?;
     let prior = match prior {
-        Some(prior) if required(prior, "count")? > 0 => {
-            Some(field(prior, "caveat", |c| c.is_object().then(|| c.clone()))?)
-        }
+        Some(prior) if required(prior, "count")? > 0 => Some(field(prior, "caveat", |c| {
+            c.is_object().then(|| c.clone())
+        })?),
         _ => None,
     };
     let kept = |result: &str, category: Option<&str>, retryable: bool| match &prior {
