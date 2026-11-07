@@ -14,6 +14,7 @@ mod profiles;
 mod projection;
 mod recovery;
 mod series;
+mod sources;
 mod watch;
 mod web_core;
 mod wire;
@@ -56,6 +57,7 @@ pub use series::{
     ContinueInput, ContinueMark, Coord, DatedEpisode, Finished, LastPlayed, SeasonCount,
     UPCOMING_DAYS,
 };
+pub use sources::{outcome as source_outcome, wait as source_wait};
 pub use watch::{lease, receipt_row_name, watch_row_name};
 pub use wire::{capture, merge, Stamp};
 
@@ -440,6 +442,10 @@ enum Request {
         now: u64,
         retry_after: Option<u64>,
     },
+    /// den#723: a title's source lookup replies → its result, the list to show, and whether it may fade the title.
+    SourceOutcome(sources::OutcomeInput),
+    /// den#723: how long a source lookup has waited → its phase, and when its one automatic retry runs.
+    SourceWait(sources::WaitInput),
     /// Recovery code §2: 22 random bytes (hex) from the platform's CSPRNG → `{code, data}`.
     RecoveryCode {
         random: String,
@@ -1308,6 +1314,8 @@ fn run(request: Request) -> Result<Value, String> {
             }
             Ok(json!(at))
         }
+        Request::SourceOutcome(input) => source_outcome(input),
+        Request::SourceWait(input) => source_wait(input),
     }
 }
 
