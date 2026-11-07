@@ -482,6 +482,10 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
             }
             Ok(json!(at))
         }
+        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        "source_outcome" => sources::outcome(&fields),
+        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        "source_wait" => sources::wait(&fields),
         op if op.starts_with("assistant_") || op.starts_with("playback_receipt_") => {
             Err("assistant_module".into())
         }
