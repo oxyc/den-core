@@ -443,9 +443,9 @@ enum Request {
         retry_after: Option<u64>,
     },
     /// den#723: a title's source lookup replies → its result, the list to show, and whether it may fade the title.
-    SourceOutcome(sources::OutcomeInput),
+    SourceOutcome(serde_json::Map<String, Value>),
     /// den#723: how long a source lookup has waited → its phase, and when its one automatic retry runs.
-    SourceWait(sources::WaitInput),
+    SourceWait(serde_json::Map<String, Value>),
     /// Recovery code §2: 22 random bytes (hex) from the platform's CSPRNG → `{code, data}`.
     RecoveryCode {
         random: String,
@@ -1314,8 +1314,8 @@ fn run(request: Request) -> Result<Value, String> {
             }
             Ok(json!(at))
         }
-        Request::SourceOutcome(input) => source_outcome(input),
-        Request::SourceWait(input) => source_wait(input),
+        Request::SourceOutcome(input) => source_outcome(&input),
+        Request::SourceWait(input) => source_wait(&input),
     }
 }
 

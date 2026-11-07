@@ -4,9 +4,11 @@
 //!
 //! Two rules matter more than the rest: a partial failure never becomes a confirmed empty, and only a confirmed empty
 //! may fade or hide a title as having nothing to play.
+//!
+//! The requests are read from `Value`s rather than derived types: derived visitors cost the web modules, and the
+//! Tizen 3 core most of all, far more than these few fields.
 
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 /// When "taking longer than usual" shows. Below Scout's 8 s scrape budget (den-hearth `DEFAULT_TIMEOUT`,
 /// `SCRAPE_TIMEOUT_SECS`), so the viewer hears about a slow indexer before Scout gives up on it. Over a week of the
@@ -28,108 +30,44 @@ pub const RETRY_BASE_MS: u64 = 500;
 /// one Wi-Fi coming back together don't ask at once.
 pub const RETRY_SPREAD_MS: u64 = 2_000;
 
-#[derive(Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-enum Imdb {
-    Resolved,
-    /// The title has no IMDb id: a data gap, not an outage.
-    Missing,
-    /// The lookup itself failed (network, rate limit): says nothing about the title.
-    LookupFailed,
+const INVALID: &str = "invalid_request";
+
+/// A field that may be absent or null: `None` then, `Some` of what `read` makes of anything else.
+fn field<'a, T>(
+    object: &'a Map<String, Value>,
+    name: &str,
+    read: impl FnOnce(&'a Value) -> Option<T>,
+) -> Result<Option<T>, String> {
+    match object.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => read(value).map(Some).ok_or_else(|| INVALID.into()),
+    }
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-enum Kind {
-    Live,
-    Partial,
-    Empty,
-    Unknown,
-    Stale,
+fn number(object: &Map<String, Value>, name: &str) -> Result<Option<u64>, String> {
+    field(object, name, Value::as_u64)
 }
 
-/// An addon's own account of its list (Scout's `den` object), as the client read it.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Answer {
-    kind: Kind,
-    /// Sources the addon could have asked that didn't answer.
-    #[serde(default)]
-    missing: u32,
-    /// Sources an early answer went out without; still answering, not failed.
-    #[serde(default)]
-    late: u32,
-    /// Set on a list held through an outage (`degraded: "stale_list"`): when that list was built, in ms.
-    #[serde(default)]
-    outage_built_at: Option<u64>,
+fn required(object: &Map<String, Value>, name: &str) -> Result<u64, String> {
+    number(object, name)?.ok_or_else(|| INVALID.into())
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "reply", rename_all = "snake_case", deny_unknown_fields)]
-enum Reply {
-    Answered {
-        streams: u32,
-        /// Absent when the addon sent no account the client could read (an older addon).
-        #[serde(default)]
-        answer: Option<Answer>,
-        /// The response's `X-Den-Degraded` reason, as sent.
-        #[serde(default)]
-        degraded: Option<String>,
-    },
-    /// No usable answer: a network failure, a non-2xx, an unreadable body.
-    Errored {},
-    /// The client's own timer ran out on this addon.
-    TimedOut {},
-}
-
-/// What a list can't vouch for.
-#[derive(Deserialize, Serialize, Clone, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Caveat {
-    /// The oldest list in it that was held through an outage, built at (ms).
-    pub stale_since: Option<u64>,
-    /// Sources behind the addons that didn't answer.
-    pub missing: u32,
-    /// Sources an early answer went out without.
-    pub late: u32,
-    /// Addons that errored or timed out.
-    pub failed_addons: u32,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Prior {
-    count: u32,
-    #[serde(default)]
-    caveat: Option<Caveat>,
-}
-
-/// `source_outcome`'s input.
-#[derive(Deserialize)]
-pub struct OutcomeInput {
-    imdb: Imdb,
-    #[serde(default)]
-    replies: Vec<Reply>,
-    /// The list on screen before this lookup, if any: kept when the lookup can't replace it.
-    #[serde(default)]
-    prior: Option<Prior>,
-}
-
-/// `source_wait`'s input.
-#[derive(Deserialize)]
-pub struct WaitInput {
-    /// Since the current request began.
-    elapsed_ms: u64,
-    /// 0 for the first request of a lookup, 1 once its automatic retry has run.
-    attempt: u32,
-    /// The device's connectivity came back since the last ask.
-    #[serde(default)]
-    online_restored: bool,
-    /// The delay a `Retry-After` gave, in ms.
-    #[serde(default)]
-    retry_after_ms: Option<u64>,
-    /// A uniform random sample in [0, 1), from the platform.
-    jitter: f64,
+/// One answer: the result, the dependency it names, the list to show and its caveat, and the two decisions.
+fn verdict(
+    result: &str,
+    category: Option<&str>,
+    list: &str,
+    caveat: Value,
+    retryable: bool,
+) -> Value {
+    json!({
+        "result": result,
+        "category": category,
+        "list": list,
+        "caveat": caveat,
+        "may_mark_unavailable": result == "confirmed_empty",
+        "retryable": retryable,
+    })
 }
 
 /// The dependency a degraded answer names, in words safe to show and report.
@@ -143,83 +81,82 @@ fn category(reason: &str) -> Option<&'static str> {
     }
 }
 
-pub fn outcome(input: OutcomeInput) -> Result<Value, String> {
-    let prior = input.prior.filter(|prior| prior.count > 0);
-    let kept = |result: &str, category: Option<&str>, retryable: bool| {
-        let (list, caveat) = match &prior {
-            Some(prior) => ("retained", json!(prior.caveat)),
-            None => ("none", Value::Null),
-        };
-        json!({
-            "result": result,
-            "category": category,
-            "list": list,
-            "caveat": caveat,
-            "may_mark_unavailable": false,
-            "retryable": retryable,
-        })
+/// `source_outcome`: `imdb`, `replies` and `prior` (den#723; the request and answer are documented in its PR).
+pub fn outcome(input: &Map<String, Value>) -> Result<Value, String> {
+    // The list on screen before this lookup: kept, with the caveat it was shown with, when this one can't replace it.
+    let prior = field(input, "prior", Value::as_object)?;
+    let prior = match prior {
+        Some(prior) if required(prior, "count")? > 0 => {
+            Some(field(prior, "caveat", |c| c.is_object().then(|| c.clone()))?)
+        }
+        _ => None,
     };
-    match input.imdb {
-        Imdb::Missing => return Ok(kept("no_imdb", None, false)),
-        Imdb::LookupFailed => return Ok(kept("failed_retryable", None, true)),
-        Imdb::Resolved if input.replies.is_empty() => return Err("invalid_request".into()),
-        Imdb::Resolved => {}
+    let kept = |result: &str, category: Option<&str>, retryable: bool| match &prior {
+        Some(caveat) => verdict(result, category, "retained", json!(caveat), retryable),
+        None => verdict(result, category, "none", Value::Null, retryable),
+    };
+    let replies = field(input, "replies", Value::as_array)?.map_or(&[][..], Vec::as_slice);
+    match field(input, "imdb", Value::as_str)? {
+        // A data gap, not an outage.
+        Some("missing") => return Ok(kept("no_imdb", None, false)),
+        // The lookup itself failed: it says nothing about the title.
+        Some("lookup_failed") => return Ok(kept("failed_retryable", None, true)),
+        Some("resolved") if !replies.is_empty() => {}
+        _ => return Err(INVALID.into()),
     }
 
     let mut streams = 0u64;
-    let mut caveat = Caveat::default();
-    let mut debrid = false;
-    let mut impaired = false;
+    let (mut stale_since, mut missing, mut late, mut failed) = (None::<u64>, 0u64, 0u64, 0u64);
+    let (mut debrid, mut impaired) = (false, false);
     // Something kept this lookup from speaking for every source: never a confirmed empty.
     let mut gap = false;
     // Something kept the list it found from being complete.
     let mut short = false;
-    for reply in &input.replies {
-        match reply {
-            Reply::Errored {} => {
-                caveat.failed_addons = caveat.failed_addons.saturating_add(1);
-                gap = true;
-                short = true;
-            }
-            Reply::TimedOut {} => {
-                caveat.failed_addons = caveat.failed_addons.saturating_add(1);
-                impaired = true;
-                gap = true;
-                short = true;
-            }
-            Reply::Answered {
-                streams: count,
-                answer,
-                degraded,
-            } => {
-                streams += u64::from(*count);
-                if let Some(reason) = degraded {
+    for reply in replies {
+        let reply = reply.as_object().ok_or(INVALID)?;
+        match field(reply, "reply", Value::as_str)? {
+            // No usable answer: a network failure, a non-2xx, an unreadable body.
+            Some("errored") => {}
+            // The client's own timer ran out: the addon is up, its search is slow.
+            Some("timed_out") => impaired = true,
+            Some("answered") => {
+                let count = required(reply, "streams")?;
+                streams = streams.saturating_add(count);
+                // The response's `X-Den-Degraded` reason, as sent.
+                if let Some(reason) = field(reply, "degraded", Value::as_str)? {
                     debrid |= category(reason) == Some("debrid");
                     impaired |= category(reason) == Some("source_discovery");
                     gap = true;
                 }
-                let Some(answer) = answer else { continue };
-                caveat.missing = caveat.missing.saturating_add(answer.missing);
-                caveat.late = caveat.late.saturating_add(answer.late);
-                let incomplete =
-                    matches!(answer.kind, Kind::Partial | Kind::Unknown) || answer.missing > 0;
+                // The addon's own account of its list (Scout's `den`); absent from an older addon.
+                let Some(answer) = field(reply, "answer", Value::as_object)? else {
+                    continue;
+                };
+                let kind = field(answer, "kind", Value::as_str)?.ok_or(INVALID)?;
+                if !["live", "partial", "empty", "unknown", "stale"].contains(&kind) {
+                    return Err(INVALID.into());
+                }
+                let unanswered = number(answer, "missing")?.unwrap_or(0);
+                let behind = number(answer, "late")?.unwrap_or(0);
+                let outage = number(answer, "outage_built_at")?;
+                missing = missing.saturating_add(unanswered);
+                late = late.saturating_add(behind);
+                let incomplete = kind == "partial" || kind == "unknown" || unanswered > 0;
                 // An early answer is `partial` for its late sources alone: they are still answering, not failing.
-                if answer.missing > 0
-                    || answer.outage_built_at.is_some()
-                    || (incomplete && answer.late == 0)
-                {
-                    impaired = true;
-                }
-                short |= incomplete || answer.late > 0;
+                impaired |= unanswered > 0 || outage.is_some() || (incomplete && behind == 0);
+                short |= incomplete || behind > 0;
                 // A stale list speaks for when it was built, not for now.
-                gap |= short || answer.kind == Kind::Stale || answer.outage_built_at.is_some();
-                if *count > 0 {
-                    if let Some(at) = answer.outage_built_at {
-                        caveat.stale_since = Some(caveat.stale_since.map_or(at, |s| s.min(at)));
-                    }
+                gap |= short || kind == "stale" || outage.is_some();
+                if let (Some(at), true) = (outage, count > 0) {
+                    stale_since = Some(stale_since.map_or(at, |since| since.min(at)));
                 }
+                continue;
             }
+            _ => return Err(INVALID.into()),
         }
+        failed += 1;
+        gap = true;
+        short = true;
     }
     let category = if debrid {
         Some("debrid")
@@ -230,44 +167,42 @@ pub fn outcome(input: OutcomeInput) -> Result<Value, String> {
     };
 
     if streams > 0 {
-        let result = if caveat.stale_since.is_some() {
+        let result = if stale_since.is_some() {
             "stale_held"
         } else if short {
             "partial"
         } else {
             "live"
         };
-        let caveat = (result != "live").then_some(caveat);
-        return Ok(json!({
-            "result": result,
-            "category": category,
-            "list": "new",
-            "caveat": caveat,
-            "may_mark_unavailable": false,
-            "retryable": result != "live",
-        }));
+        let caveat = if result == "live" {
+            Value::Null
+        } else {
+            json!({
+                "stale_since": stale_since,
+                "missing": missing,
+                "late": late,
+                "failed_addons": failed,
+            })
+        };
+        return Ok(verdict(result, category, "new", caveat, result != "live"));
     }
-    if !gap {
-        return Ok(json!({
-            "result": "confirmed_empty",
-            "category": null,
-            "list": "none",
-            "caveat": null,
-            "may_mark_unavailable": true,
-            "retryable": false,
-        }));
-    }
-    Ok(match category {
-        Some(category) => kept("degraded", Some(category), true),
-        None => kept("failed_retryable", None, true),
+    Ok(match (gap, category) {
+        (false, _) => verdict("confirmed_empty", None, "none", Value::Null, false),
+        (true, Some(category)) => kept("degraded", Some(category), true),
+        (true, None) => kept("failed_retryable", None, true),
     })
 }
 
-pub fn wait(input: WaitInput) -> Result<Value, String> {
-    if !(0.0..1.0).contains(&input.jitter) {
-        return Err("invalid_request".into());
-    }
-    let elapsed = input.elapsed_ms;
+/// `source_wait`: `elapsed_ms` since the current request began, `attempt` (0, or 1 once the automatic retry ran),
+/// `online_restored`, `retry_after_ms`, and a platform `jitter` sample in [0, 1).
+pub fn wait(input: &Map<String, Value>) -> Result<Value, String> {
+    let elapsed = required(input, "elapsed_ms")?;
+    let attempt = required(input, "attempt")?;
+    let online = field(input, "online_restored", Value::as_bool)?.unwrap_or(false);
+    let retry_after = number(input, "retry_after_ms")?;
+    let jitter = field(input, "jitter", Value::as_f64)?
+        .filter(|jitter| (0.0..1.0).contains(jitter))
+        .ok_or(INVALID)?;
     let (phase, next) = if elapsed < SLOW_MS {
         ("loading", Some(SLOW_MS - elapsed))
     } else if elapsed < DEADLINE_MS {
@@ -276,15 +211,13 @@ pub fn wait(input: WaitInput) -> Result<Value, String> {
         ("deadline", None)
     };
     // One automatic retry per lookup, on a Retry-After or on connectivity coming back; Retry is the viewer's after.
-    let retry = (input.attempt == 0 && (input.online_restored || input.retry_after_ms.is_some()))
-        .then(|| {
-            // The jitter is below 1, so the spread stays below RETRY_SPREAD_MS.
-            let spread = (input.jitter * RETRY_SPREAD_MS as f64) as u64;
-            input
-                .retry_after_ms
-                .unwrap_or(0)
-                .max(RETRY_BASE_MS)
-                .saturating_add(spread)
-        });
+    let retry = (attempt == 0 && (online || retry_after.is_some())).then(|| {
+        // The jitter is below 1, so the spread stays below RETRY_SPREAD_MS.
+        let spread = (jitter * RETRY_SPREAD_MS as f64) as u64;
+        retry_after
+            .unwrap_or(0)
+            .max(RETRY_BASE_MS)
+            .saturating_add(spread)
+    });
     Ok(json!({ "phase": phase, "next_ms": next, "retry_in_ms": retry }))
 }
