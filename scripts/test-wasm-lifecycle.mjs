@@ -69,6 +69,34 @@ fixtures.push({
     },
   ],
 });
+// The stored subtitle choice and page language decide the first frame: read in startup, before deferred policy.
+const preferences = JSON.parse(
+  readFileSync(new URL('../crates/den-sync/tests/fixtures/preferences-v1.json', import.meta.url)),
+);
+fixtures.push({
+  cases: [
+    ...preferences.readCases.map(({ name, values, choice }) => ({
+      name,
+      request: { op: 'preferences_subtitle_v1', operation: 'read', values },
+      ok: { version: 1, choice },
+    })),
+    ...preferences.writeCases.map(({ name, choice, changes }) => ({
+      name,
+      request: { op: 'preferences_subtitle_v1', operation: 'write', choice },
+      ok: { version: 1, changes },
+    })),
+    ...preferences.interfaceLanguageReadCases.map(({ name, values, selection }) => ({
+      name,
+      request: { op: 'preferences_interface_language_v1', operation: 'read', values },
+      ok: { version: 1, selection },
+    })),
+    ...preferences.interfaceLanguageWriteCases.map(({ name, language, changes }) => ({
+      name,
+      request: { op: 'preferences_interface_language_v1', operation: 'write', language },
+      ok: { version: 1, changes },
+    })),
+  ],
+});
 let count = 0;
 let startupCount = 0;
 let deferredCount = 0;
