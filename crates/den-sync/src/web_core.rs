@@ -291,14 +291,15 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
         }
         #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
         "profiles_seed_preferences" => profiles::seed_preferences(&value(&mut fields, "input")?),
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        // Read on the first frame (subtitle choice, page language): kept with startup, not behind deferred policy.
+        #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
         "preferences_subtitle_v1" => {
             let operation = text(&mut fields, "operation")?;
             let values = optional::<Value>(&mut fields, "values")?;
             let choice = optional::<Value>(&mut fields, "choice")?;
             preferences::subtitle_v1(&operation, values.as_ref(), choice.as_ref())
         }
-        #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
+        #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
         "preferences_interface_language_v1" => {
             let operation = text(&mut fields, "operation")?;
             let values = optional::<Value>(&mut fields, "values")?;

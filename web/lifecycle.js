@@ -12,6 +12,8 @@ export const STARTUP_OPERATIONS = Object.freeze([
   'season_state_v4',
   'profiles_validate',
   'profiles_seed_preferences',
+  'preferences_subtitle_v1',
+  'preferences_interface_language_v1',
   'profile_policy_allows',
   'kid_title_approvals_validate',
   'title_state',
