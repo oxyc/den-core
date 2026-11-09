@@ -10,15 +10,18 @@ use std::fmt;
 
 const INVALID: &str = "invalid_request";
 
-fn take<T: DeserializeOwned>(fields: &mut Map<String, Value>, name: &str) -> Result<T, String> {
+pub(super) fn take<T: DeserializeOwned>(
+    fields: &mut Map<String, Value>,
+    name: &str,
+) -> Result<T, String> {
     serde_json::from_value(fields.remove(name).ok_or(INVALID)?).map_err(|_| INVALID.into())
 }
 
-fn value(fields: &mut Map<String, Value>, name: &str) -> Result<Value, String> {
+pub(super) fn value(fields: &mut Map<String, Value>, name: &str) -> Result<Value, String> {
     take(fields, name)
 }
 
-fn text(fields: &mut Map<String, Value>, name: &str) -> Result<String, String> {
+pub(super) fn text(fields: &mut Map<String, Value>, name: &str) -> Result<String, String> {
     take(fields, name)
 }
 
@@ -29,14 +32,14 @@ fn vector<T: DeserializeOwned>(
     take(fields, name)
 }
 
-fn default_vector<T: DeserializeOwned>(
+pub(super) fn default_vector<T: DeserializeOwned>(
     fields: &mut Map<String, Value>,
     name: &str,
 ) -> Result<Vec<T>, String> {
     default(fields, name)
 }
 
-fn optional<T: DeserializeOwned>(
+pub(super) fn optional<T: DeserializeOwned>(
     fields: &mut Map<String, Value>,
     name: &str,
 ) -> Result<Option<T>, String> {
@@ -48,7 +51,7 @@ fn optional<T: DeserializeOwned>(
     }
 }
 
-fn default<T: DeserializeOwned + Default>(
+pub(super) fn default<T: DeserializeOwned + Default>(
     fields: &mut Map<String, Value>,
     name: &str,
 ) -> Result<T, String> {
@@ -58,7 +61,7 @@ fn default<T: DeserializeOwned + Default>(
     }
 }
 
-struct RequestFields(Map<String, Value>);
+pub(super) struct RequestFields(pub(super) Map<String, Value>);
 
 impl<'de> Deserialize<'de> for RequestFields {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

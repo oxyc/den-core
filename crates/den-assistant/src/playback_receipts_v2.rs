@@ -135,7 +135,10 @@ fn exact_keys(object: &Map<String, Value>, required: &[&str]) -> bool {
 }
 
 fn operation_text<'a>(object: &'a Map<String, Value>, key: &str, bytes: usize) -> Option<&'a str> {
-    object.get(key)?.as_str().filter(|text| lower_hex(text, bytes))
+    object
+        .get(key)?
+        .as_str()
+        .filter(|text| lower_hex(text, bytes))
 }
 
 /// The exact proof-bearing operation shapes. Clock and membership checks remain Edge inputs; all byte-level and
@@ -220,8 +223,7 @@ pub fn validate_playback_receipt_v2_operation(input: &[u8]) -> Option<Value> {
         "ack" => {
             let mut keys = base.to_vec();
             keys.push("upTo");
-            common(&keys)
-                && object["upTo"].as_u64().is_some_and(|value| value > 0)
+            common(&keys) && object["upTo"].as_u64().is_some_and(|value| value > 0)
         }
         "drain" | "activate" | "revoke" => common(&base),
         _ => false,
@@ -291,8 +293,8 @@ pub fn playback_receipt_v2_proof(
     if canonical_operation.len() > PLAYBACK_RECEIPT_V2_MAX_OPERATION {
         return Err(Error::InvalidRequest);
     }
-    let operation = validate_playback_receipt_v2_operation(canonical_operation)
-        .ok_or(Error::InvalidRequest)?;
+    let operation =
+        validate_playback_receipt_v2_operation(canonical_operation).ok_or(Error::InvalidRequest)?;
     if operation["route"] != playback_receipt_v2_route(authority) {
         return Err(Error::InvalidRequest);
     }
@@ -316,7 +318,8 @@ pub fn verify_playback_receipt_v2_proof(
     {
         return false;
     }
-    let operation: Value = serde_json::from_slice(canonical_operation).expect("validated operation");
+    let operation: Value =
+        serde_json::from_slice(canonical_operation).expect("validated operation");
     if operation["route"] != playback_receipt_v2_route(authority) {
         return false;
     }
@@ -440,8 +443,19 @@ pub fn parse_playback_receipt_v2(bytes: &[u8]) -> Option<PlaybackReceiptV2Messag
     let value = canonical_object(bytes)?;
     let object = value.as_object()?;
     let required = [
-        "binding", "completed", "durationSeconds", "endedAt", "expiresAt", "generation",
-        "household", "id", "kid", "positionSeconds", "route", "title", "v",
+        "binding",
+        "completed",
+        "durationSeconds",
+        "endedAt",
+        "expiresAt",
+        "generation",
+        "household",
+        "id",
+        "kid",
+        "positionSeconds",
+        "route",
+        "title",
+        "v",
     ];
     if object.len() < required.len()
         || object.len() > required.len() + 2
@@ -474,12 +488,15 @@ pub fn parse_playback_receipt_v2(bytes: &[u8]) -> Option<PlaybackReceiptV2Messag
     };
     if season.is_some() != episode.is_some()
         || season.is_some() && kind != "tv"
+        || season.is_some_and(|number| number > 9_999)
         || episode.is_some_and(|number| number == 0 || number > super::MAX_EPISODE)
     {
         return None;
     }
     let position_seconds = object["positionSeconds"].as_u64()?;
-    let duration_seconds = object["durationSeconds"].as_u64().filter(|value| *value > 0)?;
+    let duration_seconds = object["durationSeconds"]
+        .as_u64()
+        .filter(|value| *value > 0)?;
     if position_seconds > duration_seconds {
         return None;
     }
@@ -586,7 +603,8 @@ pub fn open_playback_receipt_v2(
         .ok_or(PlaybackReceiptV2Reject::DoesNotOpen)?;
     let plaintext = hpke_open(secret, PLAYBACK_RECEIPT_V2_INFO, &aad, &bytes)
         .ok_or(PlaybackReceiptV2Reject::DoesNotOpen)?;
-    let message = parse_playback_receipt_v2(&plaintext).ok_or(PlaybackReceiptV2Reject::Malformed)?;
+    let message =
+        parse_playback_receipt_v2(&plaintext).ok_or(PlaybackReceiptV2Reject::Malformed)?;
     if message.aad.household != expected.household {
         return Err(PlaybackReceiptV2Reject::WrongHousehold);
     }
@@ -670,9 +688,7 @@ struct RawDrainEntry {
 
 /// Strict response decoding preserves each entry's complete AAD metadata and increasing sequence order.
 pub fn parse_playback_receipt_v2_drain(bytes: &[u8]) -> Option<PlaybackReceiptV2Drain> {
-    if bytes.len() > PLAYBACK_RECEIPT_V2_MAX_DRAIN
-        || !playback_receipt_v2_exact_integers(bytes)
-    {
+    if bytes.len() > PLAYBACK_RECEIPT_V2_MAX_DRAIN || !playback_receipt_v2_exact_integers(bytes) {
         return None;
     }
     let raw: RawDrain = serde_json::from_slice(bytes).ok()?;
@@ -691,6 +707,7 @@ pub fn parse_playback_receipt_v2_drain(bytes: &[u8]) -> Option<PlaybackReceiptV2
             || entry.seq <= previous
             || !lower_hex(&entry.id, 16)
             || !lower_hex(&entry.kid, 16)
+            || entry.sealed.is_empty()
             || entry.sealed.len() > PLAYBACK_RECEIPT_V2_MAX_SEALED
             || b64url_decode(&entry.sealed).is_none()
         {
@@ -762,7 +779,9 @@ pub struct PlaybackReceiptV2History {
 }
 
 impl PlaybackReceiptV2History {
-    pub fn new(current: PlaybackReceiptV2RetirementKey) -> Result<Self, PlaybackReceiptV2HistoryError> {
+    pub fn new(
+        current: PlaybackReceiptV2RetirementKey,
+    ) -> Result<Self, PlaybackReceiptV2HistoryError> {
         Self::restore(current, None, [], [], [])
     }
 
@@ -778,9 +797,7 @@ impl PlaybackReceiptV2History {
         if current.version == 0
             || current.version > MAX_SAFE_INTEGER
             || previous.as_ref().is_some_and(|key| {
-                key.version == 0
-                    || key.version > MAX_SAFE_INTEGER
-                    || key.version == current.version
+                key.version == 0 || key.version > MAX_SAFE_INTEGER || key.version == current.version
             })
         {
             return Err(PlaybackReceiptV2HistoryError::Invalid);
@@ -788,14 +805,16 @@ impl PlaybackReceiptV2History {
         let live: BTreeSet<_> = live.into_iter().collect();
         let tombstones: BTreeSet<_> = tombstones.into_iter().collect();
         let tags: BTreeSet<_> = tags.into_iter().collect();
-        if live.iter().chain(&tombstones).any(|route| !lower_hex(route, 16))
+        if live
+            .iter()
+            .chain(&tombstones)
+            .any(|route| !lower_hex(route, 16))
             || live.iter().any(|route| tombstones.contains(route))
             || tags.iter().any(|(version, _)| {
                 *version != current.version
                     && previous.as_ref().is_none_or(|key| key.version != *version)
             })
-            || live.len() + tombstones.len() + tags.len()
-                > PLAYBACK_RECEIPT_V2_HISTORY_CAPACITY
+            || live.len() + tombstones.len() + tags.len() > PLAYBACK_RECEIPT_V2_HISTORY_CAPACITY
         {
             return Err(PlaybackReceiptV2HistoryError::Invalid);
         }
@@ -875,12 +894,17 @@ impl PlaybackReceiptV2History {
         if next.version == 0
             || next.version > MAX_SAFE_INTEGER
             || next.version == self.current.version
-            || self.previous.as_ref().is_some_and(|key| key.version == next.version)
+            || self
+                .previous
+                .as_ref()
+                .is_some_and(|key| key.version == next.version)
         {
             return Err(PlaybackReceiptV2HistoryError::Invalid);
         }
         if self.previous.as_ref().is_some_and(|previous| {
-            self.tags.iter().any(|(version, _)| *version == previous.version)
+            self.tags
+                .iter()
+                .any(|(version, _)| *version == previous.version)
         }) {
             return Err(PlaybackReceiptV2HistoryError::PreviousKeyInUse);
         }

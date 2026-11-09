@@ -280,12 +280,11 @@ pub fn playback_receipt_v2_open(
         route: route.to_owned(),
     };
     let applied = applied.iter().cloned().collect();
-    let receipt = match den_assistant::open_playback_receipt_v2(
-        &secret, &expected, sealed, &applied, now,
-    ) {
-        Ok(receipt) => receipt,
-        Err(reason) => return Ok(json!({"reject": reason.as_str()})),
-    };
+    let receipt =
+        match den_assistant::open_playback_receipt_v2(&secret, &expected, sealed, &applied, now) {
+            Ok(receipt) => receipt,
+            Err(reason) => return Ok(json!({"reject": reason.as_str()})),
+        };
     let value = if receipt.completed {
         1.0
     } else {

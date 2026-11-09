@@ -573,41 +573,6 @@ enum AssistantRequest {
         local_applied: serde_json::Map<String, Value>,
         now: u64,
     },
-    /// Playback receipts v2 §1: 48 profile-owned random bytes → authority, stable binding and opaque route.
-    PlaybackReceiptV2Authority {
-        role: String,
-        #[serde(default)]
-        random: Option<String>,
-    },
-    /// Playback receipts v2 §2: route and proof over an exact operation.
-    PlaybackReceiptV2Proof {
-        authority: String,
-        operation: Value,
-    },
-    /// Playback receipts v2 §§3.1/3.3: one profile-owned X-Wing key pair.
-    PlaybackReceiptV2Keygen { random: String },
-    /// Playback receipts v2 §5: raw strict drain response → entries carrying complete canonical AAD.
-    PlaybackReceiptV2Drain {
-        response: String,
-        household: String,
-        route: String,
-        binding: String,
-    },
-    /// Playback receipts v2 §§7–8: single named-key open → route-bound atomic progress/replay facts.
-    PlaybackReceiptV2Open {
-        sealed: String,
-        secret: String,
-        household: String,
-        route: String,
-        binding: String,
-        generation: u64,
-        kid: String,
-        id: String,
-        #[serde(default)]
-        applied: Vec<String>,
-        device: String,
-        now: u64,
-    },
 }
 
 /// Assistant v1 §15: the library's documents → the projection for every live read grant, sealed, and the read grants
@@ -754,10 +719,8 @@ pub fn evaluate(input: &str) -> String {
         }
         match web_core::run(input) {
             Err(error) if error == "assistant_module" => {
-                if playback_receipt_v2_op(input)
-                    && !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes())
-                {
-                    return Err("invalid_request".into());
+                if playback_receipt_v2_op(input) {
+                    return run_playback_receipts_v2(input);
                 }
                 match tagged::<AssistantRequest>(input) {
                     Ok(request) => run_assistant(request),
@@ -781,10 +744,8 @@ fn evaluate_legacy(input: &str) -> String {
         match tagged::<Request>(input) {
             Ok(request) => run(request),
             Err(_) => {
-                if playback_receipt_v2_op(input)
-                    && !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes())
-                {
-                    return Err("invalid_request".into());
+                if playback_receipt_v2_op(input) {
+                    return run_playback_receipts_v2(input);
                 }
                 match tagged::<AssistantRequest>(input) {
                     Ok(request) => run_assistant(request),
@@ -820,20 +781,20 @@ pub fn evaluate_deferred(input: &str) -> String {
     envelope(bounded(input).and_then(|()| web_core::run(input)))
 }
 
-/// The assistant and playback-receipt crypto ops alone: the web's lazy assistant module.
+/// The assistant and playback-receipt crypto ops alone: the web's lazy assistant module. They intentionally share
+/// one HPKE graph; a second module would make clients which use both download and compile that graph twice.
 pub fn evaluate_assistant(input: &str) -> String {
     envelope(bounded(input).and_then(|()| {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
-        if playback_receipt_v2_op(input)
-            && !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes())
-        {
-            return Err("invalid_request".into());
+        if playback_receipt_v2_op(input) {
+            run_playback_receipts_v2(input)
+        } else {
+            tagged::<AssistantRequest>(input)
+                .map_err(|_| "invalid_request".to_string())
+                .and_then(run_assistant)
         }
-        tagged::<AssistantRequest>(input)
-            .map_err(|_| "invalid_request".to_string())
-            .and_then(run_assistant)
     }))
 }
 
@@ -1081,47 +1042,58 @@ fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
             &local_applied,
             now,
         ),
-        AssistantRequest::PlaybackReceiptV2Authority { role, random } => {
+    }
+}
+
+/// The compact receipt dispatcher keeps one duplicate-rejecting parse and one set of generic field readers instead
+/// of generating five serde enum visitors. That matters in the lazy WASM module and also makes unknown fields fail.
+fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
+    const INVALID: &str = "invalid_request";
+    if !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes()) {
+        return Err(INVALID.into());
+    }
+    let mut fields = serde_json::from_str::<web_core::RequestFields>(input)
+        .map_err(|_| INVALID.to_string())?
+        .0;
+    let op: String = web_core::take(&mut fields, "op")?;
+    let answer = match op.as_str() {
+        "playback_receipt_v2_authority" => {
+            let role: String = web_core::take(&mut fields, "role")?;
+            let random: Option<String> = web_core::optional(&mut fields, "random")?;
             assistant::playback_receipt_v2_authority(&role, random.as_deref())
         }
-        AssistantRequest::PlaybackReceiptV2Proof {
-            authority,
-            operation,
-        } => assistant::playback_receipt_v2_proof(&authority, &operation),
-        AssistantRequest::PlaybackReceiptV2Keygen { random } => {
-            assistant::playback_receipt_v2_keygen(&random)
-        }
-        AssistantRequest::PlaybackReceiptV2Drain {
-            response,
-            household,
-            route,
-            binding,
-        } => assistant::playback_receipt_v2_drain(&response, &household, &route, &binding),
-        AssistantRequest::PlaybackReceiptV2Open {
-            sealed,
-            secret,
-            household,
-            route,
-            binding,
-            generation,
-            kid,
-            id,
-            applied,
-            device,
-            now,
-        } => assistant::playback_receipt_v2_open(
-            &sealed,
-            &secret,
-            &household,
-            &route,
-            &binding,
-            generation,
-            &kid,
-            &id,
-            &applied,
-            &device,
-            now,
+        "playback_receipt_v2_proof" => assistant::playback_receipt_v2_proof(
+            &web_core::text(&mut fields, "authority")?,
+            &web_core::value(&mut fields, "operation")?,
         ),
+        "playback_receipt_v2_keygen" => {
+            assistant::playback_receipt_v2_keygen(&web_core::text(&mut fields, "random")?)
+        }
+        "playback_receipt_v2_drain" => assistant::playback_receipt_v2_drain(
+            &web_core::text(&mut fields, "response")?,
+            &web_core::text(&mut fields, "household")?,
+            &web_core::text(&mut fields, "route")?,
+            &web_core::text(&mut fields, "binding")?,
+        ),
+        "playback_receipt_v2_open" => assistant::playback_receipt_v2_open(
+            &web_core::text(&mut fields, "sealed")?,
+            &web_core::text(&mut fields, "secret")?,
+            &web_core::text(&mut fields, "household")?,
+            &web_core::text(&mut fields, "route")?,
+            &web_core::text(&mut fields, "binding")?,
+            web_core::take(&mut fields, "generation")?,
+            &web_core::text(&mut fields, "kid")?,
+            &web_core::text(&mut fields, "id")?,
+            &web_core::default_vector(&mut fields, "applied")?,
+            &web_core::text(&mut fields, "device")?,
+            web_core::take(&mut fields, "now")?,
+        ),
+        _ => return Err(INVALID.into()),
+    };
+    if fields.is_empty() {
+        answer
+    } else {
+        Err(INVALID.into())
     }
 }
 

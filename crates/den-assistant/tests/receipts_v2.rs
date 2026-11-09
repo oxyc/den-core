@@ -50,12 +50,20 @@ fn aad(kid: String) -> PlaybackReceiptV2Aad {
 fn den_spec_derivation_proof_key_aad_drain_and_integer_vectors() {
     let Some(vectors) = vectors() else { return };
     let authority = decode32(vectors["derivation"]["authority"].as_str().unwrap());
-    assert_eq!(playback_receipt_v2_route(&authority), vectors["derivation"]["route"]);
+    assert_eq!(
+        playback_receipt_v2_route(&authority),
+        vectors["derivation"]["route"]
+    );
     for case in vectors["proofs"].as_array().unwrap() {
         let operation = serde_json::to_vec(&case["operation"]).unwrap();
         let proof = case["proof"].as_str().unwrap();
-        assert_eq!(playback_receipt_v2_proof(&authority, &operation).unwrap(), proof);
-        assert!(verify_playback_receipt_v2_proof(&authority, &operation, proof));
+        assert_eq!(
+            playback_receipt_v2_proof(&authority, &operation).unwrap(),
+            proof
+        );
+        assert!(verify_playback_receipt_v2_proof(
+            &authority, &operation, proof
+        ));
     }
     let mut operation = vectors["proofs"][0]["operation"].clone();
     operation["route"] = json!("ffffffffffffffffffffffffffffffff");
@@ -65,11 +73,16 @@ fn den_spec_derivation_proof_key_aad_drain_and_integer_vectors() {
     );
     operation = vectors["proofs"][0]["operation"].clone();
     operation["extra"] = json!(true);
-    assert!(validate_playback_receipt_v2_operation(&serde_json::to_vec(&operation).unwrap()).is_none());
+    assert!(
+        validate_playback_receipt_v2_operation(&serde_json::to_vec(&operation).unwrap()).is_none()
+    );
 
     let public = vectors["publicKey"]["public"].as_str().unwrap();
     let kid = vectors["publicKey"]["kid"].as_str().unwrap();
-    assert_eq!(playback_receipt_v2_public(public, kid).unwrap().len(), KEM_PUBLIC_LEN);
+    assert_eq!(
+        playback_receipt_v2_public(public, kid).unwrap().len(),
+        KEM_PUBLIC_LEN
+    );
     assert!(playback_receipt_v2_public(&public[..public.len() - 2], kid).is_none());
     assert!(playback_receipt_v2_public(public, "00000000000000000000000000000000").is_none());
 
@@ -92,10 +105,16 @@ fn den_spec_derivation_proof_key_aad_drain_and_integer_vectors() {
     );
 
     let mut missing = vectors["drainResponse"].clone();
-    missing["messages"][0].as_object_mut().unwrap().remove("kid");
+    missing["messages"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("kid");
     assert!(parse_playback_receipt_v2_drain(&serde_json::to_vec(&missing).unwrap()).is_none());
     missing = vectors["drainResponse"].clone();
     missing["messages"][0].as_object_mut().unwrap().remove("id");
+    assert!(parse_playback_receipt_v2_drain(&serde_json::to_vec(&missing).unwrap()).is_none());
+    missing = vectors["drainResponse"].clone();
+    missing["messages"][0]["sealed"] = json!("");
     assert!(parse_playback_receipt_v2_drain(&serde_json::to_vec(&missing).unwrap()).is_none());
     assert!(parse_playback_receipt_v2_drain(
         String::from_utf8(drain_bytes)
@@ -111,8 +130,15 @@ fn den_spec_receipt_and_retirement_tag_vectors() {
     let Some(vectors) = vectors() else { return };
     let receipt = vectors["envelope"]["receiptJcs"].as_str().unwrap();
     let parsed = parse_playback_receipt_v2(receipt.as_bytes()).unwrap();
-    assert_eq!(parsed.aad.canonical().unwrap(), vectors["envelope"]["aadJcs"].as_str().unwrap().as_bytes());
+    assert_eq!(
+        parsed.aad.canonical().unwrap(),
+        vectors["envelope"]["aadJcs"].as_str().unwrap().as_bytes()
+    );
     assert_eq!(parsed.title, json!({"id":1399,"type":"tv"}));
+
+    let mut overlong_season: Value = serde_json::from_str(receipt).unwrap();
+    overlong_season["season"] = json!(10_000);
+    assert!(parse_playback_receipt_v2(&serde_json::to_vec(&overlong_season).unwrap()).is_none());
 
     let retirement = &vectors["retirement"];
     let tag = playback_receipt_v2_retired_tag(
@@ -148,7 +174,8 @@ fn deterministic_v2_hpke_is_single_key_route_bound_and_replay_safe() {
         hex(&Sha256::digest(sealed.as_bytes())),
         "c5fbeef0d947ffbffe5d122b7e4e186058dc0482181b11661c889ec5d70fbc55"
     );
-    let opened = open_playback_receipt_v2(&secret, &context, &sealed, &BTreeSet::new(), NOW).unwrap();
+    let opened =
+        open_playback_receipt_v2(&secret, &context, &sealed, &BTreeSet::new(), NOW).unwrap();
     assert_eq!(opened.aad, context);
 
     let stranger = [0x43; 32];
@@ -170,7 +197,16 @@ fn deterministic_v2_hpke_is_single_key_route_bound_and_replay_safe() {
     );
 
     // Released v1 uses a distinct info/AAD and cannot substitute into this lane.
-    let v1 = b64url(&hpke_seal(&public, PLAYBACK_RECEIPT_INFO, HOUSEHOLD.as_bytes(), b"{}", &[0x24; ESEED_LEN]).unwrap());
+    let v1 = b64url(
+        &hpke_seal(
+            &public,
+            PLAYBACK_RECEIPT_INFO,
+            HOUSEHOLD.as_bytes(),
+            b"{}",
+            &[0x24; ESEED_LEN],
+        )
+        .unwrap(),
+    );
     assert_eq!(
         open_playback_receipt_v2(&secret, &context, &v1, &BTreeSet::new(), NOW),
         Err(PlaybackReceiptV2Reject::DoesNotOpen)
@@ -179,10 +215,19 @@ fn deterministic_v2_hpke_is_single_key_route_bound_and_replay_safe() {
 
 #[test]
 fn live_tombstone_and_tag_share_one_atomic_512_slot_reservation() {
-    let previous = PlaybackReceiptV2RetirementKey { version: 7, key: [0x00; 32] };
-    let current = PlaybackReceiptV2RetirementKey { version: 8, key: [0x20; 32] };
+    let previous = PlaybackReceiptV2RetirementKey {
+        version: 7,
+        key: [0x00; 32],
+    };
+    let current = PlaybackReceiptV2RetirementKey {
+        version: 8,
+        key: [0x20; 32],
+    };
     let mut history = PlaybackReceiptV2History::new(previous).unwrap();
-    assert_eq!(history.register(HOUSEHOLD, ROUTE), PlaybackReceiptV2Admission::Admitted);
+    assert_eq!(
+        history.register(HOUSEHOLD, ROUTE),
+        PlaybackReceiptV2Admission::Admitted
+    );
     for number in 0..PLAYBACK_RECEIPT_V2_HISTORY_CAPACITY - 1 {
         assert_eq!(
             history.register(HOUSEHOLD, &format!("{number:032x}")),
@@ -206,25 +251,40 @@ fn live_tombstone_and_tag_share_one_atomic_512_slot_reservation() {
         PlaybackReceiptV2Admission::Retired
     );
     assert_eq!(
-        history.rotate_retirement_key(PlaybackReceiptV2RetirementKey { version: 9, key: [0x40; 32] }),
+        history.rotate_retirement_key(PlaybackReceiptV2RetirementKey {
+            version: 9,
+            key: [0x40; 32]
+        }),
         Err(PlaybackReceiptV2HistoryError::PreviousKeyInUse)
     );
     assert_eq!(history.retained_versions(), vec![8, 7]);
 
     let tag = playback_receipt_v2_retired_tag(&[0x00; 32], HOUSEHOLD, ROUTE).unwrap();
     let restored = PlaybackReceiptV2History::restore(
-        PlaybackReceiptV2RetirementKey { version: 8, key: [0x20; 32] },
-        Some(PlaybackReceiptV2RetirementKey { version: 7, key: [0x00; 32] }),
+        PlaybackReceiptV2RetirementKey {
+            version: 8,
+            key: [0x20; 32],
+        },
+        Some(PlaybackReceiptV2RetirementKey {
+            version: 7,
+            key: [0x00; 32],
+        }),
         [],
         [],
         [(7, tag)],
     )
     .unwrap();
     let mut restored = restored;
-    assert_eq!(restored.register(HOUSEHOLD, ROUTE), PlaybackReceiptV2Admission::Retired);
+    assert_eq!(
+        restored.register(HOUSEHOLD, ROUTE),
+        PlaybackReceiptV2Admission::Retired
+    );
     assert!(matches!(
         PlaybackReceiptV2History::restore(
-            PlaybackReceiptV2RetirementKey { version: 8, key: [0x20; 32] },
+            PlaybackReceiptV2RetirementKey {
+                version: 8,
+                key: [0x20; 32]
+            },
             None,
             [],
             [],

@@ -25,7 +25,10 @@ fn native_and_lazy_web_boundaries_make_the_same_profile_authority_and_key() {
         "role": "owner",
         "random": "00".repeat(48),
     });
-    assert_eq!(answer(evaluate, &authority), answer(evaluate_assistant, &authority));
+    assert_eq!(
+        answer(evaluate, &authority),
+        answer(evaluate_assistant, &authority)
+    );
     let made = answer(evaluate, &authority)["ok"].clone();
     assert_eq!(made["authority"].as_str().unwrap().len(), 43);
     assert_eq!(made["binding"].as_str().unwrap().len(), 32);
@@ -40,19 +43,44 @@ fn native_and_lazy_web_boundaries_make_the_same_profile_authority_and_key() {
         "op":"playback_receipt_v2_proof", "authority":made["authority"], "operation":operation,
     });
     assert_eq!(answer(evaluate, &proof), answer(evaluate_assistant, &proof));
-    assert_eq!(answer(evaluate, &proof)["ok"]["proof"].as_str().unwrap().len(), 43);
+    assert_eq!(
+        answer(evaluate, &proof)["ok"]["proof"]
+            .as_str()
+            .unwrap()
+            .len(),
+        43
+    );
 
     let visitor = json!({"op":"playback_receipt_v2_authority","role":"visitor"});
-    assert_eq!(answer(evaluate, &visitor)["ok"], json!({"status":"no_receipt","v":2}));
-    assert_eq!(answer(evaluate_assistant, &visitor)["ok"], json!({"status":"no_receipt","v":2}));
+    assert_eq!(
+        answer(evaluate, &visitor)["ok"],
+        json!({"status":"no_receipt","v":2})
+    );
+    assert_eq!(
+        answer(evaluate_assistant, &visitor)["ok"],
+        json!({"status":"no_receipt","v":2})
+    );
     // Reduced Tizen 3 links only evaluate_core, which keeps receipt crypto out and preserves its capable-device handoff.
-    assert_eq!(answer(evaluate_core, &authority)["error"], "assistant_module");
+    assert_eq!(
+        answer(evaluate_core, &authority)["error"],
+        "assistant_module"
+    );
 
     let key = json!({"op":"playback_receipt_v2_keygen","random":"42".repeat(32)});
     assert_eq!(answer(evaluate, &key), answer(evaluate_assistant, &key));
     let made = answer(evaluate, &key)["ok"].clone();
-    assert_eq!(b64url_decode(made["public"].as_str().unwrap()).unwrap().len(), 1_216);
-    assert_eq!(b64url_decode(made["secret"].as_str().unwrap()).unwrap().len(), 32);
+    assert_eq!(
+        b64url_decode(made["public"].as_str().unwrap())
+            .unwrap()
+            .len(),
+        1_216
+    );
+    assert_eq!(
+        b64url_decode(made["secret"].as_str().unwrap())
+            .unwrap()
+            .len(),
+        32
+    );
 }
 
 #[test]
@@ -102,7 +130,10 @@ fn strict_drain_then_single_named_key_open_returns_route_bound_atomic_facts() {
     );
     let entry = &decoded["ok"]["messages"][0];
     assert_eq!(entry["id"], ID);
-    assert!(entry["aad"].as_str().unwrap().contains(&format!("\"id\":\"{ID}\"")));
+    assert!(entry["aad"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("\"id\":\"{ID}\"")));
     let wrong_lane = answer(
         evaluate_assistant,
         &json!({
@@ -111,6 +142,16 @@ fn strict_drain_then_single_named_key_open_returns_route_bound_atomic_facts() {
         }),
     );
     assert_eq!(wrong_lane["error"], "invalid_drain");
+    let mut empty_sealed: Value = serde_json::from_str(&response).unwrap();
+    empty_sealed["messages"][0]["sealed"] = json!("");
+    let empty_sealed = answer(
+        evaluate_assistant,
+        &json!({
+            "op":"playback_receipt_v2_drain","response":empty_sealed.to_string(),
+            "household":HOUSEHOLD,"route":ROUTE,"binding":BINDING,
+        }),
+    );
+    assert_eq!(empty_sealed["error"], "invalid_drain");
 
     let opened = answer(
         evaluate_assistant,
@@ -131,7 +172,10 @@ fn strict_drain_then_single_named_key_open_returns_route_bound_atomic_facts() {
     );
     assert_eq!(opened["ok"]["accept"]["route"], ROUTE);
     assert_eq!(opened["ok"]["accept"]["id"], ID);
-    assert_eq!(opened["ok"]["accept"]["write"]["at"], json!([ended_at, 0, DEVICE]));
+    assert_eq!(
+        opened["ok"]["accept"]["write"]["at"],
+        json!([ended_at, 0, DEVICE])
+    );
     assert_eq!(opened["ok"]["accept"]["setting"], ID);
 
     let replay = answer(
@@ -152,10 +196,22 @@ fn exact_integer_rejection_happens_before_both_native_and_web_coercion() {
         b64url(&[0; 32]), HOUSEHOLD, ROUTE, BINDING, ID, DEVICE, NOW
     );
     for replacement in ["1.0", "1e0", "-0", "true", "9007199254740992"] {
-        let request = canonical.replacen("\"generation\":1", &format!("\"generation\":{replacement}"), 1);
+        let request = canonical.replacen(
+            "\"generation\":1",
+            &format!("\"generation\":{replacement}"),
+            1,
+        );
         let native: Value = serde_json::from_str(&evaluate(&request)).unwrap();
         let web: Value = serde_json::from_str(&evaluate_assistant(&request)).unwrap();
         assert_eq!(native["error"], "invalid_request", "{replacement}");
         assert_eq!(web["error"], "invalid_request", "{replacement}");
     }
+    let unknown = json!({
+        "op":"playback_receipt_v2_authority","role":"owner","random":"00".repeat(48),"extra":true,
+    });
+    assert_eq!(answer(evaluate, &unknown)["error"], "invalid_request");
+    assert_eq!(
+        answer(evaluate_assistant, &unknown)["error"],
+        "invalid_request"
+    );
 }
