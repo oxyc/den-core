@@ -31,6 +31,21 @@ fn seed(text: &str) -> Result<[u8; 32], String> {
     Ok(out)
 }
 
+fn random_bytes(text: &str, len: usize) -> Result<Vec<u8>, String> {
+    let bad = || "invalid_seed".to_string();
+    if text.len() != len * 2
+        || !text
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err(bad());
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&text[index..index + 2], 16).map_err(|_| bad()))
+        .collect()
+}
+
 fn jcs_string(value: &Value) -> Value {
     json!({ "string": String::from_utf8(canonical(value)).expect("JSON is UTF-8") })
 }
@@ -152,6 +167,151 @@ pub fn playback_receipt_open(
             "value": jcs_string(&recorded),
         }
     }))
+}
+
+/// Playback receipts v2 §1: independent profile-owned authority and stable binding. The caller persists this only
+/// inside the exact persistent profile and never invokes it for Visitor or reduced Tizen 3.
+pub fn playback_receipt_v2_authority(role: &str, random: Option<&str>) -> Result<Value, String> {
+    if role == "visitor" {
+        if random.is_some() {
+            return Err("invalid_role".into());
+        }
+        return Ok(json!({"status": "no_receipt", "v": 2}));
+    }
+    if !matches!(role, "owner" | "kid") {
+        return Err("invalid_role".into());
+    }
+    let random = random_bytes(random.ok_or("invalid_seed")?, 48)?;
+    let authority = den_assistant::PlaybackReceiptV2Authority::from_random(&random)
+        .map_err(|error| error.as_str())?;
+    Ok(json!({
+        "authority": authority.authority(),
+        "binding": authority.binding(),
+        "route": authority.route(),
+        "role": role,
+        "v": 2,
+    }))
+}
+
+/// Playback receipts v2 §2: proof over the operation's JCS bytes.
+pub fn playback_receipt_v2_proof(authority: &str, operation: &Value) -> Result<Value, String> {
+    let authority: [u8; 32] = den_assistant::b64url_decode(authority)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or("invalid_authority")?;
+    let operation = canonical(operation);
+    let proof = den_assistant::playback_receipt_v2_proof(&authority, &operation)
+        .map_err(|error| error.as_str())?;
+    Ok(json!({"proof": proof, "route": den_assistant::playback_receipt_v2_route(&authority)}))
+}
+
+/// Playback receipts v2 §§3.1/3.3: one profile-owned X-Wing receipt key.
+pub fn playback_receipt_v2_keygen(random: &str) -> Result<Value, String> {
+    let secret = seed(random)?;
+    let public = den_assistant::kem_public(&secret);
+    Ok(json!({
+        "kid": den_assistant::key_id(&public),
+        "public": den_assistant::b64url(&public),
+        "secret": den_assistant::b64url(&secret),
+    }))
+}
+
+/// Decode a raw drain response before numeric coercion and return each entry with the exact AAD its named key opens.
+pub fn playback_receipt_v2_drain(
+    response: &str,
+    household: &str,
+    expected_route: &str,
+    expected_binding: &str,
+) -> Result<Value, String> {
+    let drain = den_assistant::parse_playback_receipt_v2_drain(response.as_bytes())
+        .ok_or("invalid_drain")?;
+    if drain.route != expected_route || drain.binding != expected_binding {
+        return Err("invalid_drain".into());
+    }
+    let mut messages = Vec::with_capacity(drain.messages.len());
+    for entry in drain.messages {
+        let aad = entry.aad(household, &drain.route, &drain.binding);
+        let aad = aad.canonical().ok_or("invalid_drain")?;
+        messages.push(json!({
+            "aad": String::from_utf8(aad).expect("JCS is UTF-8"),
+            "generation": entry.generation,
+            "id": entry.id,
+            "kid": entry.kid,
+            "sealed": entry.sealed,
+            "seq": entry.seq,
+        }));
+    }
+    Ok(json!({
+        "binding": drain.binding,
+        "messages": messages,
+        "route": drain.route,
+        "v": 2,
+    }))
+}
+
+/// Open one v2 entry with exactly its named profile key and return the progress/replay facts which consumers commit
+/// atomically. No Owner/current-profile fallback and no key probing exists in this operation.
+#[allow(clippy::too_many_arguments)]
+pub fn playback_receipt_v2_open(
+    sealed: &str,
+    secret: &str,
+    household: &str,
+    route: &str,
+    binding: &str,
+    generation: u64,
+    kid: &str,
+    id: &str,
+    applied: &[String],
+    device_text: &str,
+    now: u64,
+) -> Result<Value, String> {
+    let device = device(device_text)?;
+    let secret: [u8; 32] = den_assistant::b64url_decode(secret)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or("invalid_key")?;
+    if den_assistant::key_id(&den_assistant::kem_public(&secret)) != kid {
+        return Ok(json!({"reject": "wrong_key"}));
+    }
+    let expected = den_assistant::PlaybackReceiptV2Aad {
+        binding: binding.to_owned(),
+        generation,
+        household: household.to_owned(),
+        id: id.to_owned(),
+        kid: kid.to_owned(),
+        route: route.to_owned(),
+    };
+    let applied = applied.iter().cloned().collect();
+    let receipt = match den_assistant::open_playback_receipt_v2(
+        &secret, &expected, sealed, &applied, now,
+    ) {
+        Ok(receipt) => receipt,
+        Err(reason) => return Ok(json!({"reject": reason.as_str()})),
+    };
+    let value = if receipt.completed {
+        1.0
+    } else {
+        receipt.position_seconds as f64 / receipt.duration_seconds as f64
+    };
+    let mut write = json!({
+        "kind": "progress",
+        "value": value,
+        "seconds": receipt.position_seconds,
+        "at": [receipt.ended_at, 0, device],
+    });
+    if let (Some(season), Some(episode)) = (receipt.season, receipt.episode) {
+        write["episode"] = json!([season, episode]);
+    }
+    let recorded = json!({"endedAt": receipt.ended_at, "applied": now, "route": receipt.aad.route});
+    Ok(json!({"accept": {
+        "binding": receipt.aad.binding,
+        "generation": receipt.aad.generation,
+        "id": receipt.aad.id,
+        "kid": receipt.aad.kid,
+        "route": receipt.aad.route,
+        "title": receipt.title,
+        "write": write,
+        "setting": id,
+        "value": jcs_string(&recorded),
+    }}))
 }
 
 /// `assistant_keygen_dropbox`: 32 random bytes → a drop-box key, the setting that holds it, and its public half.

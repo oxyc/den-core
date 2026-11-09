@@ -573,6 +573,41 @@ enum AssistantRequest {
         local_applied: serde_json::Map<String, Value>,
         now: u64,
     },
+    /// Playback receipts v2 §1: 48 profile-owned random bytes → authority, stable binding and opaque route.
+    PlaybackReceiptV2Authority {
+        role: String,
+        #[serde(default)]
+        random: Option<String>,
+    },
+    /// Playback receipts v2 §2: route and proof over an exact operation.
+    PlaybackReceiptV2Proof {
+        authority: String,
+        operation: Value,
+    },
+    /// Playback receipts v2 §§3.1/3.3: one profile-owned X-Wing key pair.
+    PlaybackReceiptV2Keygen { random: String },
+    /// Playback receipts v2 §5: raw strict drain response → entries carrying complete canonical AAD.
+    PlaybackReceiptV2Drain {
+        response: String,
+        household: String,
+        route: String,
+        binding: String,
+    },
+    /// Playback receipts v2 §§7–8: single named-key open → route-bound atomic progress/replay facts.
+    PlaybackReceiptV2Open {
+        sealed: String,
+        secret: String,
+        household: String,
+        route: String,
+        binding: String,
+        generation: u64,
+        kid: String,
+        id: String,
+        #[serde(default)]
+        applied: Vec<String>,
+        device: String,
+        now: u64,
+    },
 }
 
 /// Assistant v1 §15: the library's documents → the projection for every live read grant, sealed, and the read grants
@@ -718,10 +753,17 @@ pub fn evaluate(input: &str) -> String {
             return answer;
         }
         match web_core::run(input) {
-            Err(error) if error == "assistant_module" => match tagged::<AssistantRequest>(input) {
-                Ok(request) => run_assistant(request),
-                Err(_) => Err("invalid_request".into()),
-            },
+            Err(error) if error == "assistant_module" => {
+                if playback_receipt_v2_op(input)
+                    && !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes())
+                {
+                    return Err("invalid_request".into());
+                }
+                match tagged::<AssistantRequest>(input) {
+                    Ok(request) => run_assistant(request),
+                    Err(_) => Err("invalid_request".into()),
+                }
+            }
             answer => answer,
         }
     }))
@@ -738,10 +780,17 @@ fn evaluate_legacy(input: &str) -> String {
         }
         match tagged::<Request>(input) {
             Ok(request) => run(request),
-            Err(_) => match tagged::<AssistantRequest>(input) {
-                Ok(request) => run_assistant(request),
-                Err(_) => Err("invalid_request".into()),
-            },
+            Err(_) => {
+                if playback_receipt_v2_op(input)
+                    && !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes())
+                {
+                    return Err("invalid_request".into());
+                }
+                match tagged::<AssistantRequest>(input) {
+                    Ok(request) => run_assistant(request),
+                    Err(_) => Err("invalid_request".into()),
+                }
+            }
         }
     }))
 }
@@ -771,16 +820,31 @@ pub fn evaluate_deferred(input: &str) -> String {
     envelope(bounded(input).and_then(|()| web_core::run(input)))
 }
 
-/// The assistant ops alone (den-spec `wire/assistant-v1.md`): the web's assistant module.
+/// The assistant and playback-receipt crypto ops alone: the web's lazy assistant module.
 pub fn evaluate_assistant(input: &str) -> String {
     envelope(bounded(input).and_then(|()| {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
+        if playback_receipt_v2_op(input)
+            && !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes())
+        {
+            return Err("invalid_request".into());
+        }
         tagged::<AssistantRequest>(input)
             .map_err(|_| "invalid_request".to_string())
             .and_then(run_assistant)
     }))
+}
+
+fn playback_receipt_v2_op(input: &str) -> bool {
+    #[derive(Deserialize)]
+    struct Op<'a> {
+        #[serde(borrow)]
+        op: std::borrow::Cow<'a, str>,
+    }
+    serde_json::from_str::<Op>(input)
+        .is_ok_and(|request| request.op.starts_with("playback_receipt_v2_"))
 }
 
 /// Recovery code §3's memory-hard KDF alone: the web loads this module only while making or redeeming a code.
@@ -1015,6 +1079,47 @@ fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
             assistant.as_ref(),
             applied.as_ref(),
             &local_applied,
+            now,
+        ),
+        AssistantRequest::PlaybackReceiptV2Authority { role, random } => {
+            assistant::playback_receipt_v2_authority(&role, random.as_deref())
+        }
+        AssistantRequest::PlaybackReceiptV2Proof {
+            authority,
+            operation,
+        } => assistant::playback_receipt_v2_proof(&authority, &operation),
+        AssistantRequest::PlaybackReceiptV2Keygen { random } => {
+            assistant::playback_receipt_v2_keygen(&random)
+        }
+        AssistantRequest::PlaybackReceiptV2Drain {
+            response,
+            household,
+            route,
+            binding,
+        } => assistant::playback_receipt_v2_drain(&response, &household, &route, &binding),
+        AssistantRequest::PlaybackReceiptV2Open {
+            sealed,
+            secret,
+            household,
+            route,
+            binding,
+            generation,
+            kid,
+            id,
+            applied,
+            device,
+            now,
+        } => assistant::playback_receipt_v2_open(
+            &sealed,
+            &secret,
+            &household,
+            &route,
+            &binding,
+            generation,
+            &kid,
+            &id,
+            &applied,
+            &device,
             now,
         ),
     }
