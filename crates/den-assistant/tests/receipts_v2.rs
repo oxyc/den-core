@@ -4,6 +4,7 @@ use den_assistant::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
+use std::fmt::Write;
 use std::path::PathBuf;
 
 const HOUSEHOLD: &str = "00000000000000000000000000000001";
@@ -136,6 +137,21 @@ fn exact_json_rejects_duplicate_members_at_every_depth() {
     assert!(!playback_receipt_v2_exact_integers(
         br#"{"items":[{"a":1,"a":1}],"v":2}"#
     ));
+    assert!(!playback_receipt_v2_exact_integers(
+        br#"{"a":1,"\u0061":2}"#
+    ));
+
+    // Put a duplicate of the first name after enough unique members to make pairwise name scans adversarial.
+    // The production boundary is capped at 64 MiB; this smaller case keeps the focused source test quick.
+    let mut many = String::from("{");
+    for index in 0..16_384 {
+        if index != 0 {
+            many.push(',');
+        }
+        write!(many, "\"member{index:05}\":0").unwrap();
+    }
+    many.push_str(",\"member00000\":0}");
+    assert!(!playback_receipt_v2_exact_integers(many.as_bytes()));
 }
 
 #[test]

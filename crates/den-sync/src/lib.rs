@@ -1064,15 +1064,22 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
     let answer = match op.as_str() {
         "playback_receipt_v2_authority" => {
             let role: String = web_core::take(&mut fields, "role")?;
-            let random: Option<String> = web_core::optional(&mut fields, "random")?;
-            assistant::playback_receipt_v2_authority(&role, random.as_deref())
+            let random = sensitive_optional_text(&mut fields, "random")?;
+            assistant::playback_receipt_v2_authority(
+                &role,
+                random.as_deref().map(String::as_str),
+            )
         }
-        "playback_receipt_v2_proof" => assistant::playback_receipt_v2_proof(
-            &web_core::text(&mut fields, "authority")?,
-            &web_core::value(&mut fields, "operation")?,
-        ),
+        "playback_receipt_v2_proof" => {
+            let authority = sensitive_text(&mut fields, "authority")?;
+            assistant::playback_receipt_v2_proof(
+                &authority,
+                &web_core::value(&mut fields, "operation")?,
+            )
+        }
         "playback_receipt_v2_keygen" => {
-            assistant::playback_receipt_v2_keygen(&web_core::text(&mut fields, "random")?)
+            let random = sensitive_text(&mut fields, "random")?;
+            assistant::playback_receipt_v2_keygen(&random)
         }
         "playback_receipt_v2_drain" => assistant::playback_receipt_v2_drain(
             &web_core::text(&mut fields, "response")?,
@@ -1080,19 +1087,22 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
             &web_core::text(&mut fields, "route")?,
             &web_core::text(&mut fields, "binding")?,
         ),
-        "playback_receipt_v2_open" => assistant::playback_receipt_v2_open(
-            &web_core::text(&mut fields, "sealed")?,
-            &web_core::text(&mut fields, "secret")?,
-            &web_core::text(&mut fields, "household")?,
-            &web_core::text(&mut fields, "route")?,
-            &web_core::text(&mut fields, "binding")?,
-            web_core::take(&mut fields, "generation")?,
-            &web_core::text(&mut fields, "kid")?,
-            &web_core::text(&mut fields, "id")?,
-            &web_core::default_vector(&mut fields, "applied")?,
-            &web_core::text(&mut fields, "device")?,
-            web_core::take(&mut fields, "now")?,
-        ),
+        "playback_receipt_v2_open" => {
+            let secret = sensitive_text(&mut fields, "secret")?;
+            assistant::playback_receipt_v2_open(
+                &web_core::text(&mut fields, "sealed")?,
+                &secret,
+                &web_core::text(&mut fields, "household")?,
+                &web_core::text(&mut fields, "route")?,
+                &web_core::text(&mut fields, "binding")?,
+                web_core::take(&mut fields, "generation")?,
+                &web_core::text(&mut fields, "kid")?,
+                &web_core::text(&mut fields, "id")?,
+                &web_core::default_vector(&mut fields, "applied")?,
+                &web_core::text(&mut fields, "device")?,
+                web_core::take(&mut fields, "now")?,
+            )
+        }
         _ => return Err(INVALID.into()),
     };
     if fields.is_empty() {
@@ -1100,6 +1110,23 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
     } else {
         Err(INVALID.into())
     }
+}
+
+/// Move encoded authorities, secrets and caller-provided key seeds out of serde_json's tree and into an owner that
+/// wipes its allocation on every return path. The JSON input is borrowed FFI memory and cannot be wiped here.
+fn sensitive_text(
+    fields: &mut serde_json::Map<String, Value>,
+    name: &str,
+) -> Result<zeroize::Zeroizing<String>, String> {
+    web_core::text(fields, name).map(zeroize::Zeroizing::new)
+}
+
+fn sensitive_optional_text(
+    fields: &mut serde_json::Map<String, Value>,
+    name: &str,
+) -> Result<Option<zeroize::Zeroizing<String>>, String> {
+    web_core::optional::<String>(fields, name)
+        .map(|text| text.map(zeroize::Zeroizing::new))
 }
 
 #[cfg(test)]
@@ -1403,8 +1430,11 @@ fn run(request: Request) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate, evaluate_core, evaluate_legacy};
+    use super::{
+        evaluate, evaluate_core, evaluate_legacy, sensitive_optional_text, sensitive_text, web_core,
+    };
     use serde_json::{json, Value};
+    use zeroize::Zeroize;
 
     #[test]
     fn a_request_is_an_object_naming_its_op_anywhere() {
@@ -1503,6 +1533,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn receipt_v2_parser_strings_move_into_wiping_owners() {
+        let mut fields = serde_json::from_str::<web_core::RequestFields>(
+            r#"{"authority":"encoded-authority","random":"encoded-seed"}"#,
+        )
+        .unwrap()
+        .0;
+        let mut authority = sensitive_text(&mut fields, "authority").unwrap();
+        let mut random = sensitive_optional_text(&mut fields, "random")
+            .unwrap()
+            .unwrap();
+        assert!(fields.is_empty());
+
+        authority.zeroize();
+        random.zeroize();
+        assert!(authority.is_empty());
+        assert!(random.is_empty());
     }
 
     #[test]
