@@ -717,11 +717,12 @@ pub fn evaluate(input: &str) -> String {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
+        // Receipt secrets must reach their wiping parser without first being copied into the generic Value tree.
+        if playback_receipt_v2_op(input) {
+            return run_playback_receipts_v2(input);
+        }
         match web_core::run(input) {
             Err(error) if error == "assistant_module" => {
-                if playback_receipt_v2_op(input) {
-                    return run_playback_receipts_v2(input);
-                }
                 match tagged::<AssistantRequest>(input) {
                     Ok(request) => run_assistant(request),
                     Err(_) => Err("invalid_request".into()),
@@ -741,12 +742,12 @@ fn evaluate_legacy(input: &str) -> String {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
+        if playback_receipt_v2_op(input) {
+            return run_playback_receipts_v2(input);
+        }
         match tagged::<Request>(input) {
             Ok(request) => run(request),
             Err(_) => {
-                if playback_receipt_v2_op(input) {
-                    return run_playback_receipts_v2(input);
-                }
                 match tagged::<AssistantRequest>(input) {
                     Ok(request) => run_assistant(request),
                     Err(_) => Err("invalid_request".into()),
@@ -762,14 +763,14 @@ pub fn evaluate_core(input: &str) -> String {
     if let Some(answer) = library_op(input) {
         return answer;
     }
-    envelope(bounded(input).and_then(|()| web_core::run(input)))
+    envelope(bounded(input).and_then(|()| run_core(input)))
 }
 
 /// Cold-open policy: import and merge stored facts, validate controls, render Home, and serve its immediate read
 /// subscriptions. The `browser-startup` feature removes later browsing, actions, outbound work, maintenance, and
 /// administrative operations from this build.
 pub fn evaluate_startup(input: &str) -> String {
-    envelope(bounded(input).and_then(|()| web_core::run(input)))
+    envelope(bounded(input).and_then(|()| run_core(input)))
 }
 
 /// Deferred actions, outbound delivery, maintenance, and administrative policy. The `browser-deferred` feature removes
@@ -778,7 +779,17 @@ pub fn evaluate_deferred(input: &str) -> String {
     if let Some(answer) = library_op(input) {
         return answer;
     }
-    envelope(bounded(input).and_then(|()| web_core::run(input)))
+    envelope(bounded(input).and_then(|()| run_core(input)))
+}
+
+/// Keep receipt secrets out of core-only Value trees. Browser callers load the assistant module; reduced Tizen
+/// preserves the same explicit unsupported handoff without materializing authority, seed, or secret fields.
+fn run_core(input: &str) -> Result<Value, String> {
+    if playback_receipt_v2_op(input) {
+        Err("assistant_module".into())
+    } else {
+        web_core::run(input)
+    }
 }
 
 /// The assistant and playback-receipt crypto ops alone: the web's lazy assistant module. They intentionally share
@@ -1477,7 +1488,10 @@ fn run(request: Request) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate, evaluate_core, evaluate_legacy, web_core, SensitiveReceiptFields};
+    use super::{
+        evaluate, evaluate_assistant, evaluate_core, evaluate_legacy, web_core,
+        SensitiveReceiptFields,
+    };
     use serde_json::{json, Value};
     use zeroize::Zeroize;
 
@@ -1603,6 +1617,47 @@ mod tests {
         assert!(authority.is_empty());
         assert!(random.is_empty());
         assert!(secret.is_empty());
+    }
+
+    #[test]
+    fn receipt_v2_entry_points_never_preparse_sensitive_values() {
+        let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
+        for request in [
+            r#"{"op":"playback_receipt_v2_authority","random":"encoded-seed"}"#,
+            r#"{"op":"playback_receipt_v2_proof","authority":"encoded-authority"}"#,
+            r#"{"op":"playback_receipt_v2_open","secret":"encoded-secret"}"#,
+        ] {
+            web_core::reset_request_fields_parses();
+            assert_eq!(evaluate(request), invalid, "{request}");
+            assert_eq!(web_core::request_fields_parses(), 1, "native: {request}");
+
+            web_core::reset_request_fields_parses();
+            assert_eq!(evaluate_assistant(request), invalid, "{request}");
+            assert_eq!(web_core::request_fields_parses(), 1, "assistant: {request}");
+
+            web_core::reset_request_fields_parses();
+            assert_eq!(
+                evaluate_core(request),
+                json!({"version": 1, "error": "assistant_module"}).to_string(),
+                "{request}"
+            );
+            assert_eq!(web_core::request_fields_parses(), 0, "core: {request}");
+        }
+    }
+
+    #[test]
+    fn malformed_receipt_dispatch_keeps_existing_errors() {
+        let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
+        for request in [
+            r#"{"random":"encoded-seed"}"#,
+            r#"{"op":17,"random":"encoded-seed"}"#,
+            r#"{"op":"playback_receipt_v2_authority","random":"encoded-seed"}"#,
+            r#"{"op":"playback_receipt_v2_authority","random":"encoded-seed","role":null}"#,
+            r#"{"op":"playback_receipt_v2_authority","random":"encoded-seed","role":{}}"#,
+        ] {
+            assert_eq!(evaluate(request), invalid, "native: {request}");
+            assert_eq!(evaluate_assistant(request), invalid, "assistant: {request}");
+        }
     }
 
     #[test]

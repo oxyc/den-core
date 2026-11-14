@@ -8,6 +8,11 @@ use serde::de::{DeserializeOwned, MapAccess, Visitor};
 use serde_json::Map;
 use std::fmt;
 
+#[cfg(test)]
+thread_local! {
+    static REQUEST_FIELDS_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 const INVALID: &str = "invalid_request";
 
 pub(super) fn take<T: DeserializeOwned>(
@@ -63,6 +68,16 @@ pub(super) fn default<T: DeserializeOwned + Default>(
 
 pub(super) struct RequestFields(pub(super) Map<String, Value>);
 
+#[cfg(test)]
+pub(super) fn request_fields_parses() -> usize {
+    REQUEST_FIELDS_PARSES.get()
+}
+
+#[cfg(test)]
+pub(super) fn reset_request_fields_parses() {
+    REQUEST_FIELDS_PARSES.set(0);
+}
+
 impl<'de> Deserialize<'de> for RequestFields {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct FieldsVisitor;
@@ -75,6 +90,8 @@ impl<'de> Deserialize<'de> for RequestFields {
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut input: A) -> Result<Self::Value, A::Error> {
+                #[cfg(test)]
+                REQUEST_FIELDS_PARSES.set(REQUEST_FIELDS_PARSES.get() + 1);
                 let mut fields = Map::new();
                 while let Some((name, value)) = input.next_entry::<String, Value>()? {
                     if fields.insert(name, value).is_some() {
