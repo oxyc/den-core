@@ -813,6 +813,7 @@ struct ReceiptV2Fields<'a> {
     candidate_op: Option<&'a serde_json::value::RawValue>,
     escaped: [Option<&'a serde_json::value::RawValue>; 3],
     invalid: bool,
+    operation_invalid: bool,
 }
 
 impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
@@ -837,6 +838,7 @@ impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
                 let mut candidate_op = None;
                 let mut escaped = [None; 3];
                 let mut invalid = false;
+                let mut operation_invalid = false;
                 while let Some(name) = input.next_key::<String>()? {
                     let raw = input.next_value::<&'de serde_json::value::RawValue>()?;
                     let (bit, sensitive) = match name.as_str() {
@@ -869,6 +871,9 @@ impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
                     {
                         candidate_op = Some(raw);
                     }
+                    if bit == 5 {
+                        operation_invalid = !playback_receipt_v2_operation_is_duplicate_safe(raw);
+                    }
                     if let Some(index) = sensitive {
                         if raw.get().starts_with('"') && raw.get().as_bytes().contains(&b'\\') {
                             escaped[index] = Some(raw);
@@ -879,12 +884,74 @@ impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
                     candidate_op,
                     escaped,
                     invalid,
+                    operation_invalid,
                 })
             }
         }
 
         deserializer.deserialize_map(FieldsVisitor)
     }
+}
+
+/// Proof operations have a finite, flat schema. Reject duplicate known members in their borrowed raw bytes before
+/// the allocating request parse can collapse them; unknown members and wrong value types remain the exact operation
+/// validator's responsibility. This stays smaller than retaining the generic recursive exact-JSON visitor in browser
+/// assistant and core/Tizen graphs.
+fn playback_receipt_v2_operation_is_duplicate_safe(
+    input: &serde_json::value::RawValue,
+) -> bool {
+    struct OperationFields;
+
+    impl<'de> Deserialize<'de> for OperationFields {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct FieldsVisitor;
+
+            impl<'de> serde::de::Visitor<'de> for FieldsVisitor {
+                type Value = OperationFields;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    formatter.write_str("a receipt proof operation object")
+                }
+
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut input: A,
+                ) -> Result<Self::Value, A::Error> {
+                    let mut seen = 0_u16;
+                    while let Some(name) = input.next_key::<String>()? {
+                        input.next_value::<serde::de::IgnoredAny>()?;
+                        let bit = match name.as_str() {
+                            "binding" => 0,
+                            "generation" => 1,
+                            "household" => 2,
+                            "issuedAt" => 3,
+                            "nonce" => 4,
+                            "op" => 5,
+                            "route" => 6,
+                            "v" => 7,
+                            "activity" => 8,
+                            "kid" => 9,
+                            "public" => 10,
+                            "previousActivity" => 11,
+                            "request" => 12,
+                            "upTo" => 13,
+                            _ => continue,
+                        };
+                        let mask = 1_u16 << bit;
+                        if seen & mask != 0 {
+                            return Err(serde::de::Error::custom("duplicate operation field"));
+                        }
+                        seen |= mask;
+                    }
+                    Ok(OperationFields)
+                }
+            }
+
+            deserializer.deserialize_map(FieldsVisitor)
+        }
+    }
+
+    serde_json::from_str::<OperationFields>(input.get()).is_ok()
 }
 
 enum ReceiptV2Input {
@@ -916,7 +983,9 @@ fn playback_receipt_v2_scan(input: &str) -> Result<Option<ReceiptV2Scan<'_>>, St
     if !op.starts_with("playback_receipt_v2_") {
         return Ok(None);
     }
-    if fields.invalid {
+    if fields.invalid
+        || op == "playback_receipt_v2_proof" && fields.operation_invalid
+    {
         return Err(INVALID.into());
     }
     Ok(Some(ReceiptV2Scan {

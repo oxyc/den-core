@@ -1,10 +1,12 @@
 //! Native/Web JSON boundary coverage for profile-routed playback receipts v2.
 
 use den_assistant::{
-    b64url, b64url_decode, kem_public, key_id, seal_playback_receipt_v2, PlaybackReceiptV2,
-    PlaybackReceiptV2Aad, ESEED_LEN, STALE_MS,
+    b64url, b64url_decode, kem_public, key_id, playback_receipt_v2_route,
+    seal_playback_receipt_v2, PlaybackReceiptV2, PlaybackReceiptV2Aad, ESEED_LEN, STALE_MS,
 };
-use den_sync::{evaluate, evaluate_assistant, evaluate_core};
+use den_sync::{
+    evaluate, evaluate_assistant, evaluate_core, evaluate_deferred, evaluate_startup,
+};
 use serde_json::{json, Value};
 
 const HOUSEHOLD: &str = "00000000000000000000000000000001";
@@ -219,11 +221,28 @@ fn exact_integer_rejection_happens_before_both_native_and_web_coercion() {
 
 #[test]
 fn nested_duplicate_operation_members_fail_closed_before_value_collapse() {
+    let route = playback_receipt_v2_route(&[0; 32]);
+    let canonical = format!(
+        "{{\"op\":\"playback_receipt_v2_proof\",\"authority\":\"{}\",\"operation\":{{\"binding\":\"{}\",\"generation\":1,\"household\":\"{}\",\"issuedAt\":{},\"nonce\":\"01010101010101010101010101010101\",\"op\":\"activate\",\"route\":\"{}\",\"v\":2}}}}",
+        b64url(&[0; 32]), BINDING, HOUSEHOLD, NOW, route,
+    );
     let request = format!(
-        "{{\"op\":\"playback_receipt_v2_proof\",\"authority\":\"{}\",\"operation\":{{\"binding\":\"{}\",\"generation\":1,\"household\":\"{}\",\"issuedAt\":{},\"nonce\":\"01010101010101010101010101010101\",\"op\":\"activate\",\"route\":\"{}\",\"route\":\"{}\",\"v\":2}}}}",
-        b64url(&[0; 32]), BINDING, HOUSEHOLD, NOW, ROUTE, ROUTE,
+        "{{\"op\":\"playback_receipt_v2_proof\",\"authority\":\"{}\",\"operation\":{{\"binding\":\"{}\",\"generation\":1,\"household\":\"{}\",\"issuedAt\":{},\"nonce\":\"01010101010101010101010101010101\",\"op\":\"activate\",\"route\":\"{}\",\"\\u0072oute\":\"{}\",\"v\":2}}}}",
+        b64url(&[0; 32]), BINDING, HOUSEHOLD, NOW, route, route,
     );
     for call in [evaluate as fn(&str) -> String, evaluate_assistant] {
+        let answer: Value = serde_json::from_str(&call(&canonical)).unwrap();
+        assert!(answer.get("ok").is_some(), "{answer}");
+        let answer: Value = serde_json::from_str(&call(&request)).unwrap();
+        assert_eq!(answer["error"], "invalid_request");
+    }
+    for call in [
+        evaluate_core as fn(&str) -> String,
+        evaluate_startup,
+        evaluate_deferred,
+    ] {
+        let answer: Value = serde_json::from_str(&call(&canonical)).unwrap();
+        assert_eq!(answer["error"], "assistant_module");
         let answer: Value = serde_json::from_str(&call(&request)).unwrap();
         assert_eq!(answer["error"], "invalid_request");
     }
