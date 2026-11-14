@@ -215,3 +215,15 @@ fn exact_integer_rejection_happens_before_both_native_and_web_coercion() {
         "invalid_request"
     );
 }
+
+#[test]
+fn nested_duplicate_operation_members_fail_closed_before_value_collapse() {
+    let request = format!(
+        "{{\"op\":\"playback_receipt_v2_proof\",\"authority\":\"{}\",\"operation\":{{\"binding\":\"{}\",\"generation\":1,\"household\":\"{}\",\"issuedAt\":{},\"nonce\":\"01010101010101010101010101010101\",\"op\":\"activate\",\"route\":\"{}\",\"route\":\"{}\",\"v\":2}}}}",
+        b64url(&[0; 32]), BINDING, HOUSEHOLD, NOW, ROUTE, ROUTE,
+    );
+    for call in [evaluate as fn(&str) -> String, evaluate_assistant] {
+        let answer: Value = serde_json::from_str(&call(&request)).unwrap();
+        assert_eq!(answer["error"], "invalid_request");
+    }
+}

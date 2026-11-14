@@ -799,6 +799,11 @@ pub fn evaluate_assistant(input: &str) -> String {
 }
 
 fn playback_receipt_v2_op(input: &str) -> bool {
+    // Assistant v1 is the common path here. Avoid a second full JSON parse unless the raw request can name v2;
+    // candidates still require the parsed top-level op, so a matching string in another field cannot dispatch it.
+    if !input.contains("playback_receipt_v2_") {
+        return false;
+    }
     #[derive(Deserialize)]
     struct Op<'a> {
         #[serde(borrow)]

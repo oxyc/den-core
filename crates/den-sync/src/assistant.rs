@@ -8,6 +8,7 @@ use den_assistant::{Applied, Grant, Queue, GRANT_OPS, MAX_CAP, MAX_SAFE_INTEGER}
 use serde_json::{json, Map, Value};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use zeroize::Zeroizing;
 
 pub const DROPBOX_ROW: &str = "assistant";
 pub const GRANTS_ROW: &str = "assistant-grants";
@@ -19,19 +20,19 @@ pub const PLAY_ROW: &str = "assistant-play";
 const DROPBOX_PREFIX: &str = "dropbox.";
 const CLIENT_MAX: usize = 80;
 
-fn seed(text: &str) -> Result<[u8; 32], String> {
+fn seed(text: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let bad = || "invalid_seed".to_string();
     if text.len() != 64 || !text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
         return Err(bad());
     }
-    let mut out = [0u8; 32];
+    let mut out = Zeroizing::new([0u8; 32]);
     for (i, byte) in out.iter_mut().enumerate() {
         *byte = u8::from_str_radix(&text[i * 2..i * 2 + 2], 16).map_err(|_| bad())?;
     }
     Ok(out)
 }
 
-fn random_bytes(text: &str, len: usize) -> Result<Vec<u8>, String> {
+fn random_bytes(text: &str, len: usize) -> Result<Zeroizing<Vec<u8>>, String> {
     let bad = || "invalid_seed".to_string();
     if text.len() != len * 2
         || !text
@@ -40,10 +41,17 @@ fn random_bytes(text: &str, len: usize) -> Result<Vec<u8>, String> {
     {
         return Err(bad());
     }
-    (0..text.len())
+    let bytes = (0..text.len())
         .step_by(2)
         .map(|index| u8::from_str_radix(&text[index..index + 2], 16).map_err(|_| bad()))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Zeroizing::new(bytes))
+}
+
+fn decoded_secret(text: &str, error: &str) -> Result<Zeroizing<[u8; 32]>, String> {
+    let decoded = Zeroizing::new(den_assistant::b64url_decode(text).ok_or(error)?);
+    let secret = <[u8; 32]>::try_from(decoded.as_slice()).map_err(|_| error)?;
+    Ok(Zeroizing::new(secret))
 }
 
 fn jcs_string(value: &Value) -> Value {
@@ -195,9 +203,7 @@ pub fn playback_receipt_v2_authority(role: &str, random: Option<&str>) -> Result
 
 /// Playback receipts v2 §2: proof over the operation's JCS bytes.
 pub fn playback_receipt_v2_proof(authority: &str, operation: &Value) -> Result<Value, String> {
-    let authority: [u8; 32] = den_assistant::b64url_decode(authority)
-        .and_then(|bytes| bytes.try_into().ok())
-        .ok_or("invalid_authority")?;
+    let authority = decoded_secret(authority, "invalid_authority")?;
     let operation = canonical(operation);
     let proof = den_assistant::playback_receipt_v2_proof(&authority, &operation)
         .map_err(|error| error.as_str())?;
@@ -211,7 +217,7 @@ pub fn playback_receipt_v2_keygen(random: &str) -> Result<Value, String> {
     Ok(json!({
         "kid": den_assistant::key_id(&public),
         "public": den_assistant::b64url(&public),
-        "secret": den_assistant::b64url(&secret),
+        "secret": den_assistant::b64url(&secret[..]),
     }))
 }
 
@@ -265,9 +271,7 @@ pub fn playback_receipt_v2_open(
     now: u64,
 ) -> Result<Value, String> {
     let device = device(device_text)?;
-    let secret: [u8; 32] = den_assistant::b64url_decode(secret)
-        .and_then(|bytes| bytes.try_into().ok())
-        .ok_or("invalid_key")?;
+    let secret = decoded_secret(secret, "invalid_key")?;
     if den_assistant::key_id(&den_assistant::kem_public(&secret)) != kid {
         return Ok(json!({"reject": "wrong_key"}));
     }
@@ -322,7 +326,7 @@ pub fn keygen_dropbox(random: &str) -> Result<Value, String> {
         "kid": kid,
         "public": den_assistant::b64url(&public),
         "setting": format!("{DROPBOX_PREFIX}{kid}"),
-        "value": {"string": den_assistant::b64url(&secret)},
+        "value": {"string": den_assistant::b64url(&secret[..])},
     }))
 }
 
@@ -780,14 +784,14 @@ pub fn keygen_read(grant: &str, random: &str, client: &str, now: u64) -> Result<
         .ok_or("invalid_time")?;
     let record = json!({
         "v": 1,
-        "key": den_assistant::b64url(&key),
+        "key": den_assistant::b64url(&key[..]),
         "client": client,
         "createdAt": now,
         "expiresAt": expires,
         "revokedAt": null,
     });
     Ok(json!({
-        "key": den_assistant::b64url(&key),
+        "key": den_assistant::b64url(&key[..]),
         "setting": grant,
         "value": jcs_string(&record),
     }))
@@ -796,7 +800,8 @@ pub fn keygen_read(grant: &str, random: &str, client: &str, now: u64) -> Result<
 /// `assistant_grant_key`: 32 random bytes → a grant key and its id, with no grants row setting — for a connection
 /// that may only read (§15), which still needs a grant id and a key for den-edge to carry.
 pub fn grant_key(random: &str) -> Result<Value, String> {
-    let key = den_assistant::GrantKey::from_secret(&seed(random)?);
+    let secret = seed(random)?;
+    let key = den_assistant::GrantKey::from_secret(&secret);
     Ok(json!({
         "grant": key.id(),
         "public": den_assistant::b64url(&key.public()),

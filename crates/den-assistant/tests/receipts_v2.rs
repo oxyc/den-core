@@ -126,6 +126,19 @@ fn den_spec_derivation_proof_key_aad_drain_and_integer_vectors() {
 }
 
 #[test]
+fn exact_json_rejects_duplicate_members_at_every_depth() {
+    assert!(playback_receipt_v2_exact_integers(
+        br#"{"outer":{"a":1},"v":2}"#
+    ));
+    assert!(!playback_receipt_v2_exact_integers(
+        br#"{"outer":{"a":1,"a":1},"v":2}"#
+    ));
+    assert!(!playback_receipt_v2_exact_integers(
+        br#"{"items":[{"a":1,"a":1}],"v":2}"#
+    ));
+}
+
+#[test]
 fn den_spec_receipt_and_retirement_tag_vectors() {
     let Some(vectors) = vectors() else { return };
     let receipt = vectors["envelope"]["receiptJcs"].as_str().unwrap();

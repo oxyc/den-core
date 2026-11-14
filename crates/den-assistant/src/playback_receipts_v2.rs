@@ -8,10 +8,12 @@ use super::{
     KEM_PUBLIC_LEN, KEM_SECRET_LEN, MAX_PLAYBACK_RECEIPT_MESSAGE, MAX_SAFE_INTEGER, STALE_MS,
 };
 use hmac::{Hmac, KeyInit, Mac};
+use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
+use std::fmt;
 use zeroize::Zeroizing;
 
 pub const PLAYBACK_RECEIPT_V2_INFO: &[u8] = b"den/playback-receipt/v2";
@@ -42,8 +44,76 @@ fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
     Some(out)
 }
 
-/// Reject every non-integer JSON number spelling before `serde_json` can coerce it. The JSON parser still owns
-/// structural validation; this pass only enforces v2's lexical integer and safe-range rule.
+struct ExactJson;
+
+impl<'de> DeserializeSeed<'de> for ExactJson {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(ExactJson)
+    }
+}
+
+impl<'de> Visitor<'de> for ExactJson {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("JSON without duplicate object members")
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut input: A) -> Result<Self::Value, A::Error> {
+        while input.next_element_seed(ExactJson)?.is_some() {}
+        Ok(())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut input: A) -> Result<Self::Value, A::Error> {
+        // Receipt objects have at most 15 members. A flat vector avoids one allocation per name and keeps this
+        // duplicate-rejecting path smaller for the lazy Web module than a tree or hash table.
+        let mut names = Vec::new();
+        while let Some(name) = input.next_key::<String>()? {
+            if names.iter().any(|seen| seen == &name) {
+                return Err(serde::de::Error::custom("duplicate object member"));
+            }
+            names.push(name);
+            input.next_value_seed(ExactJson)?;
+        }
+        Ok(())
+    }
+}
+
+/// Reject every duplicate object member and non-integer JSON number spelling before `serde_json::Value` can
+/// collapse or coerce it. The recursive parse also owns structural validation.
 pub fn playback_receipt_v2_exact_integers(input: &[u8]) -> bool {
     let mut index = 0;
     let mut string = false;
@@ -101,7 +171,10 @@ pub fn playback_receipt_v2_exact_integers(input: &[u8]) -> bool {
         }
         index += 1;
     }
-    !string && serde_json::from_slice::<Value>(input).is_ok()
+    !string && {
+        let mut deserializer = serde_json::Deserializer::from_slice(input);
+        ExactJson.deserialize(&mut deserializer).is_ok() && deserializer.end().is_ok()
+    }
 }
 
 /// Whether one token is exactly a safe, non-negative JSON integer. Field-level validators separately require
@@ -251,12 +324,10 @@ impl PlaybackReceiptV2Authority {
     }
 
     pub fn from_parts(authority: &str, binding: &str) -> Option<Self> {
-        let authority = b64url_decode(authority)?.try_into().ok()?;
+        let decoded = Zeroizing::new(b64url_decode(authority)?);
+        let authority = Zeroizing::new(<[u8; 32]>::try_from(decoded.as_slice()).ok()?);
         let binding = unhex(binding)?;
-        Some(Self {
-            authority: Zeroizing::new(authority),
-            binding,
-        })
+        Some(Self { authority, binding })
     }
 
     pub fn authority(&self) -> String {
@@ -601,8 +672,10 @@ pub fn open_playback_receipt_v2(
         .then(|| b64url_decode(sealed))
         .flatten()
         .ok_or(PlaybackReceiptV2Reject::DoesNotOpen)?;
-    let plaintext = hpke_open(secret, PLAYBACK_RECEIPT_V2_INFO, &aad, &bytes)
-        .ok_or(PlaybackReceiptV2Reject::DoesNotOpen)?;
+    let plaintext = Zeroizing::new(
+        hpke_open(secret, PLAYBACK_RECEIPT_V2_INFO, &aad, &bytes)
+            .ok_or(PlaybackReceiptV2Reject::DoesNotOpen)?,
+    );
     let message =
         parse_playback_receipt_v2(&plaintext).ok_or(PlaybackReceiptV2Reject::Malformed)?;
     if message.aad.household != expected.household {
