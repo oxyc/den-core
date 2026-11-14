@@ -718,16 +718,14 @@ pub fn evaluate(input: &str) -> String {
             return answer;
         }
         // Receipt secrets must reach their wiping parser without first being copied into the generic Value tree.
-        if playback_receipt_v2_op(input) {
-            return run_playback_receipts_v2(input);
+        if let Some(request) = playback_receipt_v2_input(input)? {
+            return run_playback_receipts_v2(request.as_str(input));
         }
         match web_core::run(input) {
-            Err(error) if error == "assistant_module" => {
-                match tagged::<AssistantRequest>(input) {
-                    Ok(request) => run_assistant(request),
-                    Err(_) => Err("invalid_request".into()),
-                }
-            }
+            Err(error) if error == "assistant_module" => match tagged::<AssistantRequest>(input) {
+                Ok(request) => run_assistant(request),
+                Err(_) => Err("invalid_request".into()),
+            },
             answer => answer,
         }
     }))
@@ -742,17 +740,15 @@ fn evaluate_legacy(input: &str) -> String {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
-        if playback_receipt_v2_op(input) {
-            return run_playback_receipts_v2(input);
+        if let Some(request) = playback_receipt_v2_input(input)? {
+            return run_playback_receipts_v2(request.as_str(input));
         }
         match tagged::<Request>(input) {
             Ok(request) => run(request),
-            Err(_) => {
-                match tagged::<AssistantRequest>(input) {
-                    Ok(request) => run_assistant(request),
-                    Err(_) => Err("invalid_request".into()),
-                }
-            }
+            Err(_) => match tagged::<AssistantRequest>(input) {
+                Ok(request) => run_assistant(request),
+                Err(_) => Err("invalid_request".into()),
+            },
         }
     }))
 }
@@ -785,7 +781,7 @@ pub fn evaluate_deferred(input: &str) -> String {
 /// Keep receipt secrets out of core-only Value trees. Browser callers load the assistant module; reduced Tizen
 /// preserves the same explicit unsupported handoff without materializing authority, seed, or secret fields.
 fn run_core(input: &str) -> Result<Value, String> {
-    if playback_receipt_v2_op(input) {
+    if playback_receipt_v2_scan(input)?.is_some() {
         Err("assistant_module".into())
     } else {
         web_core::run(input)
@@ -799,8 +795,8 @@ pub fn evaluate_assistant(input: &str) -> String {
         if let Some(answer) = projection_op(input) {
             return answer;
         }
-        if playback_receipt_v2_op(input) {
-            run_playback_receipts_v2(input)
+        if let Some(request) = playback_receipt_v2_input(input)? {
+            run_playback_receipts_v2(request.as_str(input))
         } else {
             tagged::<AssistantRequest>(input)
                 .map_err(|_| "invalid_request".to_string())
@@ -809,19 +805,163 @@ pub fn evaluate_assistant(input: &str) -> String {
     }))
 }
 
-fn playback_receipt_v2_op(input: &str) -> bool {
-    // Assistant v1 is the common path here. Avoid a second full JSON parse unless the raw request can name v2;
-    // candidates still require the parsed top-level op, so a matching string in another field cannot dispatch it.
-    if !input.contains("playback_receipt_v2_") {
-        return false;
+struct ReceiptV2Scan<'a> {
+    escaped: Vec<&'a serde_json::value::RawValue>,
+}
+
+struct ReceiptV2Fields<'a> {
+    op: Option<&'a serde_json::value::RawValue>,
+    escaped: Vec<&'a serde_json::value::RawValue>,
+}
+
+impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct FieldsVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for FieldsVisitor {
+            type Value = ReceiptV2Fields<'de>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a receipt request object")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut input: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut names = std::collections::BTreeSet::new();
+                let mut op = None;
+                let mut escaped = Vec::new();
+                while let Some(name) = input.next_key::<String>()? {
+                    if !names.insert(name.clone()) {
+                        return Err(serde::de::Error::custom("duplicate request field"));
+                    }
+                    let raw = input.next_value::<&'de serde_json::value::RawValue>()?;
+                    if name == "op" {
+                        op = Some(raw);
+                    } else if matches!(name.as_str(), "authority" | "random" | "secret")
+                        && raw.get().starts_with('"')
+                        && raw.get().as_bytes().contains(&b'\\')
+                    {
+                        escaped.push(raw);
+                    }
+                }
+                Ok(ReceiptV2Fields { op, escaped })
+            }
+        }
+
+        deserializer.deserialize_map(FieldsVisitor)
     }
-    #[derive(Deserialize)]
-    struct Op<'a> {
-        #[serde(borrow)]
-        op: std::borrow::Cow<'a, str>,
+}
+
+enum ReceiptV2Input {
+    Borrowed,
+    Wiping(zeroize::Zeroizing<String>),
+}
+
+impl ReceiptV2Input {
+    fn as_str<'a>(&'a self, original: &'a str) -> &'a str {
+        match self {
+            Self::Borrowed => original,
+            Self::Wiping(normalized) => normalized,
+        }
     }
-    serde_json::from_str::<Op>(input)
-        .is_ok_and(|request| request.op.starts_with("playback_receipt_v2_"))
+}
+
+/// Find a top-level v2 op without asking serde_json to decode ignored string fields into its ordinary scratch Vec.
+/// The full duplicate-rejecting parse remains authoritative; this scan only chooses the privacy-safe parser.
+fn playback_receipt_v2_scan(input: &str) -> Result<Option<ReceiptV2Scan<'_>>, String> {
+    const INVALID: &str = "invalid_request";
+    if !input.contains("playback_receipt_v2_") && !input.contains("\\u") {
+        return Ok(None);
+    }
+    let fields = serde_json::from_str::<ReceiptV2Fields<'_>>(input).map_err(|_| INVALID)?;
+    let Some(op) = fields.op else {
+        return Ok(None);
+    };
+    let op = serde_json::from_str::<String>(op.get()).map_err(|_| INVALID)?;
+    Ok(op
+        .starts_with("playback_receipt_v2_")
+        .then_some(ReceiptV2Scan {
+            escaped: fields.escaped,
+        }))
+}
+
+fn playback_receipt_v2_input(input: &str) -> Result<Option<ReceiptV2Input>, String> {
+    let Some(scan) = playback_receipt_v2_scan(input)? else {
+        return Ok(None);
+    };
+    let request = if scan.escaped.is_empty() {
+        ReceiptV2Input::Borrowed
+    } else {
+        let mut normalized = zeroize::Zeroizing::new(String::with_capacity(input.len()));
+        let mut copied = 0;
+        for raw in scan.escaped {
+            let start = raw.get().as_ptr() as usize - input.as_ptr() as usize;
+            let end = start + raw.get().len();
+            normalized.push_str(&input[copied..start]);
+            normalize_receipt_secret(raw.get().as_bytes(), &mut normalized)?;
+            copied = end;
+        }
+        normalized.push_str(&input[copied..]);
+        ReceiptV2Input::Wiping(normalized)
+    };
+    Ok(Some(request))
+}
+
+fn normalize_receipt_secret(input: &[u8], output: &mut String) -> Result<(), String> {
+    const INVALID: &str = "invalid_request";
+    output.push('"');
+    let mut at = 1;
+    while at + 1 < input.len() {
+        let byte = input[at];
+        let decoded = if byte != b'\\' {
+            byte
+        } else {
+            at += 1;
+            match input.get(at) {
+                Some(b'u') if at + 4 < input.len() => {
+                    let hex = std::str::from_utf8(&input[at + 1..at + 5]).map_err(|_| INVALID)?;
+                    at += 4;
+                    let code = u16::from_str_radix(hex, 16).map_err(|_| INVALID)?;
+                    if (0xd800..=0xdbff).contains(&code) {
+                        if input.get(at + 1..at + 3) != Some(b"\\u") || at + 6 >= input.len() {
+                            return Err(INVALID.into());
+                        }
+                        let low = std::str::from_utf8(&input[at + 3..at + 7])
+                            .ok()
+                            .and_then(|hex| u16::from_str_radix(hex, 16).ok())
+                            .filter(|low| (0xdc00..=0xdfff).contains(low))
+                            .ok_or(INVALID)?;
+                        let _ = low;
+                        at += 6;
+                        b'!'
+                    } else if (0xdc00..=0xdfff).contains(&code) {
+                        return Err(INVALID.into());
+                    } else {
+                        u8::try_from(code).unwrap_or(b'!')
+                    }
+                }
+                Some(b'"') => b'"',
+                Some(b'\\') => b'\\',
+                Some(b'/') => b'/',
+                Some(b'b') => 8,
+                Some(b'f') => 12,
+                Some(b'n') => b'\n',
+                Some(b'r') => b'\r',
+                Some(b't') => b'\t',
+                _ => return Err(INVALID.into()),
+            }
+        };
+        output.push(char::from(
+            matches!(decoded, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-')
+                .then_some(decoded)
+                .unwrap_or(b'!'),
+        ));
+        at += 1;
+    }
+    output.push('"');
+    Ok(())
 }
 
 /// Recovery code §3's memory-hard KDF alone: the web loads this module only while making or redeeming a code.
@@ -1068,9 +1208,10 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
     if !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes()) {
         return Err(INVALID.into());
     }
-    let mut fields = serde_json::from_str::<web_core::RequestFields>(input)
-        .map_err(|_| INVALID.to_string())?
-        .0;
+    #[cfg(test)]
+    web_core::record_request_fields_parse();
+    let mut fields = serde_json::from_str::<serde_json::Map<String, Value>>(input)
+        .map_err(|_| INVALID.to_string())?;
     // Protect every encoded secret immediately after the one allocating parse. This precedes even `op` and `role`
     // validation, so every later early return drops a wiping owner rather than serde_json's ordinary String.
     let mut sensitive = SensitiveReceiptFields::protect(&mut fields);
@@ -1079,10 +1220,7 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
         "playback_receipt_v2_authority" => {
             let random = sensitive.optional(&mut fields, "random")?;
             let role: String = web_core::take(&mut fields, "role")?;
-            assistant::playback_receipt_v2_authority(
-                &role,
-                random.as_deref().map(String::as_str),
-            )
+            assistant::playback_receipt_v2_authority(&role, random.as_deref().map(String::as_str))
         }
         "playback_receipt_v2_proof" => {
             let authority = sensitive.required(&mut fields, "authority")?;
@@ -1489,7 +1627,8 @@ fn run(request: Request) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        evaluate, evaluate_assistant, evaluate_core, evaluate_legacy, web_core,
+        evaluate, evaluate_assistant, evaluate_core, evaluate_deferred, evaluate_legacy,
+        evaluate_startup, playback_receipt_v2_input, web_core, ReceiptV2Input,
         SensitiveReceiptFields,
     };
     use serde_json::{json, Value};
@@ -1604,10 +1743,7 @@ mod tests {
         let mut sensitive = SensitiveReceiptFields::protect(&mut fields);
         assert!(fields.values().all(|value| value == ""));
         let mut authority = sensitive.required(&mut fields, "authority").unwrap();
-        let mut random = sensitive
-            .optional(&mut fields, "random")
-            .unwrap()
-            .unwrap();
+        let mut random = sensitive.optional(&mut fields, "random").unwrap().unwrap();
         let mut secret = sensitive.required(&mut fields, "secret").unwrap();
         assert!(fields.is_empty());
 
@@ -1624,8 +1760,11 @@ mod tests {
         let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
         for request in [
             r#"{"op":"playback_receipt_v2_authority","random":"encoded-seed"}"#,
+            r#"{"op":"playback_receipt_v2_authority","random":"encoded-s\u0065ed"}"#,
             r#"{"op":"playback_receipt_v2_proof","authority":"encoded-authority"}"#,
+            r#"{"op":"playback_receipt_v2_proof","authority":"encoded-auth\u006frity"}"#,
             r#"{"op":"playback_receipt_v2_open","secret":"encoded-secret"}"#,
+            r#"{"op":"playback_receipt_v2_open","secret":"encoded-s\u0065cret"}"#,
         ] {
             web_core::reset_request_fields_parses();
             assert_eq!(evaluate(request), invalid, "{request}");
@@ -1635,14 +1774,69 @@ mod tests {
             assert_eq!(evaluate_assistant(request), invalid, "{request}");
             assert_eq!(web_core::request_fields_parses(), 1, "assistant: {request}");
 
-            web_core::reset_request_fields_parses();
-            assert_eq!(
-                evaluate_core(request),
-                json!({"version": 1, "error": "assistant_module"}).to_string(),
-                "{request}"
-            );
-            assert_eq!(web_core::request_fields_parses(), 0, "core: {request}");
+            for (name, call) in [
+                ("core", evaluate_core as fn(&str) -> String),
+                ("startup", evaluate_startup),
+                ("deferred", evaluate_deferred),
+            ] {
+                web_core::reset_request_fields_parses();
+                assert_eq!(
+                    call(request),
+                    json!({"version": 1, "error": "assistant_module"}).to_string(),
+                    "{name}: {request}"
+                );
+                assert_eq!(web_core::request_fields_parses(), 0, "{name}: {request}");
+            }
         }
+    }
+
+    #[test]
+    fn receipt_v2_escaped_secrets_start_with_a_wiping_request_owner() {
+        let request = r#"{"op":"playback_receipt_v2_open","secret":"encoded-s\u0065cret"}"#;
+        let Some(ReceiptV2Input::Wiping(mut protected)) =
+            playback_receipt_v2_input(request).unwrap()
+        else {
+            panic!("an escaped receipt secret must create a wiping request owner");
+        };
+        assert!(protected.contains(r#""secret":"encoded-secret""#));
+        protected.zeroize();
+        assert!(protected.is_empty());
+    }
+
+    #[test]
+    fn receipt_v2_valid_escaped_secrets_and_op_keep_native_lazy_parity() {
+        let random = "42".repeat(32);
+        let plain = format!(r#"{{"op":"playback_receipt_v2_keygen","random":"{random}"}}"#);
+        let escaped_secret = format!(
+            r#"{{"op":"playback_receipt_v2_keygen","random":"\u0034{}"}}"#,
+            &random[1..]
+        );
+        let escaped_op = format!(
+            r#"{{"op":"playback_receipt_v2_\u006beygen","random":"\u0034{}"}}"#,
+            &random[1..]
+        );
+        for request in [escaped_secret, escaped_op] {
+            assert_eq!(evaluate(&request), evaluate(&plain), "native: {request}");
+            assert_eq!(
+                evaluate_assistant(&request),
+                evaluate_assistant(&plain),
+                "assistant: {request}"
+            );
+            assert_eq!(
+                evaluate_core(&request),
+                json!({"version": 1, "error": "assistant_module"}).to_string(),
+                "core: {request}"
+            );
+        }
+    }
+
+    #[test]
+    fn receipt_v2_duplicate_op_keeps_invalid_module_semantics() {
+        let request = r#"{"op":"playback_receipt_v2_keygen","op":"name","random":"\u0034"}"#;
+        let invalid = json!({"version": 1, "error": "invalid_request"}).to_string();
+        assert_eq!(evaluate(request), invalid);
+        assert_eq!(evaluate_assistant(request), invalid);
+        assert_eq!(evaluate_core(request), invalid);
     }
 
     #[test]

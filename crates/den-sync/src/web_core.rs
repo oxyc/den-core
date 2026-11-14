@@ -78,6 +78,11 @@ pub(super) fn reset_request_fields_parses() {
     REQUEST_FIELDS_PARSES.set(0);
 }
 
+#[cfg(test)]
+pub(super) fn record_request_fields_parse() {
+    REQUEST_FIELDS_PARSES.set(REQUEST_FIELDS_PARSES.get() + 1);
+}
+
 impl<'de> Deserialize<'de> for RequestFields {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct FieldsVisitor;
@@ -91,7 +96,7 @@ impl<'de> Deserialize<'de> for RequestFields {
 
             fn visit_map<A: MapAccess<'de>>(self, mut input: A) -> Result<Self::Value, A::Error> {
                 #[cfg(test)]
-                REQUEST_FIELDS_PARSES.set(REQUEST_FIELDS_PARSES.get() + 1);
+                record_request_fields_parse();
                 let mut fields = Map::new();
                 while let Some((name, value)) = input.next_entry::<String, Value>()? {
                     if fields.insert(name, value).is_some() {
