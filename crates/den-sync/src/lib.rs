@@ -806,12 +806,13 @@ pub fn evaluate_assistant(input: &str) -> String {
 }
 
 struct ReceiptV2Scan<'a> {
-    escaped: Vec<&'a serde_json::value::RawValue>,
+    escaped: [Option<&'a serde_json::value::RawValue>; 3],
 }
 
 struct ReceiptV2Fields<'a> {
-    op: Option<&'a serde_json::value::RawValue>,
-    escaped: Vec<&'a serde_json::value::RawValue>,
+    candidate_op: Option<&'a serde_json::value::RawValue>,
+    escaped: [Option<&'a serde_json::value::RawValue>; 3],
+    invalid: bool,
 }
 
 impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
@@ -829,24 +830,56 @@ impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
                 self,
                 mut input: A,
             ) -> Result<Self::Value, A::Error> {
-                let mut names = std::collections::BTreeSet::new();
-                let mut op = None;
-                let mut escaped = Vec::new();
+                // Receipt v2 has a finite top-level schema. A bitset rejects duplicate receipt fields without
+                // linking an ordered set and cloned names into every core-only/Tizen build. Unknown fields remain
+                // for the assistant parser to reject, preserving core's `assistant_module` handoff for them.
+                let mut seen = 0_u32;
+                let mut candidate_op = None;
+                let mut escaped = [None; 3];
+                let mut invalid = false;
                 while let Some(name) = input.next_key::<String>()? {
-                    if !names.insert(name.clone()) {
-                        return Err(serde::de::Error::custom("duplicate request field"));
-                    }
                     let raw = input.next_value::<&'de serde_json::value::RawValue>()?;
-                    if name == "op" {
-                        op = Some(raw);
-                    } else if matches!(name.as_str(), "authority" | "random" | "secret")
-                        && raw.get().starts_with('"')
-                        && raw.get().as_bytes().contains(&b'\\')
+                    let (bit, sensitive) = match name.as_str() {
+                        "op" => (0, None),
+                        "authority" => (1, Some(0)),
+                        "random" => (2, Some(1)),
+                        "secret" => (3, Some(2)),
+                        "role" => (4, None),
+                        "operation" => (5, None),
+                        "response" => (6, None),
+                        "household" => (7, None),
+                        "route" => (8, None),
+                        "binding" => (9, None),
+                        "sealed" => (10, None),
+                        "generation" => (11, None),
+                        "kid" => (12, None),
+                        "id" => (13, None),
+                        "applied" => (14, None),
+                        "device" => (15, None),
+                        "now" => (16, None),
+                        _ => continue,
+                    };
+                    let mask = 1_u32 << bit;
+                    if seen & mask != 0 {
+                        invalid = true;
+                    }
+                    seen |= mask;
+                    if bit == 0
+                        && (raw.get().contains("playback_receipt_v2_") || raw.get().contains("\\u"))
                     {
-                        escaped.push(raw);
+                        candidate_op = Some(raw);
+                    }
+                    if let Some(index) = sensitive {
+                        if raw.get().starts_with('"') && raw.get().as_bytes().contains(&b'\\') {
+                            escaped[index] = Some(raw);
+                        }
                     }
                 }
-                Ok(ReceiptV2Fields { op, escaped })
+                Ok(ReceiptV2Fields {
+                    candidate_op,
+                    escaped,
+                    invalid,
+                })
             }
         }
 
@@ -876,32 +909,46 @@ fn playback_receipt_v2_scan(input: &str) -> Result<Option<ReceiptV2Scan<'_>>, St
         return Ok(None);
     }
     let fields = serde_json::from_str::<ReceiptV2Fields<'_>>(input).map_err(|_| INVALID)?;
-    let Some(op) = fields.op else {
+    let Some(op) = fields.candidate_op else {
         return Ok(None);
     };
     let op = serde_json::from_str::<String>(op.get()).map_err(|_| INVALID)?;
-    Ok(op
-        .starts_with("playback_receipt_v2_")
-        .then_some(ReceiptV2Scan {
-            escaped: fields.escaped,
-        }))
+    if !op.starts_with("playback_receipt_v2_") {
+        return Ok(None);
+    }
+    if fields.invalid {
+        return Err(INVALID.into());
+    }
+    Ok(Some(ReceiptV2Scan {
+        escaped: fields.escaped,
+    }))
 }
 
 fn playback_receipt_v2_input(input: &str) -> Result<Option<ReceiptV2Input>, String> {
     let Some(scan) = playback_receipt_v2_scan(input)? else {
         return Ok(None);
     };
-    let request = if scan.escaped.is_empty() {
+    let request = if scan.escaped.iter().all(Option::is_none) {
         ReceiptV2Input::Borrowed
     } else {
         let mut normalized = zeroize::Zeroizing::new(String::with_capacity(input.len()));
         let mut copied = 0;
-        for raw in scan.escaped {
+        let mut escaped = scan.escaped;
+        for _ in 0..escaped.len() {
+            let Some((index, raw)) = escaped
+                .iter()
+                .enumerate()
+                .filter_map(|(index, raw)| raw.map(|raw| (index, raw)))
+                .min_by_key(|(_, raw)| raw.get().as_ptr())
+            else {
+                break;
+            };
             let start = raw.get().as_ptr() as usize - input.as_ptr() as usize;
             let end = start + raw.get().len();
             normalized.push_str(&input[copied..start]);
             normalize_receipt_secret(raw.get().as_bytes(), &mut normalized)?;
             copied = end;
+            escaped[index] = None;
         }
         normalized.push_str(&input[copied..]);
         ReceiptV2Input::Wiping(normalized)
@@ -1205,7 +1252,7 @@ fn run_assistant(request: AssistantRequest) -> Result<Value, String> {
 /// of generating five serde enum visitors. That matters in the lazy WASM module and also makes unknown fields fail.
 fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
     const INVALID: &str = "invalid_request";
-    if !den_assistant::playback_receipt_v2_exact_integers(input.as_bytes()) {
+    if !den_assistant::playback_receipt_v2_exact_integer_spellings(input.as_bytes()) {
         return Err(INVALID.into());
     }
     #[cfg(test)]

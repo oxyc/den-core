@@ -214,6 +214,7 @@ fn exact_integer_rejection_happens_before_both_native_and_web_coercion() {
         answer(evaluate_assistant, &unknown)["error"],
         "invalid_request"
     );
+    assert_eq!(answer(evaluate_core, &unknown)["error"], "assistant_module");
 }
 
 #[test]

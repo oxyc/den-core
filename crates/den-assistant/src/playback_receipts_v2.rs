@@ -151,6 +151,19 @@ impl<'de> Visitor<'de> for ExactJson {
 /// Reject every duplicate object member and non-integer JSON number spelling before `serde_json::Value` can
 /// collapse or coerce it. The recursive parse also owns structural validation.
 pub fn playback_receipt_v2_exact_integers(input: &[u8]) -> bool {
+    playback_receipt_v2_exact_integer_spellings(input) && {
+        let mut deserializer = serde_json::Deserializer::from_slice(input);
+        ExactJson.deserialize(&mut deserializer).is_ok() && deserializer.end().is_ok()
+    }
+}
+
+/// Reject every non-integer or unsafe JSON number spelling without constructing a JSON tree.
+///
+/// Callers must pair this lexical pass with a shape parser which rejects duplicates: canonical operation bytes,
+/// the drain's deny-unknown derived structs, or den-sync's fixed top-level receipt field bitset. Keeping that
+/// already-required schema parse authoritative avoids linking the generic recursive `ExactJson` visitor into the
+/// browser's lazy assistant module.
+pub fn playback_receipt_v2_exact_integer_spellings(input: &[u8]) -> bool {
     let mut index = 0;
     let mut string = false;
     let mut escaped = false;
@@ -207,10 +220,7 @@ pub fn playback_receipt_v2_exact_integers(input: &[u8]) -> bool {
         }
         index += 1;
     }
-    !string && {
-        let mut deserializer = serde_json::Deserializer::from_slice(input);
-        ExactJson.deserialize(&mut deserializer).is_ok() && deserializer.end().is_ok()
-    }
+    !string
 }
 
 /// Whether one token is exactly a safe, non-negative JSON integer. Field-level validators separately require
@@ -231,7 +241,7 @@ pub fn playback_receipt_v2_exact_integer_token(input: &[u8]) -> bool {
 }
 
 fn canonical_object(input: &[u8]) -> Option<Value> {
-    if !playback_receipt_v2_exact_integers(input) {
+    if !playback_receipt_v2_exact_integer_spellings(input) {
         return None;
     }
     let value: Value = serde_json::from_slice(input).ok()?;
@@ -797,7 +807,9 @@ struct RawDrainEntry {
 
 /// Strict response decoding preserves each entry's complete AAD metadata and increasing sequence order.
 pub fn parse_playback_receipt_v2_drain(bytes: &[u8]) -> Option<PlaybackReceiptV2Drain> {
-    if bytes.len() > PLAYBACK_RECEIPT_V2_MAX_DRAIN || !playback_receipt_v2_exact_integers(bytes) {
+    if bytes.len() > PLAYBACK_RECEIPT_V2_MAX_DRAIN
+        || !playback_receipt_v2_exact_integer_spellings(bytes)
+    {
         return None;
     }
     let raw: RawDrain = serde_json::from_slice(bytes).ok()?;

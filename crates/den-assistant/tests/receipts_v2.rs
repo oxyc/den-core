@@ -127,6 +127,26 @@ fn den_spec_derivation_proof_key_aad_drain_and_integer_vectors() {
 }
 
 #[test]
+fn drain_shape_parser_rejects_duplicates_without_the_generic_exact_visitor() {
+    let drain = format!(
+        r#"{{"binding":"{BINDING}","messages":[{{"generation":1,"id":"{}","kid":"{}","sealed":"AA","seq":1}}],"route":"{ROUTE}","v":2}}"#,
+        "11".repeat(16),
+        "22".repeat(16),
+    );
+    assert!(parse_playback_receipt_v2_drain(drain.as_bytes()).is_some());
+    assert!(parse_playback_receipt_v2_drain(
+        drain.replacen("\"v\":2", "\"v\":2,\"v\":2", 1).as_bytes()
+    )
+    .is_none());
+    assert!(parse_playback_receipt_v2_drain(
+        drain
+            .replacen("\"generation\":1", "\"generation\":1,\"generation\":1", 1,)
+            .as_bytes()
+    )
+    .is_none());
+}
+
+#[test]
 fn exact_json_rejects_duplicate_members_at_every_depth() {
     assert!(playback_receipt_v2_exact_integers(
         br#"{"outer":{"a":1},"v":2}"#
