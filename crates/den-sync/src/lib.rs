@@ -897,9 +897,7 @@ impl<'de> Deserialize<'de> for ReceiptV2Fields<'de> {
 /// the allocating request parse can collapse them; unknown members and wrong value types remain the exact operation
 /// validator's responsibility. This stays smaller than retaining the generic recursive exact-JSON visitor in browser
 /// assistant and core/Tizen graphs.
-fn playback_receipt_v2_operation_is_duplicate_safe(
-    input: &serde_json::value::RawValue,
-) -> bool {
+fn playback_receipt_v2_operation_is_duplicate_safe(input: &serde_json::value::RawValue) -> bool {
     struct OperationFields;
 
     impl<'de> Deserialize<'de> for OperationFields {
@@ -983,9 +981,7 @@ fn playback_receipt_v2_scan(input: &str) -> Result<Option<ReceiptV2Scan<'_>>, St
     if !op.starts_with("playback_receipt_v2_") {
         return Ok(None);
     }
-    if fields.invalid
-        || op == "playback_receipt_v2_proof" && fields.operation_invalid
-    {
+    if fields.invalid || op == "playback_receipt_v2_proof" && fields.operation_invalid {
         return Err(INVALID.into());
     }
     Ok(Some(ReceiptV2Scan {

@@ -1,12 +1,10 @@
 //! Native/Web JSON boundary coverage for profile-routed playback receipts v2.
 
 use den_assistant::{
-    b64url, b64url_decode, kem_public, key_id, playback_receipt_v2_route,
-    seal_playback_receipt_v2, PlaybackReceiptV2, PlaybackReceiptV2Aad, ESEED_LEN, STALE_MS,
+    b64url, b64url_decode, kem_public, key_id, playback_receipt_v2_route, seal_playback_receipt_v2,
+    PlaybackReceiptV2, PlaybackReceiptV2Aad, ESEED_LEN, STALE_MS,
 };
-use den_sync::{
-    evaluate, evaluate_assistant, evaluate_core, evaluate_deferred, evaluate_startup,
-};
+use den_sync::{evaluate, evaluate_assistant, evaluate_core, evaluate_deferred, evaluate_startup};
 use serde_json::{json, Value};
 
 const HOUSEHOLD: &str = "00000000000000000000000000000001";
