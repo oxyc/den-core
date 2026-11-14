@@ -1,4 +1,5 @@
-//! Assistant writes (den-spec `wire/assistant-v1.md`): a request from an assistant to change a library, signed by the
+//! Assistant writes (den-spec `wire/assistant-v1.md`) and profile-routed playback receipts
+//! (`wire/playback-receipts-v2.md`): a request from an assistant to change a library, signed by the
 //! grant the household gave that assistant and sealed so that only a device holding the library opens it, and the
 //! rules a device checks before acting on one. Also the two forms den-edge keeps a grant's private key in: sealed into
 //! an access token for den-mcp, and wrapped at rest under the session's refresh secret.
@@ -24,6 +25,9 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use zeroize::Zeroizing;
+
+mod playback_receipts_v2;
+pub use playback_receipts_v2::*;
 
 /// HPKE `info` of a request sealed to a library's drop-box key (§4).
 pub const REQUEST_INFO: &[u8] = b"den/assistant/v1";
