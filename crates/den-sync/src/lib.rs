@@ -1060,25 +1060,28 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
     let mut fields = serde_json::from_str::<web_core::RequestFields>(input)
         .map_err(|_| INVALID.to_string())?
         .0;
+    // Protect every encoded secret immediately after the one allocating parse. This precedes even `op` and `role`
+    // validation, so every later early return drops a wiping owner rather than serde_json's ordinary String.
+    let mut sensitive = SensitiveReceiptFields::protect(&mut fields);
     let op: String = web_core::take(&mut fields, "op")?;
     let answer = match op.as_str() {
         "playback_receipt_v2_authority" => {
+            let random = sensitive.optional(&mut fields, "random")?;
             let role: String = web_core::take(&mut fields, "role")?;
-            let random = sensitive_optional_text(&mut fields, "random")?;
             assistant::playback_receipt_v2_authority(
                 &role,
                 random.as_deref().map(String::as_str),
             )
         }
         "playback_receipt_v2_proof" => {
-            let authority = sensitive_text(&mut fields, "authority")?;
+            let authority = sensitive.required(&mut fields, "authority")?;
             assistant::playback_receipt_v2_proof(
                 &authority,
                 &web_core::value(&mut fields, "operation")?,
             )
         }
         "playback_receipt_v2_keygen" => {
-            let random = sensitive_text(&mut fields, "random")?;
+            let random = sensitive.required(&mut fields, "random")?;
             assistant::playback_receipt_v2_keygen(&random)
         }
         "playback_receipt_v2_drain" => assistant::playback_receipt_v2_drain(
@@ -1088,7 +1091,7 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
             &web_core::text(&mut fields, "binding")?,
         ),
         "playback_receipt_v2_open" => {
-            let secret = sensitive_text(&mut fields, "secret")?;
+            let secret = sensitive.required(&mut fields, "secret")?;
             assistant::playback_receipt_v2_open(
                 &web_core::text(&mut fields, "sealed")?,
                 &secret,
@@ -1112,21 +1115,65 @@ fn run_playback_receipts_v2(input: &str) -> Result<Value, String> {
     }
 }
 
-/// Move encoded authorities, secrets and caller-provided key seeds out of serde_json's tree and into an owner that
-/// wipes its allocation on every return path. The JSON input is borrowed FFI memory and cannot be wiped here.
-fn sensitive_text(
-    fields: &mut serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<zeroize::Zeroizing<String>, String> {
-    web_core::text(fields, name).map(zeroize::Zeroizing::new)
+/// Allocations moved out of serde_json's tree before any request field can fail. Their empty String placeholders
+/// preserve unknown-field rejection, while these owners wipe the original allocations on every return path.
+#[derive(Default)]
+struct SensitiveReceiptFields {
+    authority: Option<zeroize::Zeroizing<String>>,
+    random: Option<zeroize::Zeroizing<String>>,
+    secret: Option<zeroize::Zeroizing<String>>,
 }
 
-fn sensitive_optional_text(
-    fields: &mut serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<zeroize::Zeroizing<String>>, String> {
-    web_core::optional::<String>(fields, name)
-        .map(|text| text.map(zeroize::Zeroizing::new))
+impl SensitiveReceiptFields {
+    fn protect(fields: &mut serde_json::Map<String, Value>) -> Self {
+        let take = |fields: &mut serde_json::Map<String, Value>, name| match fields.get_mut(name) {
+            Some(Value::String(text)) => Some(zeroize::Zeroizing::new(std::mem::take(text))),
+            _ => None,
+        };
+        Self {
+            authority: take(fields, "authority"),
+            random: take(fields, "random"),
+            secret: take(fields, "secret"),
+        }
+    }
+
+    fn slot(&mut self, name: &str) -> &mut Option<zeroize::Zeroizing<String>> {
+        match name {
+            "authority" => &mut self.authority,
+            "random" => &mut self.random,
+            "secret" => &mut self.secret,
+            _ => unreachable!("only receipt secrets use the sensitive reader"),
+        }
+    }
+
+    fn required(
+        &mut self,
+        fields: &mut serde_json::Map<String, Value>,
+        name: &str,
+    ) -> Result<zeroize::Zeroizing<String>, String> {
+        match self.slot(name).take() {
+            Some(text) => {
+                web_core::text(fields, name)?;
+                Ok(text)
+            }
+            None => web_core::text(fields, name).map(zeroize::Zeroizing::new),
+        }
+    }
+
+    fn optional(
+        &mut self,
+        fields: &mut serde_json::Map<String, Value>,
+        name: &str,
+    ) -> Result<Option<zeroize::Zeroizing<String>>, String> {
+        match self.slot(name).take() {
+            Some(text) => {
+                web_core::text(fields, name)?;
+                Ok(Some(text))
+            }
+            None => web_core::optional::<String>(fields, name)
+                .map(|text| text.map(zeroize::Zeroizing::new)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1430,9 +1477,7 @@ fn run(request: Request) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        evaluate, evaluate_core, evaluate_legacy, sensitive_optional_text, sensitive_text, web_core,
-    };
+    use super::{evaluate, evaluate_core, evaluate_legacy, web_core, SensitiveReceiptFields};
     use serde_json::{json, Value};
     use zeroize::Zeroize;
 
@@ -1538,20 +1583,26 @@ mod tests {
     #[test]
     fn receipt_v2_parser_strings_move_into_wiping_owners() {
         let mut fields = serde_json::from_str::<web_core::RequestFields>(
-            r#"{"authority":"encoded-authority","random":"encoded-seed"}"#,
+            r#"{"authority":"encoded-authority","random":"encoded-seed","secret":"encoded-secret"}"#,
         )
         .unwrap()
         .0;
-        let mut authority = sensitive_text(&mut fields, "authority").unwrap();
-        let mut random = sensitive_optional_text(&mut fields, "random")
+        let mut sensitive = SensitiveReceiptFields::protect(&mut fields);
+        assert!(fields.values().all(|value| value == ""));
+        let mut authority = sensitive.required(&mut fields, "authority").unwrap();
+        let mut random = sensitive
+            .optional(&mut fields, "random")
             .unwrap()
             .unwrap();
+        let mut secret = sensitive.required(&mut fields, "secret").unwrap();
         assert!(fields.is_empty());
 
         authority.zeroize();
         random.zeroize();
+        secret.zeroize();
         assert!(authority.is_empty());
         assert!(random.is_empty());
+        assert!(secret.is_empty());
     }
 
     #[test]

@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::fmt;
 use zeroize::Zeroizing;
 
@@ -47,7 +47,7 @@ fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
 
 struct ExactJson;
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct ExactName<'a>(Cow<'a, str>);
 
 impl<'de> Deserialize<'de> for ExactName<'de> {
@@ -133,10 +133,11 @@ impl<'de> Visitor<'de> for ExactJson {
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut input: A) -> Result<Self::Value, A::Error> {
-        // The native/lazy boundary can admit a 64 MiB request before v2's narrower shape limits apply. SipHash's
-        // per-set random key makes membership near-linear for attacker-chosen names; Cow borrows ordinary names
-        // from the input and allocates only when serde_json must unescape one. Memory remains bounded by the input.
-        let mut names = HashSet::new();
+        // The native/lazy boundary can admit a 64 MiB request before v2's narrower shape limits apply. An ordered
+        // set gives deterministic O(n log n) membership under hostile names on every target, including wasm32 where
+        // RandomState has no trustworthy per-process entropy. Cow borrows ordinary names and allocates only when
+        // serde_json must unescape one, so memory remains bounded by the input.
+        let mut names = BTreeSet::new();
         while let Some(name) = input.next_key::<ExactName<'de>>()? {
             if !names.insert(name) {
                 return Err(serde::de::Error::custom("duplicate object member"));

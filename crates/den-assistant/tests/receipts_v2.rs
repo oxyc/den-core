@@ -141,16 +141,18 @@ fn exact_json_rejects_duplicate_members_at_every_depth() {
         br#"{"a":1,"\u0061":2}"#
     ));
 
-    // Put a duplicate of the first name after enough unique members to make pairwise name scans adversarial.
-    // The production boundary is capped at 64 MiB; this smaller case keeps the focused source test quick.
+    // Put a duplicate of the first name after enough attacker-chosen, long-common-prefix members to make both a
+    // pairwise scan and weak-prefix hashing adversarial. The ordered production set remains deterministic and the
+    // production boundary is capped at 64 MiB; this smaller case keeps the focused source test quick.
     let mut many = String::from("{");
-    for index in 0..16_384 {
+    let prefix = "collision-prefix-".repeat(8);
+    for index in 0..8_192 {
         if index != 0 {
             many.push(',');
         }
-        write!(many, "\"member{index:05}\":0").unwrap();
+        write!(many, "\"{prefix}{index:05}\":0").unwrap();
     }
-    many.push_str(",\"member00000\":0}");
+    write!(many, ",\"{prefix}00000\":0}}").unwrap();
     assert!(!playback_receipt_v2_exact_integers(many.as_bytes()));
 }
 

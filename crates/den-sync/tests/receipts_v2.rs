@@ -227,3 +227,18 @@ fn nested_duplicate_operation_members_fail_closed_before_value_collapse() {
         assert_eq!(answer["error"], "invalid_request");
     }
 }
+
+#[test]
+fn authority_seed_is_rejected_safely_when_role_is_missing_or_malformed() {
+    for role in [None, Some("null"), Some("{}"), Some("17")] {
+        let role = role.map_or(String::new(), |value| format!(",\"role\":{value}"));
+        let request = format!(
+            "{{\"op\":\"playback_receipt_v2_authority\",\"random\":\"{}\"{role}}}",
+            "42".repeat(48),
+        );
+        for call in [evaluate as fn(&str) -> String, evaluate_assistant] {
+            let answer: Value = serde_json::from_str(&call(&request)).unwrap();
+            assert_eq!(answer["error"], "invalid_request", "{request}");
+        }
+    }
+}
