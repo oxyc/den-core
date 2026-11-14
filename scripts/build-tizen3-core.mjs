@@ -78,9 +78,13 @@ const generated = resolve(root, 'web-tizen3/generated/den_core.js');
 mkdirSync(dirname(generated), { recursive: true });
 execFileSync(wasmOpt, [wasm, '-O3', '-o', optimized], { stdio: 'inherit' });
 execFileSync(wasm2js, [optimized, '-o', converted], { stdio: 'inherit' });
-execFileSync(terser, [converted, '--compress', '--mangle', '--ecma', '5', '--output', generated], {
-  stdio: 'inherit',
-});
+// Re-run only Terser's standard safe compressor: wasm2js emits enough repeated scaffolding that later passes expose
+// folds the first pass cannot see. This changes neither the pinned tool nor the ES5/unsafe transform contract.
+execFileSync(
+  terser,
+  [converted, '--compress', 'passes=3', '--mangle', '--ecma', '5', '--output', generated],
+  { stdio: 'inherit' },
+);
 const moduleTail =
   'export var memory=retasmFunc.memory;export var den_alloc=retasmFunc.den_alloc;export var den_evaluate=retasmFunc.den_evaluate;export var den_free=retasmFunc.den_free;export var __data_end=retasmFunc.__data_end;export var __heap_base=retasmFunc.__heap_base;';
 const globalTail =

@@ -4,8 +4,8 @@ let initialized = false;
 let pending;
 
 /**
- * The assistant ops' module (den-spec `wire/assistant-v1.md`), apart from `index.js` so its crypto loads only where it
- * is used. Shares concurrent callers, and allows a later attempt after a failed download or compilation.
+ * The assistant and playback-receipt crypto module, apart from `index.js` so its crypto loads only where it is used.
+ * Shares concurrent callers, and allows a later attempt after a failed download or compilation.
  */
 export function initializeAssistant(input) {
   if (initialized) return Promise.resolve();
@@ -23,7 +23,7 @@ export function initializeAssistant(input) {
   return pending;
 }
 
-/** The `assistant_*` ops, synchronous after initialization. Never substitute empty state. */
+/** The `assistant_*` and `playback_receipt_*` ops, synchronous after initialization. Never substitute empty state. */
 export function evaluateAssistant(request) {
   if (!initialized) throw new Error('Assistant core is not initialized');
   return rustEvaluate(request);

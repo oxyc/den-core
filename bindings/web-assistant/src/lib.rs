@@ -1,5 +1,5 @@
-//! Transport only. The assistant ops (den-spec `wire/assistant-v1.md`) in a module of their own, so the web loads their
-//! crypto only where it is used.
+//! Transport only. Assistant and playback-receipt crypto in a module of their own, so the web loads it only where it
+//! is used.
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

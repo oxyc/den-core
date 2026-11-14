@@ -375,6 +375,7 @@ dependencies = [
  "aes-gcm",
  "ed25519-dalek",
  "hkdf",
+ "hmac",
  "hpke",
  "miniz_oxide",
  "rand_core",
