@@ -10,4 +10,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 den-sync = { path = "../../crates/den-sync", default-features = false, features = ["recovery-kdf"] }
-wasm-bindgen = "=0.2.129"
+wasm-bindgen = "=0.2.130"
