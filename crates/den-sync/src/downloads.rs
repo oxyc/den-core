@@ -1120,7 +1120,8 @@ mod tests {
         assert_eq!(canonical("nn-NO"), "nb");
         assert_eq!(canonical("hrv"), "hr");
         assert_eq!(canonical("ces"), canonical("cze"));
-        assert_eq!(canonical("fil"), "fil", "a code with no two-letter form here stands as itself");
+        // A code with no two-letter form here stands as itself.
+        assert_eq!(canonical("fil"), "fil");
     }
 
     /// The runt threshold is a quarter of the MEDIAN size among the candidates — so one release whose
