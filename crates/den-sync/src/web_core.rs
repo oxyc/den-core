@@ -171,6 +171,11 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
                 serde_json::from_value(Value::Object(fields)).map_err(|_| INVALID.to_string())?;
             Ok(continue_entry(&input))
         }
+        // A list's input, like `library_columns`: not in the compatibility core or Tizen 3's, which have no row to
+        // render it for (and whose size budgets have no room for it).
+        #[cfg(feature = "library-columns")]
+        #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
+        "continue_row" => continue_row(Value::Object(fields)),
         "issue" => {
             let last: Stamp = take(&mut fields, "last")?;
             let last = optional::<Stamp>(&mut fields, "seen")?

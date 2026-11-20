@@ -15,8 +15,9 @@ const fixtures = ['policy-v1.json', 'policy-v4.json', 'profiles-v1.json'].map(na
 // Optional operations run in their own modules, and every module refuses operations outside its capability.
 const assistant = (request) => typeof request.op === 'string' && request.op.startsWith('assistant_');
 const recovery = (request) => request.op === 'recovery_derive';
-// `library_columns` is the startup module's (test-wasm-lifecycle.mjs runs its cases there); this core refuses it.
-const columns = (request) => request.op === 'library_columns';
+// `library_columns` and `continue_row` are the startup module's (test-wasm-lifecycle.mjs runs its cases there); this
+// core refuses them.
+const columns = (request) => request.op === 'library_columns' || request.op === 'continue_row';
 let count = 0;
 let assistantCount = 0;
 let recoveryCount = 0;
