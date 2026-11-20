@@ -479,6 +479,15 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
                 &default_vector(&mut fields, "tried")?,
             ))
         }
+        #[cfg(feature = "audio-pick")]
+        "audio_pick" => {
+            let kept = optional::<String>(&mut fields, "kept")?;
+            Ok(audio::answer(
+                &vector::<AudioTrack>(&mut fields, "tracks")?,
+                kept.as_deref(),
+                &default_vector(&mut fields, "wanted")?,
+            ))
+        }
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "watch_name" => Ok(json!(watch_row_name(
             &text(&mut fields, "media")?,

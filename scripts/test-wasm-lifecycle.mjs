@@ -104,6 +104,13 @@ const coveredStartup = new Set();
 for (const fixture of fixtures) {
   for (const test of fixture.cases) {
     if (test.request.op.startsWith('assistant_') || test.request.op === 'recovery_derive') continue;
+    // Native and Hearth only: neither lifecycle module carries it.
+    if (test.request.op === 'audio_pick') {
+      for (const own of [evaluateStartup, evaluateDeferred]) {
+        assert.equal(JSON.parse(own(JSON.stringify(test.request))).error, 'invalid_request', test.name);
+      }
+      continue;
+    }
     const startup = STARTUP_OPS.has(test.request.op);
     const request = JSON.stringify(test.request);
     const result = JSON.parse((startup ? evaluateStartup : evaluateDeferred)(request));

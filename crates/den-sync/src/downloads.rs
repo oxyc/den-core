@@ -698,7 +698,7 @@ const COMMON: [(&str, &str); 24] = [
 /// A canonical two-letter key for a language, across ISO 639-1 and both 639-2 forms (the TV's
 /// `LanguageCatalog.canonical`): `swe`, `sv` and `Swedish` all read `sv`. A code with no two-letter equivalent here
 /// comes back as its lowercased primary subtag.
-fn canonical(code: &str) -> String {
+pub(crate) fn canonical(code: &str) -> String {
     let lowered = code.to_lowercase();
     let base: String = lowered.chars().take_while(|c| c.is_alphabetic()).collect();
     if COMMON.iter().any(|(two, _)| *two == base) {
@@ -729,11 +729,30 @@ fn canonical(code: &str) -> String {
         "tha" => Some("th"),
         "swe" => Some("sv"),
         "dan" => Some("da"),
-        "nor" | "nob" | "no" => Some("nb"),
+        "nor" | "nob" | "no" | "nno" | "nn" => Some("nb"),
         "fin" => Some("fi"),
         "nld" | "dut" => Some("nl"),
         "pol" => Some("pl"),
         "ind" => Some("id"),
+        // The other languages releases tag audio with; their two-letter codes stand as they are.
+        "ice" | "isl" => Some("is"),
+        "cze" | "ces" => Some("cs"),
+        "slo" | "slk" => Some("sk"),
+        "hun" => Some("hu"),
+        "rum" | "ron" => Some("ro"),
+        "bul" => Some("bg"),
+        "hrv" => Some("hr"),
+        "srp" => Some("sr"),
+        "slv" => Some("sl"),
+        "gre" | "ell" => Some("el"),
+        "ukr" => Some("uk"),
+        "est" => Some("et"),
+        "lav" => Some("lv"),
+        "lit" => Some("lt"),
+        "heb" => Some("he"),
+        "per" | "fas" => Some("fa"),
+        "vie" => Some("vi"),
+        "may" | "msa" => Some("ms"),
         _ => None,
     };
     if let Some(alias) = alias {
@@ -1098,7 +1117,10 @@ mod tests {
         }
         assert_eq!(canonical("pob"), "pt");
         assert_eq!(canonical("no"), "nb");
-        assert_eq!(canonical("hrv"), "hrv");
+        assert_eq!(canonical("nn-NO"), "nb");
+        assert_eq!(canonical("hrv"), "hr");
+        assert_eq!(canonical("ces"), canonical("cze"));
+        assert_eq!(canonical("fil"), "fil", "a code with no two-letter form here stands as itself");
     }
 
     /// The runt threshold is a quarter of the MEDIAN size among the candidates — so one release whose
