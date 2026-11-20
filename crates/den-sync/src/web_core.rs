@@ -171,6 +171,12 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
                 serde_json::from_value(Value::Object(fields)).map_err(|_| INVALID.to_string())?;
             Ok(continue_entry(&input))
         }
+        #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
+        "continue_row" => {
+            let input: ContinueRowInput =
+                serde_json::from_value(Value::Object(fields)).map_err(|_| INVALID.to_string())?;
+            Ok(continue_row(&input))
+        }
         "issue" => {
             let last: Stamp = take(&mut fields, "last")?;
             let last = optional::<Stamp>(&mut fields, "seen")?

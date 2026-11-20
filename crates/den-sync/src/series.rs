@@ -350,6 +350,114 @@ pub fn continue_entry(input: &ContinueInput) -> Value {
     })
 }
 
+/// One started series for `continue_row`: its `continue_entry` input, and the library's own times for it.
+#[derive(Deserialize)]
+pub struct RowSeries {
+    /// The client's key for the title; opaque here, and what the answer names the row by.
+    pub id: String,
+    #[serde(flatten)]
+    pub input: ContinueInput,
+    /// When the library record for the series was last played, if it holds one.
+    #[serde(default)]
+    pub progress_at: Option<i64>,
+    /// When the library record was added, if it holds one.
+    #[serde(default)]
+    pub added_at: Option<i64>,
+}
+
+/// One in-progress film for `continue_row`: a library record with no episodes to decide by.
+#[derive(Deserialize)]
+pub struct RowFilm {
+    pub id: String,
+    pub progress_at: i64,
+    pub dismissed_at: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct ContinueRowInput {
+    #[serde(default)]
+    pub series: Vec<RowSeries>,
+    #[serde(default)]
+    pub films: Vec<RowFilm>,
+}
+
+/// The Continue Watching row, from every started series and every in-progress film: who is on it, and in what order.
+///
+/// Three clients each assembled this and disagreed, so the assembly is the policy's:
+///
+/// - A series is on the row by `continue_entry`, and only by it. A library record that says a series is in progress
+///   never adds it: the episode decision already weighed that series, and a caught-up or dismissed one it dropped
+///   would otherwise come back. Only a *film* is added from its record, unless dismissed at or after its last play.
+/// - A series with no season layout yet (`no_layout`) stays on the row at its latest mark, as `hold`, rather than
+///   vanishing until the layout is fetched. A finished mark comes back at fraction 0 with `finished`: nothing is
+///   known to offer after it, so a full bar would claim a finish the pending fetch is about to advance.
+/// - Newest first, by the latest of the series' mark, the record's last play and its added time (a series known only
+///   by watched flags carries no mark of its own, and would sink to the end); a film by its last play. Ties keep
+///   series ahead of films, then the order given. One row per `id`: a series' entry wins over a film record.
+///
+/// Each row: `kind` (`series` or `film`), `id`, `activity`, and for a series `action` (`resume`, `next`,
+/// `upcoming`, `hold`), `episode`, `fraction`, `date` (`upcoming`), `finished` (`hold`). A film's row carries no
+/// more: its progress and display are the client's own record.
+pub fn continue_row(input: &ContinueRowInput) -> Value {
+    let mut seen = std::collections::HashSet::new();
+    let mut rows: Vec<(i64, Value)> = Vec::new();
+    for series in &input.series {
+        if !seen.insert(series.id.as_str()) {
+            continue;
+        }
+        let answer = continue_entry(&series.input);
+        let action = answer["action"].as_str().unwrap_or("none");
+        let held = series
+            .input
+            .mark
+            .as_ref()
+            .filter(|_| action == "none" && answer["code"].as_str() == Some("no_layout"));
+        let activity = [
+            series.input.mark.as_ref().map(|m| m.at),
+            series.progress_at,
+            series.added_at,
+        ]
+        .into_iter()
+        .flatten()
+        .max()
+        .unwrap_or(0);
+        let row = if let Some(mark) = held {
+            let finished = mark.fraction >= WATCHED;
+            json!({
+                "kind": "series", "id": series.id, "activity": activity, "action": "hold",
+                "episode": coord(Coord { season: mark.season, episode: mark.episode }),
+                "fraction": if finished { 0.0 } else { mark.fraction }, "finished": finished,
+            })
+        } else if action != "none" {
+            let mut row = json!({
+                "kind": "series", "id": series.id, "activity": activity, "action": action,
+                "episode": answer["episode"], "fraction": answer["fraction"],
+            });
+            if let Some(date) = answer.get("date") {
+                row["date"] = date.clone();
+            }
+            row
+        } else {
+            continue;
+        };
+        rows.push((activity, row));
+    }
+    for film in &input.films {
+        if film.dismissed_at.is_some_and(|at| at >= film.progress_at)
+            || !seen.insert(film.id.as_str())
+        {
+            continue;
+        }
+        rows.push((
+            film.progress_at,
+            json!({"kind": "film", "id": film.id, "activity": film.progress_at}),
+        ));
+    }
+    // `sort_by` is stable: ties keep series ahead of films, then the order given.
+    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    json!({"rows": rows.into_iter().map(|(_, row)| row).collect::<Vec<_>>()})
+}
+
 /// Where "Continue" should take the viewer: resume the episode last played if it is unfinished, else the one
 /// after it, else the first — a finished finale is a rewatch from the start, not a dead end.
 pub fn continue_target(
@@ -403,6 +511,33 @@ mod tests {
             input[key] = value.clone();
         }
         serde_json::from_value(input).unwrap()
+    }
+
+    #[test]
+    fn a_row_carries_an_upcoming_date_and_keeps_series_ahead_of_a_film_on_a_tie() {
+        let mut series = json!({
+            "id": "tv:1",
+            "mark": {"season": 2, "episode": 1, "fraction": 1.0, "at": 2000},
+            "finished": {"season": 2, "episode": 1, "at": 2000},
+            "flag": null,
+            "seasons": [{"season": 1, "episodes": 10}, {"season": 2, "episodes": 10}],
+            "last_aired": {"season": 2, "episode": 1},
+            "dismissed_at": null,
+            "airing": [{"season": 2, "episode": 2, "date": "2026-11-06"}],
+            "today": "2026-10-31",
+        });
+        series["progress_at"] = json!(2000);
+        let input: ContinueRowInput = serde_json::from_value(json!({
+            "series": [series],
+            "films": [{"id": "movie:1", "progress_at": 2000, "dismissed_at": null}],
+        }))
+        .unwrap();
+        let rows = continue_row(&input)["rows"].clone();
+        assert_eq!(rows[0]["id"], "tv:1");
+        assert_eq!(rows[0]["action"], "upcoming");
+        assert_eq!(rows[0]["date"], "2026-11-06");
+        assert_eq!(rows[1]["id"], "movie:1");
+        assert_eq!(rows[1]["kind"], "film");
     }
 
     #[test]
