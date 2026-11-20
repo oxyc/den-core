@@ -54,8 +54,8 @@ pub use profiles::{
 };
 pub use series::{
     aired_episodes, continue_entry, continue_row, continue_target, episode_after, is_aired,
-    series_state, ContinueInput, ContinueMark, ContinueRowInput, Coord, DatedEpisode, Finished,
-    LastPlayed, RowFilm, RowSeries, SeasonCount, UPCOMING_DAYS,
+    series_state, ContinueInput, ContinueMark, Coord, DatedEpisode, Finished, LastPlayed,
+    SeasonCount, UPCOMING_DAYS,
 };
 pub use sources::{outcome as source_outcome, wait as source_wait};
 pub use watch::{lease, receipt_row_name, watch_row_name};
@@ -116,7 +116,8 @@ enum Request {
     /// The request's own fields are the input's (`tagged` reads it from the whole request, `op` ignored).
     ContinueEntry(ContinueInput),
     /// The whole Continue Watching row: every started series' `continue_entry` input and every in-progress film.
-    ContinueRow(ContinueRowInput),
+    #[cfg(feature = "library-columns")]
+    ContinueRow(Value),
     Issue {
         last: Stamp,
         seen: Option<Stamp>,
@@ -1478,7 +1479,8 @@ fn run(request: Request) -> Result<Value, String> {
             last_played,
         } => Ok(continue_target(&seasons, last_aired, last_played)),
         Request::ContinueEntry(input) => Ok(continue_entry(&input)),
-        Request::ContinueRow(input) => Ok(continue_row(&input)),
+        #[cfg(feature = "library-columns")]
+        Request::ContinueRow(input) => continue_row(input),
         Request::Issue {
             last,
             seen,

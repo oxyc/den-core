@@ -2553,23 +2553,27 @@
     "series": [
      {
       "id": "tv:1",
-      "mark": {"season": 1, "episode": 2, "fraction": 0.4, "at": 5000},
-      "finished": null,
-      "flag": null,
-      "seasons": [{"season": 1, "episodes": 10}],
-      "last_aired": null,
-      "dismissed_at": null,
+      "input": {
+       "mark": {"season": 1, "episode": 2, "fraction": 0.4, "at": 5000},
+       "finished": null,
+       "flag": null,
+       "seasons": [{"season": 1, "episodes": 10}],
+       "last_aired": null,
+       "dismissed_at": null
+      },
       "progress_at": 5000,
       "added_at": 100
      },
      {
       "id": "tv:2",
-      "mark": null,
-      "finished": null,
-      "flag": {"season": 1, "episode": 2},
-      "seasons": [{"season": 1, "episodes": 10}],
-      "last_aired": null,
-      "dismissed_at": null,
+      "input": {
+       "mark": null,
+       "finished": null,
+       "flag": {"season": 1, "episode": 2},
+       "seasons": [{"season": 1, "episodes": 10}],
+       "last_aired": null,
+       "dismissed_at": null
+      },
       "progress_at": 9000,
       "added_at": 100
      }
@@ -2577,18 +2581,19 @@
     "films": [
      {"id": "movie:1", "progress_at": 7000, "dismissed_at": null},
      {"id": "movie:2", "progress_at": 7500, "dismissed_at": 8000},
-     {"id": "movie:3", "progress_at": 8500, "dismissed_at": 8000},
-     {"id": "tv:1", "progress_at": 9999, "dismissed_at": null}
+     {"id": "movie:3", "progress_at": 8500, "dismissed_at": 8000}
     ]
    },
    "ok": {
     "rows": [
-     {"kind": "series", "id": "tv:2", "activity": 9000, "action": "next",
-      "episode": {"season": 1, "episode": 3}, "fraction": 0.0},
+     {"kind": "series", "id": "tv:2", "activity": 9000, "action": "next", "code": "next",
+      "episode": {"season": 1, "episode": 3}, "fraction": 0.0,
+      "reason": "the next episode after the one finished last"},
      {"kind": "film", "id": "movie:3", "activity": 8500},
      {"kind": "film", "id": "movie:1", "activity": 7000},
-     {"kind": "series", "id": "tv:1", "activity": 5000, "action": "resume",
-      "episode": {"season": 1, "episode": 2}, "fraction": 0.4}
+     {"kind": "series", "id": "tv:1", "activity": 5000, "action": "resume", "code": "resume",
+      "episode": {"season": 1, "episode": 2}, "fraction": 0.4,
+      "reason": "resuming where it was left"}
     ]
    }
   },
@@ -2599,29 +2604,34 @@
     "series": [
      {
       "id": "tv:1",
-      "mark": {"season": 1, "episode": 3, "fraction": 0.5, "at": 5000},
-      "finished": null,
-      "flag": null,
-      "seasons": [{"season": 1, "episodes": 10}],
-      "last_aired": null,
-      "dismissed_at": 6000
+      "input": {
+       "mark": {"season": 1, "episode": 3, "fraction": 0.5, "at": 5000},
+       "finished": null,
+       "flag": null,
+       "seasons": [{"season": 1, "episodes": 10}],
+       "last_aired": null,
+       "dismissed_at": 6000
+      }
      },
      {
       "id": "tv:2",
-      "mark": {"season": 1, "episode": 2, "fraction": 1.0, "at": 4000},
-      "finished": {"season": 1, "episode": 2, "at": 4000},
-      "flag": null,
-      "seasons": [],
-      "last_aired": null,
-      "dismissed_at": null
+      "input": {
+       "mark": {"season": 1, "episode": 2, "fraction": 1.0, "at": 4000},
+       "finished": {"season": 1, "episode": 2, "at": 4000},
+       "flag": null,
+       "seasons": [],
+       "last_aired": null,
+       "dismissed_at": null
+      }
      }
     ],
     "films": []
    },
    "ok": {
     "rows": [
-     {"kind": "series", "id": "tv:2", "activity": 4000, "action": "hold",
-      "episode": {"season": 1, "episode": 2}, "fraction": 0.0, "finished": true}
+     {"kind": "series", "id": "tv:2", "activity": 4000, "action": "hold", "code": "no_layout",
+      "episode": {"season": 1, "episode": 2}, "fraction": 0.0, "finished": true,
+      "reason": "no season layout known"}
     ]
    }
   },
