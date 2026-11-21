@@ -18,15 +18,25 @@ const recovery = (request) => request.op === 'recovery_derive';
 // `library_columns` and `continue_row` are the startup module's (test-wasm-lifecycle.mjs runs its cases there); this
 // core refuses them.
 const columns = (request) => request.op === 'library_columns' || request.op === 'continue_row';
+// `audio_pick` is the native binding's and Hearth's alone (a browser's Remux picks for it); every web module refuses it.
+const nativeOnly = (request) => request.op === 'audio_pick';
 let count = 0;
 let assistantCount = 0;
 let recoveryCount = 0;
 let columnsCount = 0;
+let nativeOnlyCount = 0;
 for (const fixture of fixtures) {
   for (const test of fixture.cases) {
     if (columns(test.request)) {
       assert.equal(JSON.parse(evaluate(JSON.stringify(test.request))).error, 'invalid_request', test.name);
       columnsCount++;
+      continue;
+    }
+    if (nativeOnly(test.request)) {
+      for (const own of [evaluate, evaluateAssistant, evaluateRecovery]) {
+        assert.equal(JSON.parse(own(JSON.stringify(test.request))).error, 'invalid_request', test.name);
+      }
+      nativeOnlyCount++;
       continue;
     }
     const own = assistant(test.request)
@@ -122,6 +132,7 @@ count++;
 assert.ok(assistantCount > 0);
 assert.ok(recoveryCount > 0);
 assert.ok(columnsCount > 0);
+assert.ok(nativeOnlyCount > 0);
 console.log(`PASS: ${count} shared contract cases through real WASM (${assistantCount} assistant, ${recoveryCount} recovery)`);
 
 // Every Worker that loads a module compiles its own copy, and in WebKit the machine code is most of what a copy

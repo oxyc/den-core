@@ -6,8 +6,11 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["recovery-kdf", "tracker-delivery", "profile-admin", "library-columns"]
+default = ["recovery-kdf", "tracker-delivery", "profile-admin", "library-columns", "audio-pick"]
 recovery-kdf = ["dep:argon2"]
+# `audio_pick`: in the native binding (the Apple players) and for Hearth, which links the crate. Not in any browser
+# module: a browser asks Hearth's Remux for its languages, and Remux picks.
+audio-pick = []
 tracker-delivery = []
 profile-admin = []
 # `LibraryColumns` and `library_columns`: in the native binding and the browser startup module, not in the compatibility

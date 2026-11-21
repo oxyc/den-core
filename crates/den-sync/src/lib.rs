@@ -2,6 +2,8 @@
 //! All time and provider facts arrive as inputs; bindings return the same versioned JSON envelope.
 
 mod assistant;
+#[cfg(feature = "audio-pick")]
+mod audio;
 mod delivery;
 mod downloads;
 mod episodes;
@@ -26,6 +28,8 @@ use serde_json::{json, Value};
 // plus JSON field names and request framing.
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
+#[cfg(feature = "audio-pick")]
+pub use audio::{audio_pick, AudioPick, AudioReason, AudioTrack};
 pub use delivery::{decide, Action, Command, Decision, Kind, Remote, RemoteRating, RemoteTime};
 pub use downloads::{
     download_cancel_safe, download_escalate, download_merge, download_next, download_prune,
@@ -428,6 +432,15 @@ enum Request {
         preferred: Option<String>,
         #[serde(default)]
         tried: Vec<String>,
+    },
+    /// The audio track a playback starts on, from the session's kept language and the wanted ones.
+    #[cfg(feature = "audio-pick")]
+    AudioPick {
+        tracks: Vec<AudioTrack>,
+        #[serde(default)]
+        kept: Option<String>,
+        #[serde(default)]
+        wanted: Vec<String>,
     },
     WatchName {
         media: String,
@@ -1705,6 +1718,12 @@ fn run(request: Request) -> Result<Value, String> {
             preferred.as_deref(),
             &tried,
         )),
+        #[cfg(feature = "audio-pick")]
+        Request::AudioPick {
+            tracks,
+            kept,
+            wanted,
+        } => Ok(audio::answer(&tracks, kept.as_deref(), &wanted)),
         Request::WatchName {
             media,
             id,
