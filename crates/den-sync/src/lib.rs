@@ -11,6 +11,7 @@ mod events;
 mod headings;
 mod index;
 mod library_v4;
+mod new_episodes;
 mod preferences;
 mod profiles;
 mod projection;
@@ -43,6 +44,7 @@ pub use library_v4::columns::{
     Airing as ColumnsAiring, Answer as ColumnsAnswer, Applied as ColumnsApplied,
     Columns as LibraryColumns, Layouts as ColumnsLayouts,
 };
+pub use new_episodes::{new_episodes, COMING_UP_DAYS, FRESH_DAYS};
 pub use preferences::{
     interface_language_v1 as preferences_interface_language_v1,
     subtitle_v1 as preferences_subtitle_v1,
@@ -122,6 +124,8 @@ enum Request {
     /// The whole Continue Watching row: every started series' `continue_entry` input and every in-progress film.
     #[cfg(feature = "library-columns")]
     ContinueRow(Value),
+    /// The followed series, their new episodes and Coming up, from the library's facts and den-atlas's dates.
+    NewEpisodes(Value),
     Issue {
         last: Stamp,
         seen: Option<Stamp>,
@@ -1494,6 +1498,7 @@ fn run(request: Request) -> Result<Value, String> {
         Request::ContinueEntry(input) => Ok(continue_entry(&input)),
         #[cfg(feature = "library-columns")]
         Request::ContinueRow(input) => continue_row(input),
+        Request::NewEpisodes(input) => new_episodes(&input),
         Request::Issue {
             last,
             seen,

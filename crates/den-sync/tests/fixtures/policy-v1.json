@@ -2636,6 +2636,161 @@
    }
   },
   {
+   "name": "new_episodes: an episode is new for 7 days, the day it came out included",
+   "request": {
+    "op": "new_episodes",
+    "today": "2026-11-06",
+    "continuing": [{"series": 1, "season": 2, "episode": 1, "upcoming": false, "fraction": 0, "watched": false}],
+    "airing": [{"series": 1, "previous": {"season": 2, "episode": 1, "date": "2026-10-30"},
+                "premiere": {"season": 2, "date": "2026-10-30"}}]
+   },
+   "ok": {
+    "candidates": [1],
+    "followed": [1],
+    "new": [{"series": 1, "season": 2, "episode": 1, "released": {"season": 2, "episode": 1}, "name": null}],
+    "coming_up": []
+   }
+  },
+  {
+   "name": "new_episodes: on the eighth day it is an episode not watched, not a new one",
+   "request": {
+    "op": "new_episodes",
+    "today": "2026-11-07",
+    "continuing": [{"series": 1, "season": 2, "episode": 1, "upcoming": false, "fraction": 0, "watched": false}],
+    "airing": [{"series": 1, "previous": {"season": 2, "episode": 1, "date": "2026-10-30"},
+                "premiere": {"season": 2, "date": "2026-10-30"}}]
+   },
+   "ok": {"candidates": [1], "followed": [1], "new": [], "coming_up": []}
+  },
+  {
+   "name": "new_episodes: followed are the Watchlist and the series caught up on, never one sampled once or seasons behind",
+   "request": {
+    "op": "new_episodes",
+    "today": "2026-10-31",
+    "watchlist": [5, 7],
+    "continuing": [
+     {"series": 259909, "season": 2, "episode": 1, "upcoming": false},
+     {"series": 1416, "season": 10, "episode": 3, "upcoming": false},
+     {"series": 2, "season": 4, "episode": 2, "upcoming": false},
+     {"series": 3, "season": 2, "episode": 1, "upcoming": false},
+     {"series": 6, "season": 2, "episode": 2, "upcoming": true}
+    ],
+    "caught_up": [4],
+    "seen": [1416, 8],
+    "dismissed": [7],
+    "airing": [
+     {"series": 259909, "previous": {"season": 2, "episode": 1, "date": "2026-10-30"},
+      "next": {"season": 2, "episode": 2, "date": "2026-11-06"}, "upcoming": [],
+      "premiere": {"season": 2, "date": "2026-10-30"}},
+     {"series": 1416, "previous": {"season": 22, "episode": 5, "date": "2026-10-30"},
+      "premiere": {"season": 22, "date": "2026-10-02"}},
+     {"series": 2, "previous": {"season": 4, "episode": 5, "date": "2026-10-30"},
+      "premiere": {"season": 4, "date": "2026-10-02"}},
+     {"series": 3, "previous": {"season": 2, "episode": 10, "name": "Finale", "date": "2026-10-30"},
+      "premiere": {"season": 2, "date": "2026-10-30"}}
+    ]
+   },
+   "ok": {
+    "candidates": [5, 259909, 1416, 2, 3, 6, 4, 8],
+    "followed": [5, 259909, 3, 6, 4, 8],
+    "new": [
+     {"series": 259909, "season": 2, "episode": 1, "released": {"season": 2, "episode": 1}, "name": null},
+     {"series": 3, "season": 2, "episode": 1, "released": {"season": 2, "episode": 10}, "name": null}
+    ],
+    "coming_up": [{"series": 259909, "season": 2, "episode": 2, "date": "2026-11-06", "premiere": false}]
+   }
+  },
+  {
+   "name": "new_episodes: a series on the Watchlist and on the row is new at its row episode",
+   "request": {
+    "op": "new_episodes",
+    "today": "2026-10-31",
+    "watchlist": [20],
+    "continuing": [{"series": 20, "season": 1, "episode": 4, "upcoming": false}],
+    "airing": [{"series": 20, "previous": {"season": 1, "episode": 4, "date": "2026-10-30"}}]
+   },
+   "ok": {
+    "candidates": [20],
+    "followed": [20],
+    "new": [{"series": 20, "season": 1, "episode": 4, "released": {"season": 1, "episode": 4}, "name": null}],
+    "coming_up": []
+   }
+  },
+  {
+   "name": "new_episodes: an episode watched or played past the resume floor is started, and not new",
+   "request": {
+    "op": "new_episodes",
+    "today": "2026-11-06",
+    "continuing": [
+     {"series": 10, "season": 1, "episode": 3, "upcoming": false, "fraction": 0.02, "watched": false},
+     {"series": 11, "season": 1, "episode": 3, "upcoming": false, "fraction": 0.03, "watched": false},
+     {"series": 12, "season": 1, "episode": 3, "upcoming": false, "fraction": 0, "watched": true}
+    ],
+    "airing": [
+     {"series": 10, "previous": {"season": 1, "episode": 3, "name": "Three", "date": "2026-11-05"}},
+     {"series": 11, "previous": {"season": 1, "episode": 3, "name": "Three", "date": "2026-11-05"}},
+     {"series": 12, "previous": {"season": 1, "episode": 3, "name": "Three", "date": "2026-11-05"}}
+    ]
+   },
+   "ok": {
+    "candidates": [10, 11, 12],
+    "followed": [10, 11, 12],
+    "new": [{"series": 10, "season": 1, "episode": 3, "released": {"season": 1, "episode": 3}, "name": "Three"}],
+    "coming_up": []
+   }
+  },
+  {
+   "name": "new_episodes: Coming up is each followed series' soonest release within 30 days, today included, by date then series",
+   "request": {
+    "op": "new_episodes",
+    "today": "2026-10-31",
+    "watchlist": [13, 9, 8, 11, 12, 14],
+    "airing": [
+     {"series": 9, "premiere": {"season": 3, "date": "2026-11-20"}},
+     {"series": 8, "premiere": {"season": 2, "date": "2026-11-20"}},
+     {"series": 11, "premiere": {"season": 5, "date": "2026-11-30"}},
+     {"series": 12, "premiere": {"season": 5, "date": "2026-12-01"}},
+     {"series": 13, "premiere": {"season": 4, "date": "2026-10-31"}},
+     {"series": 14, "previous": {"season": 1, "episode": 1, "date": "2026-10-26"},
+      "next": {"season": 0, "episode": 3, "date": "2026-11-02"},
+      "upcoming": [{"season": 1, "episode": 2, "date": "2026-11-09"}, {"season": 1, "episode": 3, "date": "2026-11-16"}]}
+    ]
+   },
+   "ok": {
+    "candidates": [13, 9, 8, 11, 12, 14],
+    "followed": [13, 9, 8, 11, 12, 14],
+    "new": [],
+    "coming_up": [
+     {"series": 13, "season": 4, "episode": 1, "date": "2026-10-31", "premiere": true},
+     {"series": 14, "season": 1, "episode": 2, "date": "2026-11-09", "premiere": false},
+     {"series": 8, "season": 2, "episode": 1, "date": "2026-11-20", "premiere": true},
+     {"series": 9, "season": 3, "episode": 1, "date": "2026-11-20", "premiere": true},
+     {"series": 11, "season": 5, "episode": 1, "date": "2026-11-30", "premiere": true}
+    ]
+   }
+  },
+  {
+   "name": "new_episodes: without the viewer's day the answer is who is followed, and nothing is new or coming up",
+   "request": {
+    "op": "new_episodes",
+    "watchlist": [1, 0],
+    "continuing": [{"series": 2, "season": 1, "episode": 1, "upcoming": true}],
+    "airing": [{"series": 1, "previous": {"season": 1, "episode": 1, "date": "2026-10-30"},
+                "next": {"season": 1, "episode": 2, "date": "2026-11-06"}}]
+   },
+   "ok": {"candidates": [1, 2], "followed": [1, 2], "new": [], "coming_up": []}
+  },
+  {
+   "name": "new_episodes: a day that is no calendar date is refused",
+   "request": {"op": "new_episodes", "today": "31.10.2026", "watchlist": [1]},
+   "error": "invalid_request"
+  },
+  {
+   "name": "new_episodes: a row entry without its episode is refused",
+   "request": {"op": "new_episodes", "today": "2026-10-31", "continuing": [{"series": 1, "upcoming": false}]},
+   "error": "invalid_request"
+  },
+  {
    "name": "recovery_code: 22 random bytes make den-spec recovery-v1's first code",
    "request": {
     "op": "recovery_code",

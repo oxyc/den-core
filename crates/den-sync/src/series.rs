@@ -186,7 +186,7 @@ pub struct DatedEpisode {
 pub const UPCOMING_DAYS: i64 = 14;
 
 /// Days since 1970-01-01 of a `YYYY-MM-DD` date, or `None` when it is not one (Hinnant's `days_from_civil`).
-fn day_number(date: &str) -> Option<i64> {
+pub(crate) fn day_number(date: &str) -> Option<i64> {
     let mut parts = date.split('-');
     let (year, month, day) = (parts.next()?, parts.next()?, parts.next()?);
     if parts.next().is_some() || year.len() != 4 || month.len() != 2 || day.len() != 2 {
