@@ -19,6 +19,7 @@ export const STARTUP_OPERATIONS = Object.freeze([
   'title_state',
   'library_columns',
   'continue_row',
+  'new_episodes',
   'download_status',
 ]);
 

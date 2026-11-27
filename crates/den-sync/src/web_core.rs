@@ -526,6 +526,9 @@ pub(super) fn run(input: &str) -> Result<Value, String> {
         "source_outcome" => sources::outcome(&fields),
         #[cfg(any(not(feature = "browser-startup"), feature = "browser-deferred"))]
         "source_wait" => sources::wait(&fields),
+        // Home's Coming up row and new episodes. Den Web asks it in the content Worker, which loads only startup.
+        #[cfg(any(not(feature = "browser-deferred"), feature = "browser-startup"))]
+        "new_episodes" => new_episodes(&Value::Object(fields)),
         op if op.starts_with("assistant_") || op.starts_with("playback_receipt_") => {
             Err("assistant_module".into())
         }
