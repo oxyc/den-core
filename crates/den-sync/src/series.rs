@@ -374,6 +374,11 @@ pub fn continue_entry(input: &ContinueInput) -> Value {
 /// `code`, `episode`, `fraction`, `date`, `reason`) with those added; a held one has `action: "hold"`, the mark's
 /// `episode` and `fraction`, and `finished`. A film's row carries no more: its progress and display are the
 /// client's own record.
+///
+/// A client that keeps each series' `continue_entry` answer passes it as `entry`, with the series' `mark`, in place
+/// of `input`: that series is placed by the answer it already has rather than decided again, so a write that changed
+/// one series costs one decision, not one per started series. Of the `none` answers only `no_layout` can be on the
+/// row (held), so a series answered `none` with any other `code` adds nothing and may be left out.
 pub fn continue_row(input: Value) -> Result<Value, String> {
     rows_of(input).ok_or_else(|| "invalid_request".to_string())
 }
@@ -387,17 +392,29 @@ fn rows_of(mut input: Value) -> Option<Value> {
     let (series, films) = (list("series")?, list("films")?);
     let mut rows = Vec::new();
     for mut item in series {
-        let entry: ContinueInput = serde_json::from_value(item.get_mut("input")?.take()).ok()?;
+        let (mut row, mark) = match item.get_mut("entry").map(Value::take) {
+            Some(entry) if entry.is_object() => {
+                let mark = item.get_mut("mark").map(Value::take).unwrap_or(Value::Null);
+                (
+                    entry,
+                    serde_json::from_value::<Option<ContinueMark>>(mark).ok()?,
+                )
+            }
+            Some(_) => return None,
+            None => {
+                let input: ContinueInput =
+                    serde_json::from_value(item.get_mut("input")?.take()).ok()?;
+                (continue_entry(&input), input.mark)
+            }
+        };
         let id = item["id"].as_str()?;
-        let mut row = continue_entry(&entry);
-        let activity = entry
-            .mark
+        let activity = mark
             .as_ref()
             .map(|m| m.at)
             .max(item["progress_at"].as_i64())
             .max(item["added_at"].as_i64())
             .unwrap_or(0);
-        match entry.mark.as_ref().filter(|_| row["code"] == "no_layout") {
+        match mark.as_ref().filter(|_| row["code"] == "no_layout") {
             Some(mark) => {
                 let finished = mark.fraction >= WATCHED;
                 row["action"] = "hold".into();
@@ -517,6 +534,42 @@ mod tests {
         assert_eq!(rows[0]["date"], "2026-11-06");
         assert_eq!(rows[1]["id"], "movie:1");
         assert_eq!(rows[1]["kind"], "film");
+    }
+
+    #[test]
+    fn a_series_passed_with_its_answer_is_placed_as_if_decided_here() {
+        let layout = json!([{"season": 1, "episodes": 10}]);
+        let inputs = [
+            json!({"mark": {"season": 1, "episode": 2, "fraction": 0.4, "at": 5000}, "seasons": layout}),
+            json!({"flag": {"season": 1, "episode": 2}, "seasons": layout}),
+            json!({"mark": {"season": 1, "episode": 2, "fraction": 1.0, "at": 4000},
+                   "finished": {"season": 1, "episode": 2, "at": 4000}}),
+            json!({"mark": {"season": 1, "episode": 3, "fraction": 0.5, "at": 3000}, "seasons": layout,
+                   "dismissed_at": 6000}),
+            json!({"mark": {"season": 1, "episode": 10, "fraction": 1.0, "at": 2000},
+                   "finished": {"season": 1, "episode": 10, "at": 2000}, "seasons": layout}),
+        ];
+        let films = json!([{"id": "movie:1", "progress_at": 4000, "dismissed_at": null}]);
+        let raw: Vec<Value> = inputs
+            .iter()
+            .enumerate()
+            .map(|(n, input)| json!({"id": format!("tv:{n}"), "input": input, "progress_at": 3500}))
+            .collect();
+        let decided: Vec<Value> = inputs
+            .iter()
+            .enumerate()
+            .map(|(n, input)| {
+                let answer = continue_entry(&serde_json::from_value(input.clone()).unwrap());
+                json!({"id": format!("tv:{n}"), "entry": answer, "mark": input.get("mark"), "progress_at": 3500})
+            })
+            .collect();
+        let expected = continue_row(json!({"series": raw, "films": films})).unwrap();
+        assert_eq!(expected["rows"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            continue_row(json!({"series": decided, "films": films})).unwrap(),
+            expected
+        );
+        assert!(continue_row(json!({"series": [{"id": "tv:1", "entry": "next"}]})).is_err());
     }
 
     #[test]
