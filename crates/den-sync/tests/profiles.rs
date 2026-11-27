@@ -652,6 +652,8 @@ fn household_write_never_lets_a_scoped_row_through_by_prefix_or_alias() {
         "set:handoff:a",
         "set:trackers",
         "set:assistant-applied",
+        "set:follows",
+        "set:updates",
         "rec:a",
         "wat:a",
         "snt:a",
