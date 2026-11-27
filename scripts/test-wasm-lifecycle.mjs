@@ -153,7 +153,8 @@ console.log(
 // The startup module holds `LibraryColumns` (~97 KB of it): the library read once and Home, Continue Watching,
 // History, the watchlist and the newest stamp answered in one call each, in place of a policy call per document.
 const budgets = new Map([
-  ['den_core_startup', 525_000],
+  // `new_episodes` (Home's Coming up and new episodes, asked in the content Worker, which loads only startup): 8.5 KB.
+  ['den_core_startup', 534_000],
   ['den_core_deferred', 860_000],
 ]);
 let combined = 0;
@@ -165,5 +166,5 @@ for (const [module, budget] of budgets) {
   const gzip = gzipSync(readFileSync(file), { level: 9 }).byteLength;
   console.log(`PASS: ${module}_bg.wasm ${bytes} raw, ${gzip} gzip (budget ${budget})`);
 }
-assert.ok(combined <= 1_315_000, `lifecycle modules total ${combined} bytes (budget 1315000)`);
-console.log(`PASS: lifecycle modules total ${combined} raw (budget 1315000)`);
+assert.ok(combined <= 1_323_000, `lifecycle modules total ${combined} bytes (budget 1323000)`);
+console.log(`PASS: lifecycle modules total ${combined} raw (budget 1323000)`);

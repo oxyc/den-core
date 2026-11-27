@@ -150,8 +150,9 @@ for (const [module, budget] of [
 
 const tizen3 = readFileSync(new URL('../web-tizen3/generated/den_core.js', import.meta.url));
 const tizen3Gzip = gzipSync(tizen3, {level: 9}).byteLength;
-assert.ok(tizen3.byteLength <= 2_075_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2075000-byte budget`);
-assert.ok(tizen3Gzip <= 605_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 605000-byte budget`);
+// `new_episodes` added 32 KB (6 KB gzip): Tizen 3 draws Home's Coming up and new episodes through this core too.
+assert.ok(tizen3.byteLength <= 2_107_000, `den_core.js is ${tizen3.byteLength} bytes, over its 2107000-byte budget`);
+assert.ok(tizen3Gzip <= 615_000, `den_core.js gzip is ${tizen3Gzip} bytes, over its 615000-byte budget`);
 console.log(`PASS: Tizen 3 core ${tizen3.byteLength} bytes, ${tizen3Gzip} gzip`);
 
 // Exercise the pointer-only wasm2js transport too: the generic browser and native contracts use the same den-sync
