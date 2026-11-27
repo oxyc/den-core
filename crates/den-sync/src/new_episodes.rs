@@ -138,6 +138,8 @@ fn episode(series: u64, at: At) -> Vec<(&'static str, Value)> {
 /// - `followed`: those followed, in the same order. One on the Watchlist, caught up or marked Seen (unless the row
 ///   holds it, which then decides); on the row, one waiting for its episode, past atlas's newest, or caught up to
 ///   it. A series sampled once or seasons behind is not followed.
+/// - `released`: each followed series' newest regular episode out within `FRESH_DAYS`, `{series, season, episode}`,
+///   whatever the viewer's standing on it: the series whose progress a client reads to say whether it was started.
 /// - `new`: each followed series' new episode, `{series, season, episode, released, name}`. `released` is the
 ///   newest regular episode out within `FRESH_DAYS`; `season`/`episode` is what plays, the series' row entry (kept
 ///   for a series the Watchlist names first), which the viewer must be caught up to (S2E1 of a season out at once,
@@ -195,7 +197,7 @@ fn answer(input: &Value) -> Option<Value> {
         one["series"].as_u64()?;
     }
 
-    let (mut followed, mut new) = (Vec::new(), Vec::new());
+    let (mut followed, mut fresh, mut new) = (Vec::new(), Vec::new(), Vec::new());
     let mut coming_up: Vec<(i64, u64, Value)> = Vec::new();
     for &(id, by_row) in &candidates {
         let answer = airing.iter().find(|a| a["series"].as_u64() == Some(id));
@@ -238,6 +240,9 @@ fn answer(input: &Value) -> Option<Value> {
                 soonest = Some(one);
             }
         }
+        if let Some(released) = released {
+            fresh.push(object(episode(id, released.at)));
+        }
         if let (Some(released), Some(row)) = (released, row) {
             if !row.started && caught_up(row.entry, released.at, &episodes, &premiere) {
                 let name = if row.entry == released.at {
@@ -268,6 +273,7 @@ fn answer(input: &Value) -> Option<Value> {
     Some(object(vec![
         ("candidates", Value::Array(candidates)),
         ("followed", Value::Array(followed)),
+        ("released", Value::Array(fresh)),
         ("new", Value::Array(new)),
         ("coming_up", Value::Array(coming_up)),
     ]))

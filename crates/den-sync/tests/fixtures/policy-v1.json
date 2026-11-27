@@ -2647,6 +2647,7 @@
    "ok": {
     "candidates": [1],
     "followed": [1],
+    "released": [{"series": 1, "season": 2, "episode": 1}],
     "new": [{"series": 1, "season": 2, "episode": 1, "released": {"season": 2, "episode": 1}, "name": null}],
     "coming_up": []
    }
@@ -2660,7 +2661,7 @@
     "airing": [{"series": 1, "previous": {"season": 2, "episode": 1, "date": "2026-10-30"},
                 "premiere": {"season": 2, "date": "2026-10-30"}}]
    },
-   "ok": {"candidates": [1], "followed": [1], "new": [], "coming_up": []}
+   "ok": {"candidates": [1], "followed": [1], "released": [], "new": [], "coming_up": []}
   },
   {
    "name": "new_episodes: followed are the Watchlist and the series caught up on, never one sampled once or seasons behind",
@@ -2693,6 +2694,7 @@
    "ok": {
     "candidates": [5, 259909, 1416, 2, 3, 6, 4, 8],
     "followed": [5, 259909, 3, 6, 4, 8],
+    "released": [{"series": 259909, "season": 2, "episode": 1}, {"series": 3, "season": 2, "episode": 10}],
     "new": [
      {"series": 259909, "season": 2, "episode": 1, "released": {"season": 2, "episode": 1}, "name": null},
      {"series": 3, "season": 2, "episode": 1, "released": {"season": 2, "episode": 10}, "name": null}
@@ -2712,6 +2714,7 @@
    "ok": {
     "candidates": [20],
     "followed": [20],
+    "released": [{"series": 20, "season": 1, "episode": 4}],
     "new": [{"series": 20, "season": 1, "episode": 4, "released": {"season": 1, "episode": 4}, "name": null}],
     "coming_up": []
    }
@@ -2735,6 +2738,8 @@
    "ok": {
     "candidates": [10, 11, 12],
     "followed": [10, 11, 12],
+    "released": [{"series": 10, "season": 1, "episode": 3}, {"series": 11, "season": 1, "episode": 3},
+                 {"series": 12, "season": 1, "episode": 3}],
     "new": [{"series": 10, "season": 1, "episode": 3, "released": {"season": 1, "episode": 3}, "name": "Three"}],
     "coming_up": []
    }
@@ -2759,6 +2764,7 @@
    "ok": {
     "candidates": [13, 9, 8, 11, 12, 14],
     "followed": [13, 9, 8, 11, 12, 14],
+    "released": [{"series": 14, "season": 1, "episode": 1}],
     "new": [],
     "coming_up": [
      {"series": 13, "season": 4, "episode": 1, "date": "2026-10-31", "premiere": true},
@@ -2778,7 +2784,7 @@
     "airing": [{"series": 1, "previous": {"season": 1, "episode": 1, "date": "2026-10-30"},
                 "next": {"season": 1, "episode": 2, "date": "2026-11-06"}}]
    },
-   "ok": {"candidates": [1, 2], "followed": [1, 2], "new": [], "coming_up": []}
+   "ok": {"candidates": [1, 2], "followed": [1, 2], "released": [], "new": [], "coming_up": []}
   },
   {
    "name": "new_episodes: a day that is no calendar date is refused",
