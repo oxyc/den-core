@@ -1109,7 +1109,12 @@ fn profile_scoped_name(name: &str) -> bool {
         || name.starts_with("set:handoff:")
         || matches!(
             name,
-            "set:prefs" | "set:keys" | "set:trackers" | "set:assistant-applied"
+            "set:prefs"
+                | "set:keys"
+                | "set:trackers"
+                | "set:assistant-applied"
+                | "set:follows"
+                | "set:updates"
         )
 }
 

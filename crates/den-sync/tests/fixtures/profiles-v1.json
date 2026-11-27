@@ -278,6 +278,30 @@
       }
     },
     {
+      "name": "household write refuses a profile's follows",
+      "request": {
+        "op": "profile_household_write",
+        "row": {
+          "name": "set:follows"
+        }
+      },
+      "ok": {
+        "effect": "refuse"
+      }
+    },
+    {
+      "name": "household write refuses a profile's update marks",
+      "request": {
+        "op": "profile_household_write",
+        "row": {
+          "name": "set:updates"
+        }
+      },
+      "ok": {
+        "effect": "refuse"
+      }
+    },
+    {
       "name": "household write allows a household row",
       "request": {
         "op": "profile_household_write",
