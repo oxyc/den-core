@@ -370,10 +370,11 @@ pub fn continue_entry(input: &ContinueInput) -> Value {
 ///   series ahead of films, then the order given. An `id` is the client's key for one title (its media type and id),
 ///   given once: no row is deduplicated here.
 ///
-/// Each row: `kind` (`series` or `film`), `id`, `activity`. A series' row is its `continue_entry` answer (`action`,
-/// `code`, `episode`, `fraction`, `date`, `reason`) with those added; a held one has `action: "hold"`, the mark's
-/// `episode` and `fraction`, and `finished`. A film's row carries no more: its progress and display are the
-/// client's own record.
+/// Each row: `kind` (`series` or `film`), `id`, `activity`. A series' row adds where it is placed: `action`,
+/// `episode`, `fraction`, and `date` for an `upcoming` one; a held one has `action: "hold"`, the mark's `episode`
+/// and `fraction`, and `finished`. The answer's `code` and `reason` stay out: they explain a series that is *not* on
+/// the row, which a client asks `continue_entry` about, and carrying them cost every row call more than the rule.
+/// A film's row carries no more: its progress and display are the client's own record.
 ///
 /// A client that keeps each series' `continue_entry` answer passes it as `entry`, with the series' `mark`, in place
 /// of `input`: that series is placed by the answer it already has rather than decided again, so a write that changed
@@ -427,6 +428,10 @@ fn rows_of(mut input: Value) -> Option<Value> {
             }
             None if row["action"] == "none" => continue,
             None => {}
+        }
+        if let Some(fields) = row.as_object_mut() {
+            fields.remove("code");
+            fields.remove("reason");
         }
         place(&mut rows, row, "series", id, activity);
     }

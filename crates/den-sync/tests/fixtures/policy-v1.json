@@ -2586,14 +2586,12 @@
    },
    "ok": {
     "rows": [
-     {"kind": "series", "id": "tv:2", "activity": 9000, "action": "next", "code": "next",
-      "episode": {"season": 1, "episode": 3}, "fraction": 0.0,
-      "reason": "the next episode after the one finished last"},
+     {"kind": "series", "id": "tv:2", "activity": 9000, "action": "next",
+      "episode": {"season": 1, "episode": 3}, "fraction": 0.0},
      {"kind": "film", "id": "movie:3", "activity": 8500},
      {"kind": "film", "id": "movie:1", "activity": 7000},
-     {"kind": "series", "id": "tv:1", "activity": 5000, "action": "resume", "code": "resume",
-      "episode": {"season": 1, "episode": 2}, "fraction": 0.4,
-      "reason": "resuming where it was left"}
+     {"kind": "series", "id": "tv:1", "activity": 5000, "action": "resume",
+      "episode": {"season": 1, "episode": 2}, "fraction": 0.4}
     ]
    }
   },
@@ -2629,9 +2627,8 @@
    },
    "ok": {
     "rows": [
-     {"kind": "series", "id": "tv:2", "activity": 4000, "action": "hold", "code": "no_layout",
-      "episode": {"season": 1, "episode": 2}, "fraction": 0.0, "finished": true,
-      "reason": "no season layout known"}
+     {"kind": "series", "id": "tv:2", "activity": 4000, "action": "hold",
+      "episode": {"season": 1, "episode": 2}, "fraction": 0.0, "finished": true}
     ]
    }
   },
@@ -2649,8 +2646,7 @@
      },
      {
       "id": "tv:2",
-      "entry": {"action": "none", "code": "no_layout", "episode": null, "fraction": 0.0,
-                "reason": "no season layout known"},
+      "entry": {"action": "none", "code": "no_layout", "episode": null, "fraction": 0.0},
       "mark": {"season": 2, "episode": 4, "fraction": 0.5, "at": 3000}
      },
      {
@@ -2674,16 +2670,13 @@
    },
    "ok": {
     "rows": [
-     {"kind": "series", "id": "tv:1", "activity": 6000, "action": "next", "code": "next",
-      "episode": {"season": 1, "episode": 3}, "fraction": 0.0,
-      "reason": "the next episode after the one finished last"},
-     {"kind": "series", "id": "tv:3", "activity": 4000, "action": "resume", "code": "resume",
-      "episode": {"season": 1, "episode": 5}, "fraction": 0.3,
-      "reason": "resuming where it was left"},
+     {"kind": "series", "id": "tv:1", "activity": 6000, "action": "next",
+      "episode": {"season": 1, "episode": 3}, "fraction": 0.0},
+     {"kind": "series", "id": "tv:3", "activity": 4000, "action": "resume",
+      "episode": {"season": 1, "episode": 5}, "fraction": 0.3},
      {"kind": "film", "id": "movie:1", "activity": 3500},
-     {"kind": "series", "id": "tv:2", "activity": 3000, "action": "hold", "code": "no_layout",
-      "episode": {"season": 2, "episode": 4}, "fraction": 0.5, "finished": false,
-      "reason": "no season layout known"}
+     {"kind": "series", "id": "tv:2", "activity": 3000, "action": "hold",
+      "episode": {"season": 2, "episode": 4}, "fraction": 0.5, "finished": false}
     ]
    }
   },
